@@ -1,0 +1,1092 @@
+{******************************************************************************
+*
+* Module Name   : $LIB_STOCK
+*
+* Purpose       : Modify and assign stock use records
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : SM10
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	05/04/2013	Checar quantidade de estoque suficiente
+}
+SET COMPILE_OPTION DECLARE
+SET NOTPROTECTED
+ENABLE WINDOWS
+SET NAME "DEFER/"
+
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_PROMPT
+
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_UNIT
+
+{* GLOBAL CONSTANTS ***********************************************************}
+
+GLOBAL CONSTANT LIB_STOCK_TEST_USE_SCREEN_CLASS = "LIB_STOCK_TEST_USE_SCREEN"
+GLOBAL CONSTANT LIB_STOCK_COLLECTED_CLASS       = "LIB_STOCK_COLLECTED"
+
+GLOBAL CONSTANT LIB_STOCK_USED_BY_TEST   = "TEST"	{ Matches the STOCK_USE phrase }
+
+GLOBAL CONSTANT LIB_STOCK_BATCH_AVAILABLE = "V"		{ Matches the STK_B_STAT phrase }
+
+{* LOCAL CONSTANTS ************************************************************}
+
+
+{* VARIABLES ******************************************************************}
+
+
+{******************************************************************************}
+
+DECLARE test_number
+
+test_number = SELECT test . test_number WHERE test_number = "       311"
+
+lib_stock_test_use_screen ( test_number, FALSE )
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_stock_test_use_initialise
+
+{
+*	Initialisation for stock test use.
+*
+*******************************************************************************}
+
+	DEFINE CLASS LIB_STOCK_TEST_USE_SCREEN_CLASS
+
+		INHERIT "STD_GRID_EDITOR"
+
+		PROPERTIES "TEST_NUMBER"      ,
+		           "ANALYSIS"         ,
+		           "TEST_COUNT"       ,
+		           "SAMPLE"           ,
+		           "PROMPT_DETAILS"   ,
+		           "COLLECTION"       ,
+		           "FORM"             ,
+		           "GRID_OBJECT"
+
+		ACTIONS "GET_PROMPT_DETAILS"  ,
+		        "GET_DATA"            ,
+		        "HAS_UPDATES"         ,
+		        "SAVE_DATA"           ,
+		        "SETUP_GRID"          ,
+		        "STOCK_SCREEN_SETUP"  ,
+		        "STOCK_SCREEN_PROMPT" ,
+		        "STOCK_SCREEN_SAVE"
+
+	END CLASS
+
+	DEFINE CLASS LIB_STOCK_COLLECTED_CLASS
+
+		INHERIT "STD_COLLECTED"
+
+		PROPERTIES "STOCK"            ,
+		           "STOCK_BATCH"      ,
+		           "ORIG_STOCK_BATCH" ,
+		           "ORDER_NUMBER"     ,
+		           "STOCK_BATCH_ID"   ,
+		           "AMOUNT"           ,
+		           "UNIT"             ,
+		           "COMMENTS"         ,
+		           "CONSUMED_FLAG"    ,
+		           "MODIFIED"
+
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_get_prompt_details ( self )
+
+{
+*	Build up the prompt details array
+*
+*******************************************************************************}
+
+	ARRAY self . prompt_details   ARRAY_SIZE ( 0 , 6 )
+	
+	self . prompt_details [ 1 , 2 ] = "ROUTINE"
+	self . prompt_details [ 1 , 3 ] =  global ( "current_library" )
+	self . prompt_details [ 1 , 4 ] = "lib_stock_stock_callback"
+	self . prompt_details [ 1 , 5 ] = "Stock"
+	self . prompt_details [ 1 , 6 ] =  20
+
+	self . prompt_details [ 2 , 2 ] = "ROUTINE"
+	self . prompt_details [ 2 , 3 ] =  global ( "current_library" )
+	self . prompt_details [ 2 , 4 ] = "lib_stock_stock_batch_id_callback"
+	self . prompt_details [ 2 , 5 ] = "Stock Batch Id"
+	self . prompt_details [ 2 , 6 ] =  30
+
+	self . prompt_details [ 3 , 2 ] = "ROUTINE"
+	self . prompt_details [ 3 , 3 ] =  global ( "current_library" )
+	self . prompt_details [ 3 , 4 ] = "lib_stock_amount_callback"
+	self . prompt_details [ 3 , 5 ] = "Amount"
+	self . prompt_details [ 3 , 6 ] =  10
+
+	self . prompt_details [ 4 , 2 ] = "ROUTINE"
+	self . prompt_details [ 4 , 3 ] =  global ( "current_library" )
+	self . prompt_details [ 4 , 4 ] = "lib_stock_unit_callback"
+	self . prompt_details [ 4 , 5 ] = "Unit"
+	self . prompt_details [ 4 , 6 ] =  10
+
+	self . prompt_details [ 5 , 2 ] = "ROUTINE"
+	self . prompt_details [ 5 , 3 ] =  global ( "current_library" )
+	self . prompt_details [ 5 , 4 ] = "lib_stock_comments_callback"
+	self . prompt_details [ 5 , 5 ] = "Comments"
+	self . prompt_details [ 5 , 6 ] =  30
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_track_inventory ( VALUE stock )
+
+{
+*	Check that the stock has track inventory set
+*
+*******************************************************************************}
+
+	DECLARE TEMP
+	TEMP = SELECT stock . track_inventory WHERE identity = stock
+	IF (TEMP = EMPTY)THEN
+		TEMP = FALSE
+	ENDIF
+	RETURN ( TEMP )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_get_data ( self )
+
+{
+*	Read the tests stock use list into the collection.
+*
+*
+*******************************************************************************}
+
+	DECLARE analysis,
+		analysis_version,
+		stock,
+		stock_batch,
+		new_item,
+		group_security,
+		message,
+		return_value
+
+	group_security = GLOBAL ( "CHECK_GROUPS" )
+
+	{IF group_security THEN
+		SET SECURITY FALSE
+	ENDIF}
+	
+	SET SECURITY TRUE
+
+	CREATE OBJECT "STD_COLLECTION", self . collection
+
+	analysis         = SELECT test . analysis
+	analysis_version = SELECT test . analysis_version
+
+	stock = SELECT versioned_analysis_stock_use . stock
+	               WHERE analysis = analysis AND
+	                     analysis_version = analysis_version
+	               ORDER ON stock
+
+	WHILE ( stock <> EMPTY ) DO
+
+		IF lib_stock_track_inventory ( stock ) THEN
+
+			CREATE OBJECT LIB_STOCK_COLLECTED_CLASS, new_item
+
+			new_item.stock            = stock
+			new_item.stock_batch      = PACKED_DECIMAL ( 0 )
+			new_item.orig_stock_batch = PACKED_DECIMAL ( 0 )
+			new_item.stock_batch_id   = ""
+			new_item.order_number     = PACKED_DECIMAL ( 0 )
+			new_item.amount           = SELECT versioned_analysis_stock_use.amount_required
+			new_item.unit             = SELECT versioned_analysis_stock_use.unit
+			new_item.comments         = ""
+			new_item.consumed_flag    = SELECT versioned_analysis_stock_use.consumed_flag
+
+			new_item . modified = FALSE
+
+			self . collection . add ( new_item )
+
+		ENDIF
+
+		NEXT versioned_analysis_stock_use
+
+		stock = SELECT versioned_analysis_stock_use . stock
+
+	ENDWHILE
+
+	self . collection . set_first ()
+
+	WHILE ( self . collection . current <> EMPTY ) DO
+
+		stock_batch = SELECT stock_inventory . stock_batch
+		              WHERE  test = self . test_number AND 
+		                     stock = self . collection . current . stock
+
+		IF stock_batch <> EMPTY THEN
+
+			self . collection . current . stock_batch      = stock_batch
+			self . collection . current . orig_stock_batch = stock_batch
+			self . collection . current . order_number     = SELECT stock_inventory.order_number
+			self . collection . current . stock_batch_id   = SELECT stock_inventory.stock_batch_id
+			self . collection . current . amount           = SELECT stock_inventory.amount
+			self . collection . current . unit             = SELECT stock_inventory.unit
+			self . collection . current . comments         = SELECT stock_inventory.comments
+			self . collection . current . consumed_flag    = SELECT stock_inventory.consumed_flag
+
+		ENDIF
+
+		self . collection . set_next  ()
+
+	ENDWHILE
+
+	{IF group_security THEN}
+	SET SECURITY TRUE
+	{ENDIF}
+
+	IF self . collection . size () = 0 THEN
+
+		message_fetch ("LIB_STOCK_TEST_USE_NONE" , message)
+		message_add_parameter ( message , STRIP ( self . analysis ))
+
+		flash_message ( message_get_text ( message, 1), TRUE  )
+
+		return_value = FALSE
+
+	ELSE
+
+		return_value = TRUE
+
+	ENDIF
+
+	RETURN ( return_value )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_create_next_stock_inventory ( VALUE stock       ,
+                                                VALUE stock_batch )
+
+{
+*	Create the next stock inventory record
+*
+*******************************************************************************}
+
+	DECLARE next_stock_number,
+	        status
+
+	next_stock_number = SELECT MAX stock_inventory . order_number
+	                           WHERE stock = stock AND
+	                                 stock_batch = stock_batch
+
+	IF next_stock_number = EMPTY THEN
+		next_stock_number = 0
+	ENDIF
+
+	REPEAT
+
+		next_stock_number = PACKED_DECIMAL ( next_stock_number + 1 )
+
+		RESERVE ENTRY stock_inventory, stock : stock_batch : next_stock_number, status
+
+	UNTIL status = EMPTY
+
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_has_updates ( self )
+
+{
+*	Returns true if any stock records have changed in the colection.
+*
+*
+*******************************************************************************}
+
+	DECLARE current_stock ,
+	        has_updates
+
+	has_updates = FALSE
+
+	IF (( self . collection <> EMPTY ) AND ( NOT self . display_only ))THEN
+
+		self . collection . set_first ()
+
+		WHILE ( self . collection . current <> EMPTY ) DO
+
+			current_stock = self . collection . current
+
+			IF ( current_stock . stock_batch )      <> 
+			   ( current_stock . orig_stock_batch ) THEN
+
+				has_updates = TRUE
+
+			ELSEIF current_stock . modified THEN
+
+				has_updates = TRUE
+
+			ENDIF
+
+			self . collection . set_next  ()
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( has_updates )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_save_data ( self )
+
+{
+*	Save the tests stock use list from the collection.
+*
+*
+*******************************************************************************}
+
+	DECLARE current_stock ,
+	        date_created ,
+	        orig_stock_inv ,
+	        do_update ,
+	        status,
+	        group_security
+
+	group_security = GLOBAL ( "CHECK_GROUPS" )
+
+	{IF group_security THEN}
+	SET SECURITY TRUE
+	{ENDIF}
+
+	date_created = NOW
+
+	self . collection . set_first ()
+
+	WHILE ( self . collection . current <> EMPTY ) DO
+
+		do_update = FALSE
+		current_stock = self . collection . current
+
+		{ 001 \/ }
+		IF (STRIP(current_stock . stock_batch_id) <> "") THEN
+			DECLARE qtde_inicial, qtde_atual, qtde_usada_agora, unid_inicial, unid_atual, qtde_usada
+			qtde_usada=0
+			qtde_usada_agora = current_stock . amount
+			unid_atual = STRIP(TOUPPER(current_stock . unit))
+			qtde_inicial = SELECT stock_batch.initial_amount WHERE stock_batch_id = current_stock . stock_batch_id
+			unid_inicial = STRIP(TOUPPER(SELECT stock_batch.unit))
+			qtde_usada = SELECT SUM stock_inventory.amount WHERE stock_batch_id = current_stock . stock_batch_id  AND unit = current_stock . unit
+			IF (STRIP(qtde_usada) = "") OR (qtde_usada = EMPTY) THEN
+				qtde_usada = 0
+			ENDIF
+			IF(STRIP(qtde_usada_agora) <> "") AND (STRIP(qtde_inicial) <> "") THEN
+				{converte unidade}
+				IF(unid_atual = "ML") AND (unid_inicial = "L") THEN
+					qtde_inicial = qtde_inicial * 1000
+				ENDIF
+				IF(unid_atual = "MG") AND (unid_inicial = "G") THEN
+					qtde_inicial = qtde_inicial * 1000
+				ENDIF
+				IF(unid_atual = "G") AND (unid_inicial = "KG") THEN
+					qtde_inicial = qtde_inicial * 1000
+				ENDIF
+				IF(unid_atual = "MG") AND (unid_inicial = "KG") THEN
+					qtde_inicial = qtde_inicial * 1000000
+				ENDIF
+				
+				qtde_atual = qtde_inicial - qtde_usada
+				IF(qtde_usada_agora > qtde_atual) THEN
+				flash_message("Quantidade insuficiente do lote " : STRIP(current_stock . stock_batch_id) : " de material selecionado, favor reselecionar (qtde atual: " : qtde_atual : ")" , TRUE)
+				RETURN
+				ENDIF
+			ENDIF
+		ENDIF
+		{ 001 /\ }
+
+		IF ( current_stock . stock_batch )      <> 
+		   ( current_stock . orig_stock_batch ) THEN
+
+			IF PACKED_DECIMAL ( current_stock . orig_stock_batch ) <>
+			   PACKED_DECIMAL ( 0 )                                THEN
+
+				{ Delete the original batch usage record }
+
+				orig_stock_inv = SELECT stock_inventory . order_number FOR UPDATE
+				                 WHERE  stock        = current_stock . stock AND
+				                        stock_batch  = current_stock . orig_stock_batch AND
+				                        order_number = current_stock . order_number
+
+				IF orig_stock_inv = current_stock . order_number THEN
+
+					DELETE stock_inventory
+
+				ENDIF
+
+			ENDIF
+
+			IF PACKED_DECIMAL ( current_stock . stock_batch ) <>
+			   PACKED_DECIMAL ( 0 )                           THEN
+
+				{ Create a new batch usage record }
+
+				status = lib_stock_create_next_stock_inventory ( current_stock . stock       ,
+				                                                 current_stock . stock_batch )
+
+				IF status = EMPTY THEN
+
+					do_update = TRUE
+
+					ASSIGN stock_inventory.date_created    = date_created
+					ASSIGN stock_inventory.created_by      = OPERATOR
+
+				ENDIF
+
+			ENDIF
+
+		ELSEIF current_stock . modified THEN
+
+			orig_stock_inv = SELECT stock_inventory . order_number FOR UPDATE
+			                 WHERE  stock        = current_stock . stock AND
+			                        stock_batch  = current_stock . orig_stock_batch AND
+			                        order_number = current_stock . order_number
+
+			do_update = ( orig_stock_inv = current_stock . order_number )
+
+		ENDIF
+
+		IF ( do_update ) THEN
+
+			ASSIGN stock_inventory.stock_batch_id  = current_stock . stock_batch_id
+			ASSIGN stock_inventory.use_type        = LIB_STOCK_USED_BY_TEST
+			ASSIGN stock_inventory.test            = self . test_number
+			ASSIGN stock_inventory.comments        = current_stock . comments
+			ASSIGN stock_inventory.consumed_flag   = current_stock . consumed_flag
+			ASSIGN stock_inventory.amount          = current_stock . amount
+			ASSIGN stock_inventory.unit            = current_stock . unit
+
+			UPDATE stock_inventory
+
+		ENDIF
+
+		self . collection . set_next  ()
+
+	ENDWHILE
+	
+	self . collection = EMPTY
+
+	{IF group_security THEN}
+	SET SECURITY TRUE
+	{ENDIF}
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_display (       grid        ,
+                                     VALUE cell_column ,
+                                     VALUE cell_row    ,
+                                           screen      ,
+                                     VALUE column      ,
+                                     VALUE row         ,
+                                     VALUE cell_width  ,
+                                     VALUE cell_height )
+
+{
+*
+*	Display cell routine
+*
+******************************************************************************}
+
+	DECLARE current_stock
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	lib_grid_display_array ( grid                        ,
+				 cell_column                 ,
+				 cell_row                    ,
+				 screen                      ,
+				 column                      ,
+				 row                         ,
+				 cell_width                  ,
+				 current_stock               ,
+				 grid . prompt_details       ,
+				 "STOCK_INVENTORY"           ,
+				 FALSE                       ,
+				 PROMPT_DETAILS_310          )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_prompt (       grid        ,
+                                    VALUE cell_column ,
+                                    VALUE cell_row    ,
+                                          screen      ,
+                                    VALUE column      ,
+                                    VALUE row         ,
+                                    VALUE cell_width  ,
+                                    VALUE cell_height )
+
+{
+*
+*	Prompt cell routine
+*
+******************************************************************************}
+
+	DECLARE current_stock
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	lib_grid_prompt_array ( grid                        ,
+				cell_column                 ,
+				cell_row                    ,
+				screen                      ,
+				column                      ,
+				row                         ,
+				cell_width                  ,
+				current_stock               ,
+				grid . prompt_details       ,
+				"STOCK_INVENTORY"           ,
+				FALSE                       ,
+				PROMPT_DETAILS_310          )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE lib_stock_inventory_batch_validate ( self )
+{
+*	Validate the stock batch
+*
+*
+*****************************************************************************}
+
+	RETURN ( TRUE )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE lib_stock_stock_callback (       self           ,
+                                         grid           ,
+                                   VALUE cell_column    ,
+                                   VALUE cell_row       ,
+                                   VALUE column         ,
+                                   VALUE row            ,
+                                   VALUE cell_width     ,
+                                         screen         ,
+                                   VALUE is_display     )
+
+{
+*	Prompt/Display the stock field
+*
+*
+*****************************************************************************}
+
+	DECLARE current_stock ,
+	        stock
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	stock = current_stock . stock
+
+	IF is_display THEN
+
+		DISPLAY stock
+			ON LINE row
+			FROM    column
+			TO      column + cell_width - 1
+			IN WINDOW screen
+
+
+	ELSE
+
+		PROMPT  FOR       stock
+			ON LINE   row
+			FROM      column
+			TO        column + cell_width - 1
+			IN WINDOW screen
+			WITH      ( display_only = TRUE )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_stock_batch_id_callback (       self           ,
+                                                  grid           ,
+                                            VALUE cell_column    ,
+                                            VALUE cell_row       ,
+                                            VALUE column         ,
+                                            VALUE row            ,
+                                            VALUE cell_width     ,
+                                                  screen         ,
+                                            VALUE is_display     )
+
+{
+*	Prompt/Display the stock batch id field
+*
+*
+*****************************************************************************}
+
+	DECLARE current_stock   ,
+	        stock_batch_id  ,
+	        mandatory_array
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	stock_batch_id = current_stock . stock_batch_id
+
+	IF is_display THEN
+
+		DISPLAY stock_batch_id
+			ON LINE row
+			FROM    column
+			TO      column + cell_width - 1
+			IN WINDOW screen
+
+
+	ELSE
+
+		ARRAY mandatory_array
+
+		array_select_add ( mandatory_array       ,
+		                   ARRAY_SELECT_EQ       ,
+		                   "STOCK"               ,
+		                   current_stock . stock )
+
+		array_select_add ( mandatory_array           ,
+		                   ARRAY_SELECT_EQ           ,
+		                   "STATUS"                  ,
+		                   LIB_STOCK_BATCH_AVAILABLE )
+
+		PROMPT  FOR       stock_batch_id
+			BROWSE ON stock_batch . stock_batch_id THEN SELECT
+			ON LINE   row
+			FROM      column
+			TO        column + cell_width - 1
+			IN WINDOW screen
+			WITH      ( validation_routine = "lib_stock_inventory_batch_validate" ,
+			            mandatory_array    = mandatory_array                      )
+
+		IF current_stock . stock_batch_id <> stock_batch_id THEN
+
+			current_stock . stock_batch_id = stock_batch_id
+			current_stock . stock_batch    = SELECT stock_batch . stock_batch
+			current_stock . modified = TRUE
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_comments_callback (       self           ,
+                                            grid           ,
+                                      VALUE cell_column    ,
+                                      VALUE cell_row       ,
+                                      VALUE column         ,
+                                      VALUE row            ,
+                                      VALUE cell_width     ,
+                                            screen         ,
+                                      VALUE is_display     )
+
+{
+*	Prompt/Display the comments field
+*
+*
+*****************************************************************************}
+
+	DECLARE current_stock ,
+	        comments
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	comments = current_stock . comments
+
+	IF is_display THEN
+
+		DISPLAY comments
+			ON LINE row
+			FROM    column
+			TO      column + cell_width - 1
+			IN WINDOW screen
+
+
+	ELSE
+
+		PROMPT  FOR       comments
+			FORMAT    stock_inventory . comments
+			ON LINE   row
+			FROM      column
+			TO        column + cell_width - 1
+			IN WINDOW screen
+
+		IF current_stock . comments <> comments THEN
+
+			current_stock . comments = comments
+			current_stock . modified = TRUE
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_amount_callback (       self           ,
+                                          grid           ,
+                                    VALUE cell_column    ,
+                                    VALUE cell_row       ,
+                                    VALUE column         ,
+                                    VALUE row            ,
+                                    VALUE cell_width     ,
+                                          screen         ,
+                                    VALUE is_display     )
+
+{
+*	Prompt/Display the amount field
+*
+*
+*****************************************************************************}
+
+	DECLARE current_stock ,
+	        amount
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	amount = current_stock . amount
+
+	IF is_display THEN
+
+		DISPLAY amount
+			ON LINE row
+			FROM    column
+			TO      column + cell_width - 1
+			IN WINDOW screen
+
+
+	ELSE
+
+		PROMPT  FOR       amount
+			FORMAT    stock_inventory . amount
+			ON LINE   row
+			FROM      column
+			TO        column + cell_width - 1
+			IN WINDOW screen
+
+		IF current_stock . amount <> amount THEN
+
+			current_stock . amount = amount
+			current_stock . modified = TRUE
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_unit_callback (       self           ,
+                                        grid           ,
+                                  VALUE cell_column    ,
+                                  VALUE cell_row       ,
+                                  VALUE column         ,
+                                  VALUE row            ,
+                                  VALUE cell_width     ,
+                                        screen         ,
+                                  VALUE is_display     )
+
+{
+*	Prompt/Display the unit field
+*
+*
+*****************************************************************************}
+
+	DECLARE current_stock ,
+	        unit
+
+	current_stock = grid . collection . get_by_number ( cell_row )
+
+	unit = current_stock . unit
+
+	IF is_display THEN
+
+		DISPLAY unit
+			ON LINE row
+			FROM    column
+			TO      column + cell_width - 1
+			IN WINDOW screen
+
+
+	ELSE
+		PROMPT  FOR       unit
+			FORMAT    stock_inventory . unit
+			ON LINE   row
+			FROM      column
+			TO        column + cell_width - 1
+			IN WINDOW screen
+			WITH (DISPLAY_ONLY = TRUE)
+
+		IF current_stock . unit <> unit THEN
+
+			current_stock . unit = unit
+			current_stock . modified = TRUE
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_setup_grid ( self )
+
+{
+*	Define the grid object for the stock use grid
+*
+*******************************************************************************}
+
+	self . width   = 5
+	self . height  = 10
+	self . column  = 1
+	self . row     = 1
+
+	self . border  = FALSE
+
+	self . vgl_library          = global ( "current_library" )
+
+	self . display_cell_routine = "lib_stock_test_use_display"
+	self . prompt_cell_routine  = "lib_stock_test_use_prompt"
+
+	self . title_rendition_top  = PROMPT_RENDITION_BOLD
+
+	self . title_size_top       = 1
+
+	self . cell_columns = size_of_array ( self . prompt_details )
+	self . cell_rows    = self . collection . size ( )
+
+	lib_grid_setup_columns ( self . prompt_details ,
+				 self                  ,
+				 "STOCK_INVENTORY"     )
+
+	self . fixed_columns_left = 1
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_stock_screen_setup (       self         ,
+                                                              VALUE display_only )
+
+{
+*	Sets up the stock prompt screen.
+*	Assumes the test record is already selected.
+*
+*******************************************************************************}
+
+	DECLARE button_list  ,
+		message      ,
+		header_mess  ,
+		return_value
+
+	self . test_number  = SELECT test . test_number
+	self . analysis     = SELECT test . analysis
+	self . test_count   = SELECT test . test_count
+	self . sample       = SELECT test . sample
+	self . display_only = display_only
+
+	self . get_prompt_details ( )
+
+	return_value = self . get_data ( )
+
+	IF return_value THEN
+
+		self . setup_grid ( )
+
+		message_fetch ("LIB_STOCK_TEST_USE_HEADER" , message)
+		message_add_parameter ( message , STRIP ( self . analysis ))
+		message_add_parameter ( message , STRIP ( self . test_count ))
+		message_add_parameter ( message , STRIP ( self . sample ))
+
+		header_mess = message_get_text ( message, 1)
+
+		lib_grid_create_form  ( self        ,
+					self . form ,
+					FALSE       ,
+					0           ,
+					header_mess ,
+					header_mess ,
+					button_list )
+
+		self . form . prompt_id = "$STOCK_LIB_TEST_USE"
+
+	ENDIF
+
+	RETURN ( return_value )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_stock_screen_prompt ( self )
+
+{
+*	Prompt using the stock prompt screen.
+*	Assumes the test record is already selected.
+*
+*******************************************************************************}
+
+	DECLARE ok
+
+	IF self . collection = EMPTY THEN
+		ok = self . get_data ()
+	ELSE
+		ok = TRUE
+	ENDIF
+
+	IF ok THEN
+
+		self . form . start_prompt ()
+
+		self . form . prompt_objects [ 1 ] . set_position ( 2 , 1 )
+
+		self . form . wait_prompt  ()
+
+		IF (( self . form . get_lastkey () = "EXIT" ) AND NOT self . display_only ) THEN
+			self . collection = EMPTY
+		ENDIF
+
+		self . form . end_prompt   ()
+
+		ok = self . has_updates ( )
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE lib_stock_test_use_screen_action_stock_screen_save ( self )
+
+{
+*	Save data entered using the stock prompt screen.
+*	Assumes the test record is already selected.
+*
+*******************************************************************************}
+
+	IF (( self . collection <> EMPTY ) AND ( NOT self . display_only ))THEN
+		self . save_data ( )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_stock_test_use_screen ( VALUE test_number  ,
+                                    VALUE display_only )
+
+{
+*	The main routine to call to modify the entries in a stock use list.
+*	Assumes the test record is already selected.
+*
+*******************************************************************************}
+
+	DECLARE stock_grid ,
+		message    ,
+		own_trans
+
+	IF test_number > 0 THEN
+
+		lib_stock_test_use_initialise ( )
+
+		CREATE OBJECT LIB_STOCK_TEST_USE_SCREEN_CLASS, stock_grid
+
+		IF stock_grid . stock_screen_setup ( display_only ) THEN
+
+			IF stock_grid . stock_screen_prompt ( ) THEN
+
+				IF NOT TRANSACTION_IS_WRITE ( ) THEN
+					START WRITE TRANSACTION "Updating stock usage"
+					own_trans = TRUE
+				ELSE
+					own_trans = FALSE
+				ENDIF
+
+				stock_grid . stock_screen_save ( )
+
+				IF own_trans THEN
+					COMMIT
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+	ELSE
+	
+		message_fetch ("LIB_STOCK_TEST_USE_NOT_YET" , message)
+		message_add_parameter ( message , STRIP ( SELECT test . analysis ))
+
+		flash_message ( message_get_text ( message, 1), TRUE  )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_stock_copy_to_test ( test_list )
+
+{
+*	Create the test stock use records.
+*	Called from test editor C code
+*
+*******************************************************************************}
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

@@ -1,0 +1,1918 @@
+{******************************************************************************
+*
+* Module Name   : $RESTXT_V2
+*
+* Purpose       : SMP report for automatic result creation
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification :
+*
+* Portability   : Not checked
+*
+* Re-entrant    : No
+*
+*******************************************************************************}
+
+JOIN STANDARD_LIBRARY std_utils
+JOIN STANDARD_LIBRARY std_message
+
+SET NOTPROTECTED
+
+ENABLE WINDOWS
+
+{------------------------------------------------------------------------------
+IF report format is run in interactive mode, then the next two fields need
+ not be set
+
+IF drop_out_mode = TRUE THEN report format drops through when no more text
+ files are found.  This mode is to be used when running sample manager in
+ background or when submitting it as a batch process which is to finish when
+ all files have been processed.
+
+IF drop_out_mode = FALSE THEN report format goes through a continous loop.
+ When a text file is not found, the report format goes to sleep for the
+ length of time defined in the variable sleep length
+
+sleep_length is used when the report format is in background mode,
+ and drop_out_mode = FALSE
+sleep_length is the length of time that the report sleeps for
+ when extres.dat is not found.  After this length of time, the
+ program processes all extres.dat until no more are found.
+ It is used when not in interactive mode.
+vms_read_lock_sleep is the length of time that the report sleeps for
+ before retrying to open a file for reading which is locked (only
+ applicable on VMS).
+vms_extend_lock_sleep is the retry delay for file extend (VMS only).
+vms_maximum_lock_sleep is the total retry time for opening files (VMS only).
+ The format for all interval times is vgl time interval - d hh:mm:ss
+ (days, hours, minutes, seconds)
+------------------------------------------------------------------------------}
+
+CONSTANT drop_out_mode = TRUE
+CONSTANT sleep_length = INTERVAL ( "0 00:02:00" )           { 2 minute(s)}
+CONSTANT vms_read_lock_sleep    = INTERVAL ( "0 00:01:00" ) { 1 minute(s)}
+CONSTANT vms_maximum_lock_sleep = INTERVAL ( "0 00:10:00" ) {10 minute(s)}
+
+{------------------------------------------------------------------------------
+ these fields control what test.operator_id and result.entered_by are to
+ be set to.  The are controlled by a single character, as follows:
+ "F" - FALSE    - Not set
+ "A" - Analyst  - Set with the analyst name, as defined in the text file
+ "O" - Operator - Set with the operator name, as defined in the text file
+ Default is operator because analyst_name is a new field
+------------------------------------------------------------------------------}
+
+CONSTANT update_test_operator_id  = "F"							{AMJR - 28-03-2014  de O-->F}
+CONSTANT update_result_entered_by = "O"
+
+{------------------------------------------------------------------------------
+ the following two booleans indicate who the error logs should be mailed to
+ when an error occurs in background mode.
+ Both refer to the name set in the text file, NOT to values from VGSM
+------------------------------------------------------------------------------}
+
+CONSTANT mail_operator = TRUE
+CONSTANT mail_analyst  = TRUE
+
+{------------------------------------------------------------------------------
+ these two are used when the replicate number is not defined
+ find_old_test and find_new_test should not both be TRUE
+ if find_old_test = TRUE then find test of status <> A, C or W.
+ if one can't be found then create a new test
+ if find_new_test = TRUE then create a new test
+ if find_old_test = FALSE and find_new_test = FALSE then replicate number
+ must be defined before calling this program
+------------------------------------------------------------------------------}
+
+CONSTANT find_old_test = TRUE
+CONSTANT find_new_test = FALSE
+
+{------------------------------------------------------------------------------
+Dollar commands are found in the results file.  The first 9 characters have to
+match one of the following constants to be processed
+-------------------------------------------------------------------------------}
+
+CONSTANT dollar_id_mode           = "$IDNTMODE"
+CONSTANT dollar_test_number       = "$TESTNUMB"
+CONSTANT dollar_sample_id         = "$SAMPLEID"
+CONSTANT dollar_analysis          = "$ANALYSIS"
+CONSTANT dollar_replicate_num     = "$REPLNUMB"
+CONSTANT dollar_analysis_date     = "$ANALDATE"
+CONSTANT dollar_sm_status         = "$SMSTATUS"
+CONSTANT dollar_instrument        = "$INSTRMNT"
+CONSTANT dollar_operator          = "$OPERATOR"
+CONSTANT dollar_analyst_name      = "$ANALYSTN"
+CONSTANT dollar_create_new_sample = "$NEWSAMPL"
+CONSTANT dollar_source_number     = "$SOURCE_N"
+CONSTANT dollar_source_1          = "$SOURCE_1"
+CONSTANT dollar_source_2          = "$SOURCE_2"
+CONSTANT dollar_source_3          = "$SOURCE_3"
+CONSTANT dollar_source_4          = "$SOURCE_4"
+CONSTANT dollar_source_5          = "$SOURCE_5"
+CONSTANT dollar_source_6          = "$SOURCE_6"
+CONSTANT dollar_source_7          = "$SOURCE_7"
+CONSTANT dollar_sample_field      = "$SAMP_FLD"
+CONSTANT dollar_test_field        = "$TEST_FLD"
+
+{-----------------------------------------------------------------------------
+Information in a result file either identifies a test or a sample.
+The id_mode is set up from the doller_id_mode field, and is referenced
+with one of the following constants
+------------------------------------------------------------------------------}
+
+CONSTANT ID_MODE_NONE   = " "
+CONSTANT ID_MODE_SAMPLE = "S"
+CONSTANT ID_MODE_TEST   = "T"
+
+{------------------------------------------------------------------------------
+ HP-UX only:
+
+ This variable determines whether all files are initially found - HP-UX limits
+ means that only some 600 files may be found on a wildcard search. Set TRUE
+ to find all files and verify after it is found
+------------------------------------------------------------------------------}
+
+CONSTANT global_verify_filename = FALSE
+
+{------------------------------------------------------------------------------
+This variable determines of calculations are updated when results have been
+added from the file.
+------------------------------------------------------------------------------}
+
+CONSTANT global_do_calculated_results = TRUE
+
+{------------------------------------------------------------------------------
+ The global VGL constant "PLATFORM" will be used to determine how files are
+ handled, as the HP-UX and UNIX systems cannot support file versions.  As
+ constant will be used many times, it is read into a constant - "platform".
+------------------------------------------------------------------------------}
+
+platform = GLOBAL("PLATFORM")
+
+{------------------------------------------------------------------------------
+ default_filename is the default name of the textual data file
+ 
+rename_filename is the name of the file created if the results are not stored
+ error_filename is the name of the file in which errors are logged
+ log_filename lists all successful completions
+
+ These names are by necessity different for VMS which allows file versions,
+ whereas HP-UX and UNIX do not.
+------------------------------------------------------------------------------}
+
+IF platform = "VMS" THEN
+
+	DEFAULT_FILENAME = "SMP$RESULTFILES:EXTRES.DAT;-0"
+	RENAME_FILENAME = "SMP$RESULTFILES:EXTRES.OLD;0"
+	ERROR_FILENAME = "SMP$RESULTFILES:EXTRES.ERR;"
+	LOG_FILENAME = "SMP$RESULTFILES:EXTRES.LOG;0"
+ELSE
+	IF ( global_verify_filename ) THEN
+		DEFAULT_FILENAME = "$smp_resultfiles/"
+	ELSE
+		DEFAULT_FILENAME = "$smp_resultfiles/*.dat"
+	ENDIF
+
+	RENAME_FILENAME = "$smp_resultfiles/xc-acq.old"
+	ERROR_FILENAME = "$smp_resultfiles/xc-acq.err"
+	LOG_FILENAME = "$smp_logfiles/xc-acq.log"
+ENDIF
+
+{------------------------------------------------------------------------------}
+
+main_routine()
+EXIT
+
+{------------------------------------------------------------------------------
+ This routine controls the output when an error is found
+ errors are output using literal command
+ to output errors, the literals_out routine is called
+ a parameter passed to the routine dictates the destination of the message
+------------------------------------------------------------------------------}
+
+ROUTINE send_error_log ( error_log )
+
+	IF interactive_mode THEN
+		literals_out( error_log, "DEFER/")
+	ELSE
+		literals_out( error_log, error_filename)
+
+		IF (mail_operator) AND (rt_operator<>"") THEN
+			literals_out( error_log, "MAIL/":rt_operator)
+		ENDIF
+
+		IF (mail_analyst) AND (analyst_name<>"") AND
+				(analyst_name<>rt_operator) THEN
+			literals_out( error_log, "MAIL/":analyst_name)
+		ENDIF
+	ENDIF
+
+ENDROUTINE
+
+{----------------------------------------------------------------------------
+                       RESULT ENTRY VIA TEXT FILES
+-----------------------------------------------------------------------------
+ This report can be used to store results into VGSM from a text file.
+ See associated documentation for format of result file.
+ If the specified test is not assigned to the sample it will be added
+ as long as it defined in the analysis table.
+ Results can only be stored once.
+-----------------------------------------------------------------------------}
+
+ROUTINE main_routine
+
+	DECLARE exit_pressed
+
+	exit_pressed = FALSE
+
+	ON CONTROL_C
+		continue = FALSE
+	ENDON
+
+	initialise()
+
+	result_format = "999999.99999"
+	SET FORMAT result_format
+
+	SET NAME "DISPLAY/"
+
+	interactive_mode = GLOBAL("MODE") = "INTERACTIVE"
+	display_results = FALSE
+
+	CREATE TEXT WINDOW top_line_window
+		HEIGHT 21
+		WIDTH 80
+		HEADER = GET_USER_MESSAGE("RESTXT_V2_DIP" ,1)
+		HELP CONTEXT = "$RESTXT_V2_TOP_LINE"
+
+	PASTE TEXT WINDOW top_line_window AT 1,4
+
+	CREATE TEXT WINDOW prompt_window
+		HEIGHT 1
+		WIDTH 78
+		BORDER
+		HELP CONTEXT = "$RESTXT_V2_PROMPT"
+
+	PASTE TEXT WINDOW prompt_window AT 2,23
+
+	IF interactive_mode THEN
+		PROMPT FOR display_results
+			USING GET_USER_MESSAGE("RESTXT_V2_DISPLAY_1" ,1)
+			AT 1,1
+			IN WINDOW prompt_window
+			BROWSE ON boolean
+			BOLD
+		IF ( LASTKEY = "EXIT" ) THEN
+			exit_pressed = TRUE
+		ENDIF
+	ENDIF
+
+	IF NOT exit_pressed THEN
+
+		create_windows()
+
+		REPEAT
+
+			continue = TRUE
+			result_filename = default_filename
+			delete_result_file = FALSE
+
+
+			CLEAR SCREEN IN WINDOW prompt_window
+
+			IF interactive_mode THEN
+
+				PROMPT FOR result_filename
+					USING GET_USER_MESSAGE(
+						"RESTXT_V2_DISPLAY_2" ,1)
+					AT 1,1
+					IN WINDOW prompt_window
+					BROWSE ON file
+					BOLD
+					WITH ( always_validate = TRUE )
+
+				IF ( LASTKEY = "EXIT" ) THEN
+					exit_pressed = TRUE
+				ENDIF
+			ENDIF
+
+			IF (NOT exit_pressed) THEN
+
+				result_filename = STRIP(result_filename)
+
+				IF platform <> "VMS" THEN
+
+					{ Added so that file find is used less }
+
+					ARRAY file_array
+					FILE FIND result_filename,
+							file_array, error_stat
+					file_counter = 1
+				ENDIF
+
+				process_file ( result_filename )
+
+			ENDIF
+
+			CLEAR LINE 1 FROM 18 IN WINDOW test_info_window
+			CLEAR LINE 2 FROM 18 IN WINDOW test_info_window
+			CLEAR LINE 3 FROM 18 IN WINDOW test_info_window
+			CLEAR LINE 4 FROM 18 IN WINDOW test_info_window
+			CLEAR LINE 5 FROM 18 IN WINDOW test_info_window
+			CLEAR LINE 6 FROM 18 IN WINDOW test_info_window
+			CLEAR LINE 7 FROM 18 IN WINDOW test_info_window
+
+		UNTIL exit_pressed
+
+		IF display_results THEN
+			UNPASTE TEXT WINDOW result_info_window
+		ENDIF
+
+		UNPASTE TEXT WINDOW test_info_window
+	ENDIF
+
+	UNPASTE TEXT WINDOW prompt_window
+	UNPASTE TEXT WINDOW top_line_window
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE process_file ( VALUE result_filename )
+
+	DECLARE initial_filename
+	DECLARE finished_looking
+
+	initial_filename = result_filename
+
+	REPEAT
+
+		finished_looking = TRUE
+		error_found = FALSE
+
+		{ Initialise PTR_array }
+
+		ARRAY PTR_array
+
+		PTR_counter = 2
+		PTR_array[ 1, 1 ] = "NAME"
+		PTR_array[ 1, 2 ] = "TEXT"
+		PTR_array[ 1, 3 ] = "RESULT_TYPE"
+
+		IF platform = "VMS" THEN
+
+			error_stat = open_or_extend_file(
+				result_filename,
+                                FALSE )
+		ELSE
+				error_stat = non_vms_file_find()
+		ENDIF
+
+
+		IF ( error_stat = EMPTY ) THEN
+
+			read_result_file ( the_test, the_analysis, PTR_array )
+			IF platform <> "VMS" THEN
+				finished_looking = FALSE
+			ENDIF
+
+			log_the_message()
+
+			IF NOT delete_result_file THEN
+				rename_the_file( exit_pressed )
+			ENDIF
+
+		ELSEIF ( ( NOT interactive_mode ) AND
+			 ( error_stat = "DOES_NOT_EXIST" ) ) THEN
+
+			{ If file does not exist, when running in the background
+			  do the following }
+
+			IF drop_out_mode THEN
+				exit_pressed = TRUE
+			ELSE
+
+				IF ( ( platform = "VMS" ) OR
+				    ( file_array [ file_counter + 1 ] = EMPTY ) ) THEN
+
+	  				database_kill_transaction ()
+					SLEEP FOR (sleep_length)
+
+				ENDIF
+
+				finished_looking = FALSE
+
+			ENDIF
+
+		ELSEIF ( file_counter < 2 ) THEN
+
+			IF ( result_filename = EMPTY ) THEN
+				result_filename = initial_filename
+			ENDIF
+			error_message( GET_USER_MESSAGE("RESTXT_V2_ERR_1" ,1)
+					:result_filename:":",error_stat, TRUE )
+		ENDIF
+
+
+		IF platform <> "VMS" THEN
+
+			{ Added file_counter increment }
+
+			file_counter = file_counter + 1
+		ENDIF
+
+	UNTIL ( finished_looking ) OR ( NOT continue )
+
+	IF error_found THEN
+		error_log[error_log_line+1] = pad("=","=",80)
+		error_log_line = error_log_line+1
+		send_error_log( error_log )
+	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE literals_out ( error_log, VALUE output_destination )
+
+	DECLARE i_count, lv
+
+	SET NAME output_destination
+	i_count = 1
+
+    	REPEAT
+      		lv = error_log[i_count]
+LITERAL
+$lv_____________________________________________________________________________
+$endliteral
+
+      		i_count = i_count+1
+	UNTIL i_count>error_log_line
+
+	FLUSH_LITERAL
+
+	SET NAME "DISPLAY/"
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE log_the_message
+
+	DECLARE log_event
+	DECLARE log_text
+
+	log_text = ""
+
+	log_file_error = open_or_extend_file ( log_filename,
+					       TRUE )
+
+	{ allows someone 10 minutes to edit the file }
+
+        IF log_file_error = EMPTY THEN
+
+        	SET FORMAT "99"
+            	log_event = TRUE
+            	IF error_found THEN
+			IF sample_created THEN
+				log_text = "X " {error, but sample created}
+			ELSE
+				log_text = "E " {error}
+			ENDIF
+
+		ELSEIF NOT continue THEN
+
+			log_text = "T " {terminated}
+
+		ELSEIF NOT file_confirmed THEN
+
+			log_text = "Q " {not confirmed}
+
+		ELSEIF sample_created THEN
+
+			log_text = "C " {created a sample}
+
+		ELSE
+
+			log_event = FALSE
+
+			log_text = "  " {complete} {was log_text = "C "}
+		ENDIF
+
+		IF (rt_operator<>"") THEN
+
+			log_text = log_text:leftstring(NOW,17):" - ":
+						   PAD(rt_operator," ",11):"- "
+		ELSE
+			log_text = log_text:leftstring(NOW,17):
+							" -            - "
+		ENDIF
+
+		IF ( id_mode = ID_MODE_TEST ) THEN
+			log_text = log_text:
+				GET_USER_MESSAGE("RESTXT_V2_LOG_TST",1):
+				PAD(STRIP(test_numb)," ",35)
+		ELSE
+			log_text = log_text:pad(STRIP(sample_id_i)," ",20):
+				"- ":PAD(analysis_id," ",10):" - "
+
+			IF repnum = 0 THEN
+
+				IF log_event THEN
+
+					log_text = log_text:
+					GET_USER_MESSAGE("RESTXT_V2_LOG_T_1",1)
+					:"   "
+				ELSE
+					log_text = log_text :
+					GET_USER_MESSAGE("RESTXT_V2_LOG_T_1",1)
+					:pad(STRIP(test_count)," ",3)
+				ENDIF
+			ELSE
+				log_text = log_text:
+					GET_USER_MESSAGE("RESTXT_V2_LOG_T_2",1)
+					:pad(STRIP(repnum)," ",3)
+			ENDIF
+		ENDIF
+
+		log_text = log_text:out_status:" "
+
+		IF delete_result_file THEN
+
+			log_text = log_text:"D"
+
+		ELSEIF rename_file THEN
+
+			log_text = log_text:"R"
+		ELSE
+			{ log_text = log_text:"X"}
+		ENDIF
+
+		FILE WRITE log_filename,log_text
+		FILE CLOSE log_filename
+
+		SET FORMAT result_format
+	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE rename_the_file ( exit_pressed )
+
+	DECLARE status
+
+        rename_file = TRUE
+
+        IF interactive_mode THEN
+
+          	CLEAR SCREEN IN WINDOW prompt_window
+          	PROMPT FOR rename_file
+			USING GET_USER_MESSAGE("RESTXT_V2_DISPLAY_28" ,1)
+			AT 1,1
+			IN WINDOW prompt_window
+          		BROWSE ON boolean
+			BOLD
+
+          	IF ( LASTKEY = "EXIT" ) THEN
+			exit_pressed = TRUE
+		ENDIF
+        ENDIF
+
+        IF rename_file AND (NOT exit_pressed) THEN
+
+		FILE SEND result_filename, rename_filename, status
+
+		IF ( status = EMPTY ) THEN
+			FILE DELETE result_filename, status
+		ENDIF
+
+          	IF interactive_mode THEN
+            		CLEAR SCREEN IN WINDOW prompt_window
+            		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_27" ,1) :
+							rename_filename
+				AT 1,1
+             			IN WINDOW prompt_window
+            		pause()
+          	ENDIF
+
+          	IF error_found THEN
+            		error_log[error_log_line+1] = pad("-","-",80)
+            		error_log[error_log_line+2] =
+					GET_USER_MESSAGE("RESTXT_V2_ERR_2" ,1):
+					rename_filename
+            		error_log_line = error_log_line+2
+          	ENDIF
+
+        ELSE
+
+          	rename_file = FALSE
+
+        ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE create_windows
+
+	CREATE TEXT WINDOW test_info_window
+		HEIGHT 7
+		WIDTH 78
+      		BORDER = GET_USER_MESSAGE ("RESTXT_V2_BORD_1" ,1)
+      		HELP CONTEXT = "$RESTXT_V2_TEST_INFO"
+
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_3" ,1)
+		AT 1,1 IN WINDOW test_info_window BOLD
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_4" ,1)
+		AT 1,2 IN WINDOW test_info_window BOLD
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_5" ,1)
+		AT 1,3 IN WINDOW test_info_window BOLD
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_6" ,1)
+		AT 1,4 IN WINDOW test_info_window BOLD
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_7" ,1)
+		AT 1,5 IN WINDOW test_info_window BOLD
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_8" ,1)
+		AT 1,6 IN WINDOW test_info_window BOLD
+    	DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_9" ,1)
+		AT 1,7 IN WINDOW test_info_window BOLD
+
+	PASTE TEXT WINDOW test_info_window AT 2,6
+
+    	IF display_results THEN
+
+      		CREATE TEXT WINDOW result_info_window
+			HEIGHT 4
+			WIDTH 78
+        		BORDER = GET_USER_MESSAGE("RESTXT_V2_BORD_2" ,1)
+        		HELP CONTEXT = "$RESTXT_V2_RESULTS"
+
+      		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_10" ,1)
+			AT 1,1
+			IN WINDOW result_info_window
+			BOLD
+      		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_11" ,1)
+			AT 1,2
+			IN WINDOW result_info_window
+			BOLD
+      		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_12" ,1)
+			AT 1,3
+			IN WINDOW result_info_window
+			BOLD
+      		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_13" ,1)
+			AT 1,4
+			IN WINDOW result_info_window
+			BOLD
+
+      		PASTE TEXT WINDOW result_info_window AT 2,15
+    	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE error_message ( VALUE error_text_1,
+			VALUE error_text_2,
+			VALUE fatal_error )
+
+	SET FORMAT "99"
+
+	IF ( error_log_line < 1 ) THEN
+
+		{ This is the first error reported so setup the error header
+		  messages }
+
+    		error_log[1] = pad("=","=",80)
+    		error_log[2] = GET_USER_MESSAGE("RESTXT_V2_ERR_3" ,1):result_filename
+    		error_log[3] = GET_USER_MESSAGE("RESTXT_V2_ERR_4" ,1):STRIP(leftstring(NOW,17))
+    		error_log[4] = pad(GET_USER_MESSAGE("RESTXT_V2_ERR_5" ,1):leftstring(rt_operator,10)," ",52)
+
+    		IF analyst_name<>"" THEN
+      			error_log[4] = error_log[4]:GET_USER_MESSAGE("RESTXT_V2_ERR_6" ,1):STRIP(analyst_name)
+    		ENDIF
+
+    		IF ( id_mode = ID_MODE_TEST ) THEN
+      			error_log[5] = GET_USER_MESSAGE("RESTXT_V2_ERR_7" ,1):test_numb
+      			error_log_line = 5
+
+    		ELSEIF ( id_mode = ID_MODE_SAMPLE ) THEN
+
+      			error_log[5] = pad(GET_USER_MESSAGE("RESTXT_V2_DISPLAY_3" ,1):sample_id_i," ",52):
+                       		GET_USER_MESSAGE("RESTXT_V2_ERR_9" ,1):analysis_id
+      			error_log[6] = pad(GET_USER_MESSAGE("RESTXT_V2_ERR_10" ,1):repnum," ",52)
+      			error_log_line = 6
+      			test_count = SELECT test.test_count
+
+      			IF test_count<>error THEN
+        			IF (repnum = 0) AND (test_count<>EMPTY) THEN
+          				error_log[6] = error_log[6]:GET_USER_MESSAGE("RESTXT_V2_ERR_7" ,1):test_count
+        			ENDIF
+      			ENDIF
+    		ENDIF
+
+    		IF source_data_number>0 THEN
+
+      			error_log[error_log_line+1] = pad("-","-",80)
+      			{error_log[error_log_line+2] = "Source of data for interim text file:"}
+      			error_log[error_log_line+2] = source_data_1
+      			error_log_line = error_log_line+2
+
+      			IF source_data_number>1 THEN
+        			error_log[error_log_line+1] = source_data_2
+        			error_log_line = error_log_line+1
+      			ENDIF
+
+			IF source_data_number>2 THEN
+        			error_log[error_log_line+1] = source_data_3
+        			error_log_line = error_log_line+1
+      			ENDIF
+
+      			IF source_data_number>3 THEN
+        			error_log[error_log_line+1] = source_data_4
+        			error_log_line = error_log_line+1
+      			ENDIF
+
+      			IF source_data_number>4 THEN
+        			error_log[error_log_line+1] = source_data_5
+        			error_log_line = error_log_line+1
+      			ENDIF
+
+			IF source_data_number>5 THEN
+        			error_log[error_log_line+1] = source_data_6
+        			error_log_line = error_log_line+1
+      			ENDIF
+
+      			IF source_data_number>6 THEN
+	        		error_log[error_log_line+1] = source_data_7
+        			error_log_line = error_log_line+1
+      			ENDIF
+
+		ENDIF
+  	ENDIF
+
+  	error_log[error_log_line+1] = pad("-","-",80)
+  	error_log[error_log_line+2] = error_text_1
+  	error_log_line = error_log_line+2
+
+  	IF error_text_2<>"" THEN
+    		error_log[error_log_line+1] = error_text_2
+    		error_log_line = error_log_line+1
+  	ENDIF
+
+  	CLEAR SCREEN IN WINDOW prompt_window
+
+  	DISPLAY error_text_1
+		AT 1,1
+		IN WINDOW prompt_window
+
+  	pause()
+
+  	IF error_text_2<>"" THEN
+    		CLEAR SCREEN IN WINDOW prompt_window
+    		DISPLAY error_text_2
+			AT 1,1
+			IN WINDOW prompt_window
+    		pause()
+  	ENDIF
+
+  	SET FORMAT result_format
+	error_found = fatal_error
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE read_result_file ( the_analysis, the_test, PTR_array )
+
+	DECLARE any_results_in_file, status
+	DECLARE res_buffer, error_stat
+	DECLARE first_letter
+
+  	initialise()
+
+  	any_results_in_file = FALSE
+
+  	REPEAT
+
+		FILE READ result_filename, res_buffer, error_stat
+
+    		IF ( ( error_stat = EMPTY  ) AND
+		     ( res_buffer <> " "   ) AND
+	     	     ( res_buffer <> EMPTY ) ) THEN
+
+      			res_buffer = STRIP ( res_buffer )
+      			first_letter = LEFTSTRING ( res_buffer,1 )
+
+      			IF first_letter = "$" THEN
+
+        			process_dollar_line ( res_buffer )
+
+      			ELSEIF first_letter = "?" THEN
+
+        			process_result_line ( res_buffer )
+
+			ENDIF
+    		ENDIF
+
+	UNTIL ( ( res_buffer = EMPTY ) OR
+		( error_found  ) OR
+		( NOT continue ) OR
+		( NOT file_confirmed ) )
+
+  	write_results_to_database( the_analysis, the_test, PTR_array )
+
+	IF display_results THEN
+		CLEAR LINE 1 FROM 18 IN WINDOW result_info_window
+      		CLEAR LINE 2 FROM 18 IN WINDOW result_info_window
+	      	CLEAR LINE 3 FROM 18 IN WINDOW result_info_window
+      		CLEAR LINE 4 FROM 18 IN WINDOW result_info_window
+   	ENDIF
+
+  	out_status = " "
+
+  	{ #SUSAND 05/5/92 Bug 707 }
+
+  	IF any_results_in_file THEN
+     		IF file_confirmed THEN
+        		IF NOT continue THEN
+           			CLEAR SCREEN IN WINDOW prompt_window
+           			DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_14" ,1) AT 1,1 BOLD
+           				IN WINDOW prompt_window
+           			pause()
+        		ENDIF
+
+        		IF (test_numb<>EMPTY) THEN
+           			IF (test_status = "V") OR (test_status = "P") OR
+              					(test_status = "C") THEN
+              				update_fields()
+           			ENDIF
+        		ENDIF
+
+			IF ( ( continue ) AND ( NOT error_found ) ) THEN
+				CLEAR SCREEN IN WINDOW prompt_window
+              			DISPLAY GET_USER_MESSAGE(
+						"RESTXT_V2_DISPLAY_15" ,1)
+					AT 1,1
+					IN WINDOW prompt_window
+					BOLD
+              			pause()
+        		ENDIF
+
+     		ENDIF {file_confirmed}
+
+     		{ #SUSAND 05/5/92 Display error if no results in file }
+  	ELSE
+     		IF NOT error_found AND file_confirmed THEN
+        		error_message ( GET_USER_MESSAGE("RESTXT_V2_ERR_11",1),
+					" ", TRUE )
+     		ENDIF
+  	ENDIF
+
+  	FILE CLOSE result_filename,error_stat
+
+	{ #SUSAND add check for any results }
+	{  IF NOT error_found THEN }
+
+  	IF ( NOT error_found ) AND ( any_results_in_file ) THEN
+
+    		delete_result_file = TRUE
+
+    		IF interactive_mode THEN
+
+      			CLEAR SCREEN IN WINDOW prompt_window
+      			PROMPT FOR delete_result_file AT 1,1 IN WINDOW prompt_window BOLD
+       			BROWSE ON boolean USING GET_USER_MESSAGE("RESTXT_V2_DISPLAY_16" ,1)
+
+      			IF LASTKEY = "EXIT" THEN
+        			exit_pressed = TRUE
+      			ENDIF
+    		ENDIF
+
+    		IF delete_result_file AND (NOT exit_pressed) THEN
+
+			FILE DELETE result_filename, status
+
+      			CLEAR SCREEN IN WINDOW prompt_window
+
+      			DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_17" ,1)
+              			:result_filename AT 1,1 IN WINDOW prompt_window
+      			pause()
+    		ENDIF
+
+  	ELSE
+    		delete_result_file = FALSE
+	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------}
+
+ROUTINE process_result_line ( VALUE res_buffer )
+
+	{ This line from the result file started with a ? so should
+	  contain some result data }
+
+	IF ( NOT sample_checked ) THEN
+
+		file_confirmed = confirm()
+          	IF file_confirmed THEN
+            		check_sample_and_test ( the_analysis, the_test )
+		ELSE
+			sample_checked = TRUE
+		ENDIF
+
+	ENDIF
+
+	IF ( ( NOT error_found ) AND ( file_confirmed ) ) THEN
+
+        	any_results_in_file = TRUE
+
+          	parse_result_line ( PTR_array, res_buffer )
+
+	ENDIF
+
+ENDROUTINE
+
+{------------------------------------------------------------------------------}
+
+ROUTINE update_fields
+
+	DECLARE status, comp_count
+
+	{ #SUSAND 3/4/92 Bug 939 Changed the way statuses are handled }
+	{ Update sample fields }
+
+	status = EMPTY
+
+	START WRITE TRANSACTION "Updating from Restxt_v2"
+
+	sample_id_n = SELECT sample.id_numeric
+				FOR UPDATE
+                  		WHERE id_numeric = sample_id_n
+
+    	IF s_f_num > 0 THEN
+
+       		REPEAT
+
+			ASSIGN sample.'samp_field[s_f_num,1]' = samp_field[s_f_num,2]
+
+          		CLEAR SCREEN IN WINDOW prompt_window
+
+          		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_18" ,1):samp_field[s_f_num,1]:
+                  		GET_USER_MESSAGE("RESTXT_V2_DISPLAY_19" ,1):samp_field[s_f_num,2]
+                  		AT 1,1 IN WINDOW prompt_window
+          		pause()
+          		s_f_num = s_f_num-1
+       		UNTIL s_f_num = 0
+    	ENDIF
+
+	IF ( smp_status <> EMPTY ) THEN
+
+    		{ This will propgate status changes to tests and results }
+
+	    	CHANGE sample status to smp_status, status
+
+	ENDIF
+
+    	UPDATE sample
+
+    	IF status <> EMPTY THEN
+       		error_message ( GET_USER_MESSAGE("RESTXT_V2_ERR_12" ,1),
+			       	status, TRUE )
+    	ENDIF
+
+    	status = SELECT test.status
+			FOR UPDATE
+               		WHERE test_number = test_numb
+
+    	{ Update fields on test record }
+
+	IF ( IS_DATE ( analysis_date ) ) THEN
+        	ASSIGN test.date_started = analysis_date
+    	ENDIF
+
+    	IF (instrument_id <> EMPTY) AND (instrument_id <> "") THEN
+        	ASSIGN test.instrument_id = instrument_id
+    	ENDIF
+
+	IF (update_test_operator_id = "O") AND (rt_operator <> "") THEN
+       		ASSIGN test.operator_id = rt_operator
+	ELSEIF (update_test_operator_id = "A") AND (analyst_name <> "") THEN
+		ASSIGN test.operator_id = analyst_name
+	ENDIF
+
+    	{ Update test fields }
+
+    	WHILE t_f_num>0 DO
+
+       		ASSIGN test.'test_field[t_f_num,1]' = test_field[t_f_num,2]
+		CLEAR SCREEN IN WINDOW prompt_window
+		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_20" ,1):test_field[t_f_num,1]:
+                	GET_USER_MESSAGE("RESTXT_V2_DISPLAY_19" ,1):test_field[t_f_num,2]
+                	AT 1,1 IN WINDOW prompt_window
+       		pause()
+       		t_f_num = t_f_num-1
+    	ENDWHILE
+
+	UPDATE test
+
+    	{ Update result details }
+
+	comp_count = 2
+
+    	status = SELECT result.status
+			FOR UPDATE
+               		WHERE ( test_number = test_numb ) AND
+               		      ( name        = PTR_array [ comp_count, 1 ] )
+
+    	WHILE ( status <> EMPTY ) AND ( comp_count <= size_of_array ( PTR_array )) DO
+
+       		{ Update result record }
+
+       		IF (update_result_entered_by = "O") AND (rt_operator <> "") THEN
+          		ASSIGN result.entered_by = rt_operator
+       		ELSEIF (update_result_entered_by = "A") AND (analyst_name <> "") THEN
+          		ASSIGN result.entered_by = analyst_name
+       		ENDIF
+
+       		UPDATE result
+
+		comp_count = comp_count + 1
+
+		status = SELECT result.status
+				FOR UPDATE
+				WHERE ( test_number = test_numb ) AND
+				      ( name        = PTR_array [ comp_count, 1 ] )
+
+    	ENDWHILE
+
+    	COMMIT
+
+  ENDROUTINE
+
+{-----------------------------------------------------------------------}
+
+ROUTINE update_test_count
+
+	IF repnum = 0 THEN
+
+        	SET FORMAT "99"
+
+        	test_count = SELECT test.test_count
+
+        	DISPLAY test_count AT 18,3 IN WINDOW test_info_window
+
+        	CLEAR LINE 3 IN WINDOW test_info_window
+
+        	IF error_found THEN
+          		error_log[error_log_line+1] = pad("-","-",80)
+          		error_log[error_log_line+2] =
+			    GET_USER_MESSAGE("RESTXT_V2_ERR_13" ,1):test_count
+          		error_log_line = error_log_line+2
+        	ENDIF
+
+        	SET FORMAT result_format
+
+      	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------}
+
+ROUTINE check_test ( VALUE sm_test_number )
+
+	DECLARE error_text_1, error_text_2
+
+	test_numb = SELECT test.test_number
+        		WHERE (test_number = sm_test_number)
+
+	IF test_numb = EMPTY THEN
+      		error_message ( GET_USER_MESSAGE ( "RESTXT_V2_ERR_14" ,1),
+				"", TRUE )
+	ELSE
+      		sample_id_n = SELECT test.sample_id
+      		analysis_id = SELECT test.analysis_id
+      		test_status = SELECT test.status
+      		repnum      = 0 { SELECT test.component_replicate }
+
+		IF ( ( test_status = "V" ) OR
+		     ( test_status = "C" ) OR
+		     ( test_status = "P" ) ) THEN
+        		update_test_count()
+		ELSE
+			error_text_1 = GET_USER_MESSAGE("RESTXT_V2_ERR_15",1) :
+         				 test_status :
+					 GET_USER_MESSAGE("RESTXT_V2_ERR_16",1)
+
+                      	error_text_2 = GET_USER_MESSAGE("RESTXT_V2_ERR_17" ,1)
+
+			error_message ( error_text_1, error_text_2, TRUE )
+      		ENDIF
+	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------}
+
+ROUTINE check_analysis ( VALUE analysis_id )
+
+	{ Confirm that an analysis is given and that it exists }
+
+	DECLARE tmp_analysis_id
+
+	IF ( analysis_id = EMPTY ) THEN
+      		error_message ( GET_USER_MESSAGE("RESTXT_V2_ERR_19" ,1),
+				"", TRUE )
+	ELSE
+		tmp_analysis_id = SELECT analysis.identity
+                    		    WHERE identity = analysis_id
+      		IF ( tmp_analysis_id = EMPTY ) THEN
+			error_message( GET_USER_MESSAGE("RESTXT_V2_ERR_20" ,1):
+						" " : analysis_id,
+				       "", TRUE )
+		ENDIF
+	ENDIF
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------}
+
+ROUTINE check_sample_and_test( the_analysis, the_test )
+
+  	START WRITE TRANSACTION "check sample $restxt_v2"
+
+  	test_numb = EMPTY
+  	IF ( id_mode = ID_MODE_TEST ) THEN
+
+		check_test ( sm_test_number )
+
+  	ELSE { id_mode = ID_MODE_SAMPLE }
+
+    		IF (sample_id_i = EMPTY) THEN
+      			error_message ( GET_USER_MESSAGE("RESTXT_V2_ERR_18",1),
+					"", TRUE )
+    		ENDIF
+
+		check_analysis ( analysis_id )
+
+    		IF ( sample_id_i <> EMPTY ) AND ( analysis_id <> EMPTY ) THEN
+
+			check_sample ( sample_id_i )
+    		ENDIF
+  	ENDIF
+
+  	COMMIT
+
+  	the_analysis = analysis_id
+
+  	the_test = test_numb
+
+ENDROUTINE
+
+{--------------------------------------------------------------------------}
+
+ROUTINE check_sample ( VALUE sample_id_i )
+
+	DECLARE calling_routine
+
+	sample_status = SELECT sample.status
+				WHERE id_text = sample_id_i
+
+	IF ( ( sample_status = EMPTY   )  AND
+	     ( NUMTEXT ( sample_id_i ) ) ) THEN
+
+		{ Try for an ID numeric }
+
+          	sample_status = SELECT sample.status
+                	WHERE id_numeric = sample_id_i
+
+	ENDIF
+
+	IF ( ( sample_status = EMPTY ) AND
+	     ( create_sample ) ) THEN
+
+		{ change for NOINPUT - PT 25/2/92 }
+		{***  sample_id_n = new_sample(" ","NOINPUT"," ") }
+
+		calling_routine = GLOBAL ( "CURRENT_LIBRARY" )
+
+		CALL_ROUTINE "create_sample_for_noinput"
+			USING calling_routine
+			RETURNING sample_id_n
+			IN LIBRARY "$LIB_SAMP"
+
+		IF sample_id_n <> EMPTY THEN
+
+            		ASSIGN sample.id_text = sample_id_i
+           		UPDATE sample
+			COMMIT
+
+			{ reselect the sample record }
+
+            		sample_status = SELECT sample.status
+                        		WHERE id_numeric = sample_id_n
+
+            		sample_created = TRUE
+            		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_21" ,1)
+				AT 50,1
+				IN WINDOW test_info_WINDOW
+				BOLD
+		ENDIF
+	ENDIF
+
+	IF ( sample_status <> EMPTY ) THEN
+        	sample_id_n = SELECT sample.id_numeric
+          	sample_id_t = SELECT sample.id_text
+	ENDIF
+
+	IF ( sample_status = EMPTY ) THEN
+
+        	error_message(GET_USER_MESSAGE("RESTXT_V2_ERR_21" ,1),"",TRUE)
+
+	ELSEIF ( ( sample_status <> "C" ) AND
+	         ( sample_status <> "V" ) ) THEN
+
+		error_message(GET_USER_MESSAGE("RESTXT_V2_ERR_22" ,1),"",TRUE)
+
+	ELSE
+
+	        { is analysis assigned to sample }
+
+          	IF ( ( repnum = EMPTY ) OR ( repnum < 1 ) ) THEN
+
+            		IF find_old_test THEN
+
+              			{ Find the earliest okay test }
+
+				test_numb = SELECT test.test_number
+                        		WHERE ( ( sample = sample_id_n )   AND
+			     		        ( analysis = analysis_id ) AND
+					        ( status <> "C" ) AND
+                             		        ( status <> "A" ) AND
+	                             	        ( status <> "W" ) )
+					ORDER ON order_num
+
+		       		IF test_numb <> EMPTY THEN
+                			test_status = SELECT test.status
+              			ELSE
+                			test_status = EMPTY
+
+					{ Test not found - so add it }
+
+					create_and_select_test ( sample_id_n,
+								 analysis_id )
+
+              			ENDIF
+
+			ELSEIF find_new_test THEN
+
+              			{ Test not found - so add it }
+
+				create_and_select_test ( sample_id_n,
+							 analysis_id )
+            		ELSE
+              			test_numb = EMPTY
+			ENDIF
+
+        	ELSE { a replicate number has been given }
+
+        		test_numb = SELECT test.test_number
+                        		WHERE ( ( sample = sample_id_n ) AND
+			   			( analysis = analysis_id ) AND
+                           			( test_count = repnum ) )
+                         		ORDER ON test_number
+            		test_status = SELECT test.status
+		ENDIF
+
+		IF ( NOT error_found ) THEN
+
+			IF test_numb = EMPTY THEN
+
+            			error_message( GET_USER_MESSAGE(
+							"RESTXT_V2_ERR_24" ,1),
+							"", TRUE )
+
+			ELSEIF ( ( test_status <> "V" ) AND
+			         ( test_status <> "C" ) AND
+			         ( test_status <> "P" ) ) THEN
+
+            			error_message(
+				    GET_USER_MESSAGE("RESTXT_V2_ERR_25" ,1) :
+                   		    test_status:
+				    GET_USER_MESSAGE("RESTXT_V2_ERR_26" ,1),
+                        	    GET_USER_MESSAGE("RESTXT_V2_ERR_27" ,1),
+				    TRUE )
+
+			ELSE
+				update_test_count()
+			ENDIF
+		ENDIF
+	ENDIF
+
+ENDROUTINE
+
+{--------------------------------------------------------------------------}
+
+ROUTINE create_and_select_test ( VALUE sample_id, VALUE analysis_id )
+
+	DECLARE new_test_num
+
+      	new_test_num = newtest ( sample_id, analysis_id )
+
+	IF new_test_num = error THEN
+
+		error_message(GET_USER_MESSAGE("RESTXT_V2_ERR_23" ,1),"",TRUE)
+
+	ELSE
+		test_numb = SELECT test . test_number
+                		WHERE test_number = new_test_num
+
+		test_status = SELECT test . status
+
+	ENDIF
+
+ENDROUTINE
+
+{--------------------------------------------------------------------------}
+
+ROUTINE process_dollar_line ( VALUE info )
+
+	{ Parse a line from the result file that started with a dollar sign }
+
+	DECLARE dollar_command, dollar_value,posn
+
+	dollar_command = SUBSTRING ( info, 1, 9 )
+	dollar_command = TOUPPER ( dollar_command )
+  	posn = INDEX ( info, "=" )
+
+  	IF posn > 0 THEN
+
+    		dollar_value = STRIP ( SUBSTRING ( info, posn + 1,
+						   LENGTH(info) - posn ) )
+	    	dollar_value = TOUPPER ( dollar_value )
+
+		process_dollar_fields ( dollar_command, dollar_value )
+
+	ENDIF
+
+ENDROUTINE
+
+{-------------------------------------------------------------------------}
+
+ROUTINE process_dollar_fields ( VALUE dollar_command, VALUE dollar_value )
+
+	{ Work out from the dollar command what to do with the dollar item }
+
+	DECLARE display_msg, display_row
+	DECLARE data_item
+
+	display_msg = EMPTY
+
+	IF ( dollar_command = DOLLAR_ID_MODE ) THEN
+
+		IF ( dollar_value = "T" ) THEN
+			id_mode = ID_MODE_TEST
+		ELSE
+			id_mode = ID_MODE_SAMPLE
+		ENDIF
+
+    	ELSEIF ( dollar_command = DOLLAR_TEST_NUMBER ) THEN
+
+		sm_test_number = dollar_value
+      		DISPLAY GET_USER_MESSAGE("RESTXT_V2_ERR_7" ,1)
+			AT 1,1
+			IN WINDOW test_info_window
+			BOLD
+		display_msg = sm_test_number
+		display_row = 1
+
+	ELSEIF ( dollar_command = DOLLAR_SAMPLE_ID ) THEN
+
+      		sample_id_i = dollar_value
+      		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_3" ,1)
+				AT 1,1
+				IN WINDOW test_info_window
+				BOLD
+      		display_msg = sample_id_i
+		display_row = 1
+
+    	ELSEIF ( dollar_command = DOLLAR_ANALYSIS ) THEN
+
+      		analysis_id = PAD ( dollar_value, " ", 10 )
+  		display_msg =  analysis_id
+		display_row = 2
+
+    	ELSEIF ( dollar_command = DOLLAR_REPLICATE_NUM ) THEN
+
+      		IF NUMTEXT ( dollar_value ) THEN
+        		repnum = NUMERIC(dollar_value)
+      		ELSE
+        		repnum = 0
+      		ENDIF
+
+      		IF repnum = 0 THEN
+        		display_msg = GET_USER_MESSAGE("RESTXT_V2_DISPLAY_22",1)
+      		ELSE
+        		SET FORMAT "99"
+        		display_msg = STRIP ( repnum )
+        		SET FORMAT result_format
+      		ENDIF
+
+		display_row = 3
+
+    	ELSEIF ( dollar_command = DOLLAR_ANALYSIS_DATE ) THEN
+
+      		IF STRIP(dollar_value) = "" THEN
+        		dollar_value = NOW {better than nothing}
+      		ENDIF
+
+		analysis_date = DATE(STRIP(dollar_value):" 00:00:00.00")
+
+		display_msg = LEFTSTRING ( analysis_date, 11 )
+		display_row = 4
+
+	ELSEIF ( dollar_command = DOLLAR_SM_STATUS ) THEN
+
+      		smp_status = dollar_value
+
+		IF ( smp_status = "A" ) THEN
+        		display_msg = GET_USER_MESSAGE("RESTXT_V2_DISPLAY_23",1)
+      		ELSEIF ( smp_status = "C" )THEN
+        		display_msg = GET_USER_MESSAGE("RESTXT_V2_DISPLAY_24",1)
+      		ELSE
+        		display_msg = smp_status
+      		ENDIF
+		display_row = 5
+
+    	ELSEIF ( dollar_command = DOLLAR_INSTRUMENT ) THEN
+
+      		instrument_id = PAD ( dollar_value , " ", 10 )
+      		display_msg = instrument_id
+		display_row = 6
+
+    	ELSEIF ( dollar_command = DOLLAR_OPERATOR ) THEN
+
+      		rt_operator = dollar_value
+      		display_msg = rt_operator
+		display_row = 7
+
+	ELSEIF ( dollar_command = DOLLAR_ANALYST_NAME ) THEN
+
+		analyst_name = STRIP ( dollar_value )
+
+	ELSEIF ( dollar_command = DOLLAR_CREATE_NEW_SAMPLE ) THEN
+
+		IF STRIP ( dollar_value ) = "TRUE" THEN
+			create_sample = TRUE
+		ELSE
+			create_sample = FALSE
+		ENDIF
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_NUMBER ) THEN
+
+		source_data_number = NUMERIC ( dollar_value )
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_1 ) THEN
+
+		source_data_1 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_2 ) THEN
+
+		source_data_2 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_3 ) THEN
+
+		source_data_3 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_4 ) THEN
+
+		source_data_4 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_5 ) THEN
+
+		source_data_5 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_6 ) THEN
+
+		source_data_6 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SOURCE_7 ) THEN
+
+		source_data_7 = dollar_value
+
+	ELSEIF ( dollar_command = DOLLAR_SAMPLE_FIELD ) THEN
+
+		samp_field[s_f_num+1,1] = next_data_item ( dollar_value )
+		data_value = next_data_item ( dollar_value )
+		get_field_details sample.'samp_field[s_f_num+1,1]',"DATA_TYPE",data_type
+		save_field_array(s_f_num,samp_field,data_value,data_type)
+
+	ELSEIF ( dollar_command = DOLLAR_TEST_FIELD ) THEN
+
+		test_field[t_f_num+1,1] = next_data_item ( dollar_value )
+		data_value = next_data_item ( dollar_value )
+		get_field_details test.'test_field[t_f_num+1,1]',"DATA_TYPE",data_type
+		save_field_array(t_f_num,test_field,data_value,data_type)
+
+	ELSE
+
+		CLEAR SCREEN IN WINDOW prompt_window
+		DISPLAY GET_USER_MESSAGE("RESTXT_V2_DISPLAY_25" ,1) :
+				dollar_command : "=" :
+				dollar_value
+			AT 1,1
+			IN WINDOW prompt_window
+
+		pause()
+	ENDIF
+
+	{ If something to put on the screen do it here }
+
+	IF ( display_msg <> EMPTY ) THEN
+		DISPLAY display_msg
+			AT 18, display_row
+			IN WINDOW test_info_window
+	ENDIF
+
+ENDROUTINE
+
+{-------------------------------------------------------------------------}
+
+ROUTINE save_field_array ( f_num,
+			   field_array,
+			   VALUE data_value,
+			   VALUE data_type )
+
+	f_num = f_num+1
+
+	IF (data_type = "N") OR (data_type = "R") THEN
+
+		IF num_text(data_value) THEN
+			field_array[f_num,2] = numeric(data_value)
+		ENDIF
+
+	ELSEIF (data_type = "B") THEN
+
+		IF STRIP(toupper(data_value)) = "TRUE" THEN
+			field_array[f_num,2] = TRUE
+		ELSE
+			field_array[f_num,2] = FALSE
+		ENDIF
+
+	ELSEIF (data_type = "D") THEN
+
+		field_array[f_num,2] = date(data_value)
+
+	ELSEIF (data_type = " ") THEN
+
+		f_num = f_num-1
+
+	ELSE
+		field_array[f_num,2] = data_value
+	ENDIF
+
+ENDROUTINE
+
+{-------------------------------------------------------------------------}
+
+ROUTINE next_data_item ( data_line )
+
+	{ Look for a data_line separator.  If one is found take the
+	  next data item from the data line and return it.
+	  So  ABC?DEF becomes DEF, with ABC returned }
+
+	DECLARE quote, data_item
+
+	quote = INDEX ( data_line, "?" )
+
+	IF quote > 0 THEN
+		data_item = STRIP ( LEFTSTRING ( data_line, quote - 1 ) )
+		data_line = SUBSTRING ( data_line, quote + 1,
+				LENGTH ( data_line ) - quote )
+	ELSE
+		data_item = data_line
+		data_line = " "
+	ENDIF
+
+RETURN ( data_item )
+
+ENDROUTINE
+
+{-------------------------------------------------------------------------}
+
+ROUTINE parse_result_line ( PTR_array, VALUE result_line )
+
+{ The result line is made up of
+
+      ? name ? result type ? value ? units
+    or
+      ? name ? result type ? value
+}
+
+	DECLARE res_name, res_type, res_text, res_unit
+
+	result_line = result_line # "?"
+	res_name = next_data_item ( result_line )
+	res_type = next_data_item ( result_line )
+	res_text = next_data_item ( result_line )
+	res_unit = next_data_item ( result_line )
+
+	IF display_results THEN
+		DISPLAY res_name AT 18,1 IN WINDOW result_info_window
+		DISPLAY res_type AT 18,2 IN WINDOW result_info_window
+		DISPLAY res_text AT 18,3 IN WINDOW result_info_window
+		DISPLAY res_unit AT 18,4 IN WINDOW result_info_window
+	ENDIF
+
+	{ add an entry to the PTR array }
+
+	PTR_array[ PTR_counter, 1 ] = res_name
+	PTR_array[ PTR_counter, 2 ] = res_text
+	PTR_array[ PTR_counter, 3 ] = res_type
+
+	PTR_counter = PTR_counter + 1
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+
+ROUTINE initialise
+
+	sample_created = FALSE
+	sample_checked = FALSE
+	file_confirmed = TRUE
+
+	{now set the default values}
+	{parameters with a value may or may not be received}
+	{EMPTY parameters must be included in the data file}
+
+	id_mode = ID_MODE_NONE
+	sample_id_i = EMPTY
+	analysis_id = EMPTY
+	repnum = 0
+	analysis_date = date(leftstring(NOW,11):" 00:00:00.00")
+
+	{ smp_status is the default that the sample status is changed to
+	  when a file of results is processed.
+	  If smp_status is EMPTY then the sample status is not changed. }
+
+	{ smp_status = "C" } {Completed}
+
+	smp_status = EMPTY
+
+	instrument_id = "          "
+	rt_operator = "          "
+	analyst_name = "          "
+	create_sample = FALSE
+	source_data_number = 0
+	source_data_1 = ""
+	source_data_2 = ""
+	source_data_3 = ""
+	source_data_4 = ""
+	source_data_5 = ""
+	source_data_6 = ""
+	source_data_7 = ""
+	s_f_num = 0
+	t_f_num = 0
+	test_count = 0
+	out_status = " "
+	rename_file = FALSE
+	the_analysis = EMPTY
+	the_test = EMPTY
+	ARRAY samp_field
+	ARRAY test_field
+	ARRAY error_log
+	error_log_line = 0
+
+ENDROUTINE
+
+{-----------------------------------------------------------------------------}
+{ Added to use put_test_results                                               }
+
+ROUTINE write_results_to_database( VALUE the_analysis,
+                                   VALUE the_test    ,
+                                         PTR_array   )
+
+        DECLARE errors, errorline, errortext1, errortext2,
+                component_name
+
+	ARRAY errors
+
+        errorline = 2
+        errortext1 = ""
+        errortext2 = ""
+
+        IF ( PTR_array[ 2, 1 ] != EMPTY ) THEN
+                { Write data to the result table }
+
+                PUT_TEST_RESULTS the_test, PTR_array, errors
+
+                COMMIT
+        ENDIF
+
+        { IF global_do_calculated_results then force them to re-calculate }
+
+        IF ( errors[ 1 ] != ERROR ) AND ( global_do_calculated_results ) THEN
+
+                ARRAY PTR_array
+
+                PTR_counter = 2
+                PTR_array[ 1, 1 ] = "NAME"
+
+                component_name = SELECT component . name
+                          WHERE ( ( analysis_id = the_analysis ) AND
+                                  ( result_type = "K" ) )
+
+                WHILE ( component_name <> EMPTY ) DO
+
+                        PTR_array[ PTR_counter, 1 ] = component_name
+
+                        PTR_counter = PTR_counter + 1
+
+                        NEXT component
+                        component_name = SELECT component . name
+
+                ENDWHILE
+
+                IF ( PTR_array[ 2, 1 ] != EMPTY ) THEN
+                        { Redo the calculations }
+
+                        PUT_TEST_RESULTS the_test, PTR_array, errors
+
+                        COMMIT
+                ENDIF
+        ENDIF
+
+
+        IF ( errors[ 1 ] = ERROR ) THEN
+          	{ SERIOUS ERROR }
+          	errortext1 = "Call to PUT_TEST_RESULTS() generated an ERROR status"
+          	error_message( errortext1, STRING(the_test),TRUE )
+
+        ELSEIF ( errors[ 1 ] != EMPTY ) THEN
+
+          	{ CONDITIONS ARE NOT CORRECT }
+
+          	errortext1 = "Call to PUT_TEST_RESULTS() generated an non-EMPTY status"
+          	errortext2 = GET_USER_MESSAGE ( errors[1],1 )
+          	error_message( errortext1, errortext2, TRUE )
+
+        ENDIF
+
+        WHILE ( error_line < PTR_counter ) DO
+          	IF ( ( errors[ error_line ] != EMPTY ) AND
+              	     ( errors[ error_line ] != "Value not stored, result recalculated" )) THEN
+           		errortext2 = GET_USER_MESSAGE ( errors[ error_line ],1 )
+           		error_message( PTR_array[ error_line, 1 ],
+				       errortext2, FALSE )
+          	ENDIF
+          	error_line = error_line + 1
+        ENDWHILE
+
+ENDROUTINE
+
+{------------------------------------------------------------------------------
+  Platform independent routine to open a file for reading or for extending.
+ ------------------------------------------------------------------------------
+  File Read:
+      If the specified file does not exist, an error is returned
+      If the file exists, and cannot be initially opened, then if a VMS
+          platform is being used, the routine will delay and retry repeatedly
+          until the given maximum time delay expires
+      If the file cannot be opened (VMS - after the given time has expired),
+          an error will be returned
+
+  File Extend:
+      If the specified file does not exist, then an attempt to create the file
+          will be made.  If the creation fails, en error will be returned
+      If the file exists, and cannot be initially opened, then if a VMS
+          platform is being used, the routine will delay and retry repeatedly
+          until the given maximum time delay expires
+      If the file cannot be opened (VMS - after the given time has expired),
+          an error will be returned
+
+  The routine parameters (all passed by value) are as follows:
+      name_of_file : Text string containing the name of the file to be opened
+      extend_file  : Boolean value which should be TRUE if the file is to be
+                     extended
+      retry_delay  : (VMS only) Delay before trying to re-open the file
+      max_wait     : (VMS only) Maximum time to wait before giving up
+
+    N.B. retry_delay and max_wait MUST be intervals, NOT text strings.
+
+  The routine acts as a function returning status which can be EMPTY,
+  indicating a successful operation, or one of the following text strings:
+      "DOES_NOT_EXIST"  (file read)      - the file could not be found
+      "CREATION_FAILED" (file extend)    - the file that was to be extended
+                                           did not exist and could not be
+                                           created
+      "FILE_LOCKED"     (read or extend) - the file exists but could not be
+                                           opened
+ ------------------------------------------------------------------------------}
+
+ROUTINE open_or_extend_file ( VALUE name_of_file,
+                              VALUE extend_file )
+
+	DECLARE delay_count, retry_delay, max_wait
+	DECLARE status
+
+	delay_count = INTERVAL ( "0 00:00:00" )
+	retry_delay = INTERVAL ( vms_read_lock_sleep )
+        max_wait    = INTERVAL ( vms_maximum_lock_sleep )
+
+	IF NOT FILE EXISTS ( name_of_file ) THEN
+		IF extend_file THEN
+			FILE CREATE name_of_file, status
+			IF status <> EMPTY THEN
+				status = "CREATION_FAILED"
+			ENDIF
+		ELSE
+			status = "DOES_NOT_EXIST"
+		ENDIF
+	ELSE
+		IF extend_file THEN
+			FILE EXTEND name_of_file, status
+		ELSE
+	 		FILE OPEN name_of_file, status
+		ENDIF
+		WHILE ( status <> EMPTY ) AND ( platform = "VMS" ) AND
+		      ( delay_count < max_wait ) DO
+			SLEEP FOR retry_delay
+			delay_count = delay_count + retry_delay
+			IF extend_file THEN
+				FILE EXTEND name_of_file, status
+			ELSE
+	 			FILE OPEN name_of_file, status
+			ENDIF
+		ENDWHILE
+		IF status <> EMPTY THEN
+			status = "FILE_LOCKED"
+		ENDIF
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE
+
+{------------------------------------------------------------------------------}
+
+ROUTINE non_vms_file_find
+
+	DECLARE status
+
+	{ Added so that file find is used less }
+	{ using wildcards so find that file }
+
+	IF ( NOT drop_out_mode AND (EMPTY = file_array[ file_counter ]) ) THEN
+
+		ARRAY file_array
+		FILE FIND default_filename, file_array, status
+		file_counter = 1
+
+	ENDIF
+
+	IF file_array[ file_counter ] = EMPTY THEN
+		result_filename = EMPTY
+	ELSE
+		IF global_verify_filename THEN
+			result_filename = default_filename:file_array[ file_counter ]
+		ELSE
+			result_filename = file_array[ file_counter ]
+		ENDIF
+                rename_filename = result_filename # ".dat" : ".old"
+                error_filename = result_filename # ".dat" : ".err"
+	ENDIF
+
+	{ Added for non-wildcard search }
+
+	IF ( global_verify_filename ) THEN
+
+		{ Verify that this is an xchrom data file }
+
+		IF ( ( INDEX( result_filename, "," ) = 0 ) OR
+		     ( INDEX( result_filename, ".dat" ) = 0 ) ) THEN
+			result_filename = EMPTY
+		ENDIF
+
+	ENDIF
+
+	IF ( result_filename <> EMPTY ) THEN
+
+		IF ( NOT FILE EXISTS ( result_filename ) ) THEN
+			status = "DOES_NOT_EXIST"
+		ELSE
+			FILE OPEN result_filename, status
+			IF status <> EMPTY THEN
+				status = "FILE_LOCKED"
+			ENDIF
+		ENDIF
+	ELSE
+		status = "DOES_NOT_EXIST"
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE
+
+{------------------------------------------------------------------------------}

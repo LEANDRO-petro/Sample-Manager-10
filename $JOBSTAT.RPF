@@ -1,0 +1,61 @@
+{******************************************************************************
+*
+* Module Name   : $JOBSTAT
+*
+* Purpose       : SMP report containing routines (to be user-defined) which
+*                 are called when a job changes status
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification : 
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : No
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Criacao do COA quando o JOB é autorizado
+}
+
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+
+JOIN LIBRARY $LIB_UTILS
+
+
+ROUTINE set_status_a
+{001 \/}
+	DECLARE SMP,IDENTITY,VERSION,TYPE,TYPE_ID, JOB
+	
+	JOB= SELECT JOB_HEADER.JOB_NAME
+	
+	IDENTITY = PAD("SOT"," ",10)
+	TYPE = PAD("JOB"," ",10)
+	TYPE_ID = PAD(JOB," ",20)
+	VERSION = PAD(1," ",10)
+	
+	SMP = IDENTITY:TYPE:TYPE_ID:VERSION
+	
+	CALL_ROUTINE "create_print_certificate" IN LIBRARY "$CERTIFICATE" USING SMP
+{001 /\}
+ENDROUTINE
+
+ROUTINE set_status_c
+
+ENDROUTINE
+
+ROUTINE set_status_v
+ENDROUTINE   
+
+ROUTINE set_status_x
+
+ENDROUTINE    
+
+ROUTINE set_status_r
+ENDROUTINE    
+
+ROUTINE set_status_s
+ENDROUTINE    

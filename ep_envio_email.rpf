@@ -1,0 +1,397 @@
+
+{******************************************************************************
+*
+* Nome do módulo: EP_ENVIO_EMAIL.RPF 
+*
+* Objetivo      : Rotinas para enviar email a usuários 
+*
+* Autor         : LFR
+*
+* Data          : 14-01-2014
+**
+******************************************************************************}
+{
+          Implementação  THERMO - PETROBRAS/UNBC/LF
+        ==============================================================
+  			HISTÓRICO DE MODIFICAÇÕES
+
+ >>> No		AUTOR	DATA		DESCRIÇÃO
+     001		LLV 08/10/2014	Inclusão dos avisos de recebimento e leitura do Notes.
+     002          LLV 02/09/2016    Alterações por solicitação da área de negócio (INC000027156494)
+}
+{ **** Configurações Iniciais **** }
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+SET NOTPROTECTED
+SET NAME "DISPLAY/"
+
+{ **** Inclusão de Bibliotecas Padrão **** }
+JOIN STANDARD_LIBRARY STD_PROMPT
+
+{ *** Inclusão de Bibliotecas VGL **** }
+JOIN LIBRARY $LIB_UTILS
+
+{ **** Definição de Constantes **** }
+{ **** Definição de Variáveis Globais **** }
+{ **** Início da programação **** }
+
+{ **** Testes **** }
+SET SAMPLE_STATUS "A"
+DECLARE id_amostra
+prompt_in_window ( "SAMPLE", "Amostra", "Escolha da Amostra para enviar aviso", EMPTY, id_amostra )
+email_aviso_autorizada(id_amostra)
+
+{=============================================================================
+
+ Rotina         : email_aviso_autorizada
+ Objetivo       : rotina do processo de envio de email de aviso de autorização
+ Input Params   : id_amostra  -> id_numeric da amostra
+ Output Params  : -
+ Observação     : -
+
+==============================================================================}
+ROUTINE email_aviso_autorizada ( VALUE id_amostra )
+
+DECLARE arquivo_mensagem { * Nome do arquivo a ser copiado para o diretório SMTP }
+
+{ * Criar o arquivo de mensagem a ser gravado no diretório SMTP, mas com extensão TXT ainda }
+arquivo_mensagem = arquivo_mensagem_criar (id_amostra)
+IF (arquivo_mensagem = EMPTY) THEN
+	RETURN
+ENDIF
+
+{ * Popular o arquivo de mensagem com os dados da SOT }
+arquivo_mensagem_popular ( arquivo_mensagem, id_amostra )
+
+{ * Enviar finalmente a mensagem }
+arquivo_mensagem_enviar ( arquivo_mensagem, id_amostra )
+
+{ * Final da execução }
+ {flash_message ( "A nota foi enviada com sucesso!", TRUE) } 
+
+ENDROUTINE  { Fim de email_aviso_autorizada }
+
+{=============================================================================
+
+ Rotina         : arquivo_mensagem_criar
+ Objetivo       : criar o arquivo com extensão TXT no diretório smp$textreports
+ Input Params   : id_amostra
+ Output Params  : arquivo_nome    -> nome do arquivo, se houver erro, passa EMPTY
+ Observação     : o nome do arquivo deve ser único!!!!
+
+==============================================================================}
+ROUTINE arquivo_mensagem_criar ( VALUE id_amostra )
+
+DECLARE arquivo_nome, aux, sot
+
+sot = STRIP ( SELECT sample . job_name WHERE id_numeric = id_amostra )
+
+arquivo_nome = "smp$textreports:" : "Aviso_Autorizacao_SOT_" : STRIP ( sot ) : "_AMOSTRA_" : STRIP ( id_amostra ) : ".txt"
+
+{ * Se existir o arquivo, ele deve ser deletado }
+IF (FILE EXISTS(arquivo_nome)) THEN
+	FILE DELETE arquivo_nome
+ENDIF
+
+FILE CREATE arquivo_nome, aux
+IF (aux <> EMPTY) THEN
+{	flash_message ("Erro ao enviar mensagem: " : STRIP(aux), TRUE) } 
+	RETURN ( EMPTY )
+ELSE
+	RETURN ( arquivo_nome )
+ENDIF
+
+ENDROUTINE { Fim de arquivo_mensagem_criar }
+
+{=============================================================================
+
+ Rotina         : arquivo_mensagem_popular
+ Objetivo       : escrever no arquivo de mensagem o destinatários e etc
+ Input Params   : arquivo_nome -> nome do arquivo de mensagem
+		      id_amostra-> id da amostra
+ Output Params  : -
+ Observação     : - )
+
+==============================================================================}
+ROUTINE arquivo_mensagem_popular ( VALUE arquivo_nome, VALUE id_amostra )
+
+DECLARE linha, job_nome, autorizador, destinatarios, aux, cont
+DECLARE id_natureza, id_objetivo, nome_autorizador
+DECLARE natureza, objetivo, origem, local_sot, local_amostra
+
+{ * Buscando os dados do Banco de Dados }
+job_nome         = STRIP ( SELECT sample . job_name WHERE id_numeric = id_amostra )
+autorizador      = STRIP ( SELECT sample . authoriser )                    
+nome_autorizador = STRIP ( SELECT personnel . description WHERE identity = autorizador )
+
+id_natureza = SELECT sample . natureza
+id_objetivo = SELECT sample . product_name
+
+natureza      = STRIP ( SELECT mlp_family_header . name WHERE family_name = id_natureza )
+objetivo      = STRIP ( SELECT mlp_header . description WHERE identity    = id_objetivo )
+origem        = STRIP ( SELECT job_header . origem      WHERE job_name    = job_nome    )
+local_sot     = STRIP ( SELECT location . name 	     WHERE identity    = origem      )
+id_amostra    = STRIP ( SELECT sample . id_numeric )
+{ 17/06/2014 - PM9N - Inclusão de local da amostra }
+local_amostra = STRIP ( SELECT sample . location_id )
+local_amostra = STRIP ( SELECT location . name WHERE identity = local_amostra )
+{ 17/06/2014 - PM9N - Inclusão de local da amostra }
+
+{ * Popular o array com os destinatários da SOT }
+ARRAY destinatarios
+destinatarios = destinatarios_buscar ( job_nome )
+IF (destinatarios  = EMPTY) THEN
+{	flash_message ("A nota não foi enviada pois a SOT " : STRIP(job_nome) : " não possui destinatários!",TRUE) } { >>> 005 }
+	RETURN
+ENDIF
+
+{ * Escrever finalmente os dados no arquivo }
+FILE EXTEND arquivo_nome, aux
+
+{ * Escrevendo o cabeçalho }
+{ * O remetente é realmente quem remete, ou seja o usuário do SM.                   }
+{ * A T E N Ç Ã O - Se não for usuário cadastrado no NOTES, a nota não será enviada }
+
+{ \/ - LLV - 14/08/2014 - Begin }
+{* FILE WRITE arquivo_nome, "X-sender: " : TOLOWER (STRIP ( OPERATOR )) : "@ep-bc.petrobras.com.br"  *}
+{ /\ - LLV - 14/08/2014 - End   }
+FILE WRITE arquivo_nome, "X-sender: " : TOLOWER (STRIP ( OPERATOR )) : "@petrobras.com.br"
+
+
+{ * Os destinatários vão neste loop abaixo }
+cont = 1
+WHILE (destinatarios [ cont, 1 ] <> EMPTY) DO
+	FILE WRITE arquivo_nome, "X-receiver: " : STRIP(destinatarios [ cont, 1 ])
+	{ Próximo destinatário, se houver }
+	cont = cont + 1
+ENDWHILE { Fim do loop de destinatários }
+
+{ * Linhas de configuração }
+FILE WRITE arquivo_nome, "X-EM-Version: 5, 0, 0, 13"
+FILE WRITE arquivo_nome, "X-EM-Registration: #00B0520B10D91C006A10"
+
+{ * Remetente }
+{ * O remetente é o próprio usuário do Sample Manager                                }
+{ \/ - LLV - 14/08/2014 - Begin }
+{* FILE WRITE arquivo_nome, "From: " : TOLOWER ( STRIP ( OPERATOR )) : "@ep-bc.petrobras.com.br" *}
+FILE WRITE arquivo_nome, "From: " : TOLOWER ( STRIP ( OPERATOR )) : "@petrobras.com.br"
+{ /\ - LLV - 14/08/2014 - End   }
+
+{ * As chaves dos destinatários devem ficar no cabeçalho da mensagem }
+{ * O destinatário é sempre o primeiro da lista...                   } 
+
+cont = 1
+{ * Os demais, se existirem, são os que receberão cópias.            }
+
+WHILE (destinatarios [ cont, 2 ] <> EMPTY) DO
+	IF cont = 1 THEN
+          linha = "To: " : destinatarios [ cont, 2 ]
+      ELSE    
+          linha = "CC: " : destinatarios [ cont, 2 ]
+      ENDIF
+      FILE WRITE arquivo_nome, linha
+	cont = cont + 1
+ENDWHILE { Fim do loop das chaves de destinatários      }
+
+{ * Inserir a data e o título da mensagem }
+SET DATE FORMAT "Dy, DZ Mon YYYZ  H24:MI:SS"
+FILE WRITE arquivo_nome, "Subject: Amostra " : id_amostra : " pertencente a SOT " : job_nome : " já foi analisada"
+FILE WRITE arquivo_nome, "Date: " : STRIP(NOW) : " -0300"
+RESTORE DATE FORMAT
+
+{ 001 \/ }
+FILE WRITE arquivo_nome, "ReturnReceipt:0"
+FILE WRITE arquivo_nome, "ExpandPersonalGroups:1"
+FILE WRITE arquivo_nome, "Sign:1"
+FILE WRITE arquivo_nome, "DeliveryReport:B"
+FILE WRITE arquivo_nome, "SenderTag:NP-1"
+FILE WRITE arquivo_nome, "ConfidentialString:Reservado"
+FILE WRITE arquivo_nome, "ConfString:Reservado"
+FILE WRITE arquivo_nome, "DeliveryReport:B"
+FILE WRITE arquivo_nome, "DeliveryPriority:H"
+FILE WRITE arquivo_nome, "Logo:StdNotesLtr35"
+FILE WRITE arquivo_nome, "dLogo:StdNotesLtr35"
+{ 001 /\ }
+
+{ * Inserir mais linhas de configuração }
+FILE WRITE arquivo_nome, "MIME-Version: 1.0"
+FILE WRITE arquivo_nome, "Content-Type: multipart/mixed; "
+FILE WRITE arquivo_nome, "        boundary=" : ASCII(34) :"----=_NextPart_000_01BC2B74.89D1CCC0" : ASCII(34)	
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, "This is a multi-part message in MIME format."
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, "------=_NextPart_000_01BC2B74.89D1CCC0"
+FILE WRITE arquivo_nome, "Content-type: text/plain; charset=US-ASCII"
+FILE WRITE arquivo_nome, ""
+
+{ * O corpo da mensagem segue abaixo }
+{ \/ 002 LLV Begin                         }
+{ FILE WRITE arquivo_nome, "Caro Cliente," }
+FILE WRITE arquivo_nome, "Prezado Solicitante,"
+{ /\ 002 LLV End                           }
+
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, ""
+{FILE WRITE arquivo_nome, "A amostra de " : ASCII(34) : natureza : ASCII(34) : ", código " : id_amostra : ", pertencente à solicitação de número " : job_nome : " para " : ASCII(34) : objetivo : ASCII(34)}
+{ 17/06/2014 - PM9N - Inclusão de local da amostra }
+FILE WRITE arquivo_nome, "A amostra de " : ASCII(34) : natureza : ASCII(34) : ", código " : id_amostra : " (" : local_amostra : "), pertencente à solicitação de número " : job_nome : " para " : ASCII(34) : objetivo : ASCII(34)
+{ 17/06/2014 - PM9N - Inclusão de local da amostra }
+FILE WRITE arquivo_nome, "na " : ASCII(34) : local_sot : ASCII(34) : ", encontra-se disponível para consulta dos resultados e visualização do Boletim através do IPL (http://eplab.petrobras.biz)." {amjr 04/06/2014}
+FILE WRITE arquivo_nome, ""
+{* LLV -- 24-07-2015 -- A linha abaixo foi comentada por solicitação do LF (Boletim deve ser gerado através da funcionalidade do EXPLORER via RMB ou pelo IPL)  *}
+{FILE WRITE arquivo_nome, "http://eplab.petrobras.biz/GerarBoletimManual/GerarBoletim?Amostra=" : STRIP(STRING ( id_amostra ))                                  *}
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, "Para Reclamações, Sugestões e Elogios enviar email para a Chave de A2SM - Servico de Atendimento do LF as Partes Interessadas." {inclusão solicitada por Alexandre Magno (LLV - 11/07/2014)}
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, "Atenciosamente, 	"{alterado por AMJR em 04/06/2014}
+
+FILE WRITE arquivo_nome, ""
+IF ( NOT ( BLANK ( nome_autorizador ))) THEN
+	FILE WRITE arquivo_nome, nome_autorizador
+ENDIF
+
+{ \/ 002 LLV Begin            }
+{ FILE WRITE arquivo_nome, "E&P-SERV/US-SOEP/LF - Laboratório de Fluidos" }
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, "Laboratório Central"
+FILE WRITE arquivo_nome, "LMS/US-SOEP/LF"
+{ /\ 002 LLV End              }
+
+{ 04/11/2014 - PM9N }
+FILE WRITE arquivo_nome, ""
+FILE WRITE arquivo_nome, ""
+{ \/ 002 LLV Begin  }
+{ FILE WRITE arquivo_nome, "Acessar a chave estrutural A2SM para registrar suas Reclamações, Sugestões ou Elogios à gerência." }
+{ /\ 002 LLV End    }
+
+FILE WRITE arquivo_nome, ""
+{ 04/11/2014 - PM9N }
+
+
+{ * Fechar o arquivo }
+FILE CLOSE arquivo_nome
+
+ENDROUTINE { Fim de arquivo_mensagem_popular }
+
+{=============================================================================
+
+ Rotina         : destinatarios_buscar
+ Objetivo       : buscar todos os destinatários de uma SOT
+ Input Params   : job_nome     -> o nome do job
+ Output Params  : lista     -> array bidimensional contendo os emails dos destinatários
+                               e os respectivos nomes obtidos da tabela PERSONNEL.
+ Observação     : se houver algum erro, retorna EMPTY
+
+==============================================================================}
+ROUTINE destinatarios_buscar ( VALUE job_nome )
+
+DECLARE lista, final, cont, primeiro, nome
+ARRAY lista ARRAYSIZE (0 , 2)
+
+{ * O email interno da petrobras tem o final a seguir }
+{ \/ - LLV - 14/08/2014 - Begin }
+final = "@petrobras.com.br"
+{ /\ - LLV - 14/08/2014 - End   }
+{ * Primeiro o destinatário oficial da SOT }
+cont = 1
+primeiro = STRIP(SELECT job_header . solicitante WHERE job_name = job_nome)  
+
+{ * Se não houver destinatário, avise o usuário }
+IF (primeiro = "") THEN
+{ 	flash_message("A SOT " : STRIP(job_nome) : " não tem destinatário! É necessário reativar a SOT!", TRUE) } { >>> 005 }
+	RETURN (EMPTY)
+ENDIF
+
+{ * consulta o nome do destinatário }
+nome = STRIP ( SELECT personnel . description WHERE identity  = primeiro )
+IF ( nome = "" ) THEN
+	nome = primeiro
+ENDIF
+
+{ * Armazena os dados do destinatário na lista    }
+lista [ cont, 1 ] = primeiro : final
+lista [ cont, 2 ] = nome
+
+{ * Realizando loop para buscar cada chave do campo COM_COPIAS - NAO USADO NO SM 10
+DECLARE aux, pos, chave, len, char, loop
+aux = STRIP(SELECT job_header . com_copias)
+IF (aux <> "" ) THEN
+	
+      aux = aux : ASCII ( 44 )
+      len = LENGTH ( aux )
+
+      cont = 2
+      loop = 1
+      Pos = 1
+
+      WHILE loop < len  +  1 DO
+	
+         char = SUBSTRING ( aux, loop, 1 )
+         IF char = ASCII ( 44 ) THEN
+         	chave = STRIP ( SUBSTRING ( aux, pos, loop - pos ) )
+            nome = STRIP ( SELECT personnel . description WHERE identity = chave )
+          
+            lista [ cont, 1 ] = chave : final
+            lista [ cont, 2 ] = nome
+          
+          	pos = loop + 1
+          	cont = cont + 1    
+         ENDIF
+         loop = loop + 1    
+	ENDWHILE 1
+
+ENDIF
+}
+
+{16/06/2014 - PM9N - Inclusão da chave A2SM para recebimento de correio de autorização }
+      declare chave_copia
+      cont = cont + 1
+      chave_copia = "LIMS1"
+      nome = STRIP ( SELECT personnel . description WHERE identity = chave_copia )
+          
+      lista [ cont, 1 ] = chave_copia : final
+      lista [ cont, 2 ] = nome
+
+{16/06/2014 - PM9N - Inclusão da chave A2SM para recebimento de correio de autorização }
+
+{ * Retorna o array preenchido }
+RETURN ( lista )
+
+ENDROUTINE { Fim de destinatarios_buscar }
+
+{=============================================================================
+
+ Rotina         : arquivo_mensagem_enviar
+ Objetivo       : copiar o arquivo para o diretório do Easy Mail SMTP 
+ Input Params   : arquivo_nome -> nome do arquivo de mensagem
+ Output Params  : -
+ Observação     : - 
+
+==============================================================================}
+ROUTINE arquivo_mensagem_enviar ( VALUE arquivo_nome, VALUE id_amostra )
+
+DECLARE arquivo_novo, status, sot
+
+sot = STRIP ( SELECT sample . job_name WHERE id_numeric = id_amostra )
+
+{ * Montar o nome do novo arquivo agora com o diretório SMTP }
+SET DATE FORMAT "YZ-MZ-DZ-H24-MI-SS"
+{* arquivo_novo = STRIP(GLOBAL("SMTP_DIRETORIO")) : "Aviso_Autorizacao_" : STRIP(OPERATOR) : "_SOT_" : STRIP(sot) : "_AMOSTRA_" : STRIP(id_amostra) : "_" : NOW : ".eml" *}
+arquivo_novo = STRIP(GLOBAL("SMTP_DIRETORIO")) : "Aviso_Autorizacao_" : STRIP(OPERATOR) : "_SOT_" : STRIP(sot) : "_AMOSTRA_" : STRIP(id_amostra) : "_" : NOW : ".eml"
+
+RESTORE DATE FORMAT
+
+{ * Copiar então para o diretório de SMTP }
+FILE COPY arquivo_nome, arquivo_novo, status
+
+{ * Apaga o arquivo original caso tenha ocorrido tudo bem }
+IF (status = EMPTY) THEN
+	FILE DELETE arquivo_nome
+ELSE
+{	flash_message("Erro ao enviar nota: " : STRIP(status),TRUE) } 
+ENDIF
+
+ENDROUTINE { Fim de arquivo_mensagem_enviar }
+
+

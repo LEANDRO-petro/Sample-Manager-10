@@ -1,0 +1,1038 @@
+{*******************************************************************************
+*
+* Module Name   : $LIB_STATUS_WINDOW
+*
+* Purpose       : Generic Class for displaying information in a Status Window.
+*
+* Document Ref  : N/a
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+08/01/2013	Mudanças para correção de BUG - todas
+}
+SET NOTPROTECTED
+SET NAME "DEFER/"
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_UTILS
+
+JOIN LIBRARY $PROMPT_LIST
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+
+
+{******************************************************************************}
+
+GLOBAL CONSTANT STATUS_WINDOW_CLASS  = "STATUS_WINDOW"
+
+{ Support Short name constants }
+
+GLOBAL CONSTANT MSG_NONE               = 0    { No Messages                    }
+GLOBAL CONSTANT MSG_HIGH               = 2    { High Messages Only             }
+GLOBAL CONSTANT MSG_MED                = 5    { Medium and High Messages.      }
+GLOBAL CONSTANT MSG_LOW                = 8    { Low, Medium and High Messages. }
+GLOBAL CONSTANT MSG_ALL                = 10   { All Messages                   }
+
+{ Support Full Name Constants as Well }
+
+GLOBAL CONSTANT STATUS_WINDOW_MSG_NONE = 0    { No Messages                    }
+GLOBAL CONSTANT STATUS_WINDOW_MSG_HIGH = 2    { High Messages Only             }
+GLOBAL CONSTANT STATUS_WINDOW_MSG_MED  = 5    { Medium and High Messages.      }
+GLOBAL CONSTANT STATUS_WINDOW_MSG_LOW  = 8    { Low, Medium and High Messages. }
+GLOBAL CONSTANT STATUS_WINDOW_MSG_ALL  = 10   { All Messages                   }
+
+CONSTANT DEFAULT_LENGTH                = 25   { Default Number of Status Lines }
+
+{*******************************************************************************
+*                          M A I N   C O D E
+*******************************************************************************}
+
+example_of_usage ( )           { This routine shows you how to use this Class. }
+
+{*******************************************************************************
+*                      G L O B A L   R O U T I N E S
+*******************************************************************************}
+
+GLOBAL ROUTINE status_window_define_class
+
+{ This global routine is used for initialising the status window class. This
+* does not need to be called if the library has already been initialised
+* elsewhere.
+*
+* Parameters   : N/a
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    lib_grid_initialise          ( )           { For Button Support            }
+    set_up_std_prompt_list_class ( )           { For the List Control.         }
+
+    {**************************************************************************}
+    { Status Window Class Definition.                                         *}
+    {**************************************************************************}
+
+    DEFINE CLASS STATUS_WINDOW_CLASS
+
+        INITIALISATION
+
+        PROPERTIES
+
+            "status_button"      , { Add a Close Button to the Form.           }
+            "status_form"        , { The form for the messages.                }
+            "status_list"        , { The List for the messages.                }
+            "status_flash"       , { Flash Message Statuses                    }
+            "status_grid"        , { The grid for the messages.                }
+            "status_use_grid"    , { Use a Grid for Messages.                  }
+            "status_back_mode"   , { If running code in batch mode.            }
+            "status_debug_mode"  , { Control which level of messages to show.  }
+            "status_add_time"    , { Add NOW to the message.                   }
+            "status_length"      , { Number of Lines on Form.                  }
+            "status_logging"     , { Are we writing to a File?                 }
+            "status_extend"      , { Extend or Overwrite the Logfile.          }
+            "status_filename"    , { Create a Specific Logfile of this name.   }
+            "status_frame_text"  , { Frame Text.                               }
+            "status_date_format" , { The Status Date Format.                   }
+            "status_count"       , { Record Count.                             }
+            "status_exit_footer" , { Footer on exit                            }
+            "status_update_log"    { Update the logfile after every write?     }
+
+        ACTIONS
+
+            "status_initialise"  , { Explicit Initialise Action.               }
+            "status_open_log"    , { Open the Logfile.                         }
+            "status_start"       , { Start up the form.                        }
+            "status_length"      , { Set the Length of the Window.             }
+            "status_message"     , { Send a message to the window.             }
+            "status_messages"    , { Output an Array of Messages.              }
+            "status_logfile"     , { Send message to the LOGFILE.              }
+            "status_display"     , { Send message to the Screen.               }
+            "status_add_time"    , { Action to add NOW to the message.         }
+            "status_filter"      , { Filter out unwanted messages              }
+            "status_colour"      , { Determine the Colour using the level.     }
+            "status_icon"        , { The Icon to Use.                          }
+            "status_msg_level"   , { Convert Old Msg Levels ( Boolean ).       }
+            "status_extend_log"  , { Make log file (create/extend)     LIT001  } 
+            "status_close_log"   , { Updates the log file (closes)     LIT001  }
+            "status_end"           { End the form.                             }
+
+        END CLASS
+
+ENDROUTINE { status_window_define_class }
+
+{*******************************************************************************
+*                               R O U T I N E S
+*******************************************************************************}
+
+ROUTINE example_of_usage
+
+{ This routine provides an example of using the Status Window Class. It creates
+* an object using the class, sets up the header, then kicks the object off using
+* the status_start action. It then proceeds to send 100 messages to the window
+* then ends.
+*
+* Parameters   : N/a
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE status_window, count
+    status_window_define_class ( )
+    CREATE OBJECT STATUS_WINDOW_CLASS, status_window
+
+    status_window . status_use_grid   = FALSE
+    status_window . status_frame_text = "Lots of Messages...."
+    status_window . status_initialise ( )
+
+    status_window . status_form . header = "Example Status Display..."
+    status_window . status_debug_mode    = STATUS_WINDOW_MSG_ALL
+
+    status_window . status_start ( )
+
+    status_window . status_message ( "Starting...", MSG_HIGH )
+
+    count = 0
+
+    REPEAT
+
+        count = count + 1
+        status_window . status_message ( count, MSG_MED )
+
+    UNTIL count = 100
+
+    status_window . status_message ( "Finished", MSG_HIGH )
+
+    status_window . status_end ( )
+
+ENDROUTINE { example_of_usage }
+
+{******************************************************************************}
+
+ROUTINE status_window_class_initialisation ( self )
+
+{ This initialisation routine is called when an object is created from the
+* Status Window Class. This routine simply calls the status_initialise action
+* and has been written this way to allow the initialise routine to be called
+* explicitly.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    self . status_use_grid    = TRUE
+    self . status_flash       = FALSE
+    self . status_button      = FALSE    { GLOBAL ( "TERMTYPE" ) = "GUI" }
+    self . status_date_format = "DD-MON-YYYY H24:MI:SS"
+    self . status_frame_text  = "Status Messages"
+    self . status_list        = EMPTY
+
+    self . status_initialise ( )
+
+ENDROUTINE { status_window_class_initialisation }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_initialise ( self )
+
+{ Initialisation of the Status Window Object. This Action defines all the
+* default values for the properties of the object. This routine is used to
+* explicitly initialise the object in cases where the class initialisation is
+* overridden.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE list, button_array, pos, grid
+
+    CREATE OBJECT "STD_FORM", self . status_form
+    CREATE OBJECT "STD_GRID_EDITOR", grid
+
+    self . status_count       = 0
+    self . status_back_mode   = GLOBAL ("MODE") <> "INTERACTIVE"
+    self . status_add_time    = TRUE
+    self . status_debug_mode  = STATUS_WINDOW_MSG_LOW
+    self . status_length      = GLOBAL ( "SCREEN_HEIGHT" ) - 9
+    self . status_filename    = EMPTY
+    self . status_logging     = FALSE
+    self . status_update_log  = FALSE
+    self . status_exit_footer = "Press <EXIT> to Quit"
+
+    {***************************************************************************
+    * Set up the Form
+    ***************************************************************************}
+
+    self . status_form . header     = "Status Window"
+    self . status_form . footer     = "Press Control C to Quit"
+
+    self . status_form . width      = GLOBAL ( "SCREEN_WIDTH" ) - 4
+    self . status_form . height     = GLOBAL ( "SCREEN_HEIGHT") - 9
+    self . status_form . column     = 3
+    self . status_form . row        = 7
+
+    self . status_form . return_behaviour   = FORM_RETURN_WRAP
+    self . status_form . confirm_required   = FALSE
+
+    {***************************************************************************
+    * Set up the List
+    ***************************************************************************}
+
+    IF ( NOT self . status_use_grid     ) AND
+       ( GLOBAL ( "TERMTYPE" ) <> "GUI" ) THEN
+
+        self . status_use_grid = TRUE
+
+    ENDIF
+
+    IF ( NOT self . status_use_grid ) THEN
+
+        CREATE OBJECT PROMPT_LIST_CLASS, list
+
+        list . width                = self . status_form . width  - 2
+        list . height               = self . status_form . height - 1
+        list . column               = 2
+        list . row                  = 1
+        list . style                = LIST_STYLE_SORTDESCENDING +
+                                      LIST_STYLE_FULLROWSELECT  +
+                                      LIST_STYLE_SHOWSELALWAYS  +
+                                      LIST_STYLE_REPORT         +
+                                      LIST_STYLE_HEADERDRAGDROP
+
+        list . add_column ( "Number", 5 )
+
+        IF self . status_add_time THEN
+
+            list . add_column ( "Time", 12 )
+	
+        ENDIF
+
+        list . add_column ( "Message" , 28 )
+        list . use_images ( EMPTY, 0 )
+
+        self . status_list = list
+
+    ENDIF
+
+    {***************************************************************************
+    * Set up the Grid
+    ***************************************************************************}
+
+    grid . width                = self . status_form . width
+    grid . height               = self . status_form . height
+    grid . column               = 1
+    grid . row                  = 1
+    grid . cell_rows            = self . status_length
+    grid . cell_columns         = 1
+    grid . border               = TRUE
+
+    grid . display_cell_routine = "display_cell_routine"
+    grid . prompt_cell_routine  = "prompt_cell_routine"
+
+    grid . column_size [ 1 ]    = self . status_form . width
+
+    ARRAY grid . user_info = ""
+
+    self . status_grid = grid
+
+    {***************************************************************************
+    * Set up the form differently in SMW.
+    ***************************************************************************}
+
+    IF GLOBAL ( "TERMTYPE" ) = "GUI" THEN
+
+	grid . width  = grid . width  - 2
+	grid . height = grid . height
+        grid . column = grid . column + 1
+
+	{
+
+        self . status_form . add_frame ( self . status_frame_text, 1, 1, self . status_form . height , self . status_form . width  )
+
+	}
+	
+        self . status_form . use_top_line = TRUE
+        self . status_form . button_style = FORM_BUTTON_NONE
+
+        IF self . status_button THEN
+
+            ARRAY button_array
+            pos = 1
+
+            lib_grid_lastkey_button ( button_array, pos, "EXIT", "Close" )
+            lib_form_add_vertical_buttons ( self . status_form, button_array )
+
+        ENDIF
+
+    ENDIF
+
+    {***************************************************************************
+    * Use the Appropriate Control.
+    ***************************************************************************}
+
+    IF self . status_use_grid THEN
+
+        self . status_form . add_prompt ( grid )
+
+    ELSE
+
+        self . status_form . add_prompt ( list )
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_initialise }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_start ( self )
+
+{ This action puts the status window on the screen which allows messages to be
+* sent to it.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    self . status_msg_level ( self . status_debug_mode )
+    self . status_open_log  ( )
+
+    IF self . status_back_mode THEN
+
+        {***********************************************************************
+        * We are running in Background Mode, Don't display the form.
+        ***********************************************************************}
+
+    ELSE
+
+        self . status_form . start_prompt ( )
+
+        IF ( GLOBAL ( "TERMTYPE" ) = "GUI" ) AND
+           ( self . status_button  = TRUE  ) THEN
+
+                self . status_form . prompt_objects [ 1 ] . enabled = FALSE
+                self . status_form . prompt_objects [ 1 ] . repaste ( )
+
+        ENDIF
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_start }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_msg_level ( self, mode )
+
+{ This action is responsible for dealing with old style TRUE / FALSE message
+* levels. It converts those messages to the appropriate number
+*
+* Parameters   : Self
+*                Mode    - The Message Level can be Boolean or Integer.
+* Return Value : Integer - Returns the Integer Equivalent of Mode.
+*
+*******************************************************************************}
+
+    DECLARE a_type
+    
+    a_type = TOUPPER ( STRIP ( VARIABLE_GET_TYPE ( mode ) ) )  { LIT001 crash fix }
+
+    IF NOT NUMTEXT ( mode )
+
+        IF ( a_type = "BOOLEAN" ) AND ( mode ) THEN
+
+            mode = STATUS_WINDOW_MSG_ALL
+
+        ELSE
+
+            mode = STATUS_WINDOW_MSG_HIGH
+
+        ENDIF
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_msg_level }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_filter ( self, VALUE msg_level )
+
+{ This action is responsible for filtering out unwanted messages, it returns
+* TRUE if the message should be displayed and FALSE if it should not.
+*
+* Parameters   : Self
+*                Msg_level  - An Integer or Bool representing the Message Level.
+* Return Value : Boolean    - Display the Message or Not.
+*
+*******************************************************************************}
+
+    DECLARE return_value
+
+    self . status_msg_level ( msg_level )
+
+    return_value = ( msg_level <= self . status_debug_mode )
+
+    RETURN ( return_value )
+
+ENDROUTINE { status_window_action_status_filter }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_messages (       self      ,
+                                                     messages  ,
+                                               VALUE msg_level )
+
+{ Send out an array of messages.
+*
+* Parameters   : Self
+*                Message   - The Message Text.
+*                Messages  - Array of Messages
+*                Msg_level - An integer or boolean representing the msg level.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE count, message
+
+    IF self . status_filter ( msg_level ) THEN
+
+        count   = 1
+        message = messages [ count ]
+        self . status_message ( message, msg_level )
+        count = count + 1
+
+        IF ( self . status_flash         ) AND
+           ( NOT self . status_back_mode ) THEN
+
+            flash_messages ( get message(2831,1), "", messages, TRUE )
+
+        ELSE
+
+            WHILE messages [ count ] <> EMPTY DO
+
+                self . status_count = self . status_count + 1
+
+                message = " >> " : messages [ count ]
+
+                IF self . status_back_mode THEN
+                    self . status_logfile ( message )
+                ELSE
+                    self . status_display ( message, MSG_LOW )
+                ENDIF
+
+                count = count + 1
+
+            ENDWHILE
+
+        ENDIF
+
+    ELSE
+
+        {***********************************************************************
+        * These Messages are Turned off so just ignore them.
+        ***********************************************************************}
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_messages }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_message (       self      ,
+                                              VALUE message   ,
+                                              VALUE msg_level )
+
+{ This action is used to send messages to the window. The debug flag indicates
+* the kind of messages that should be displayed / logged, the display of these
+* messages can be toggled using the status_debug_mode property. If the object
+* is running in background mode then messages will be sent to the process log
+* file.
+*
+* Parameters   : Self
+*                Message   - The Message Text.
+*                Msg_level - An integer or boolean representing the msg level.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    IF self . status_filter ( msg_level ) THEN
+
+        {***********************************************************************
+        * Send the Message to the appropriate place.
+        ***********************************************************************}
+
+        self . status_count = self . status_count + 1
+
+        IF self . status_back_mode THEN
+
+            self . status_logfile ( message )
+
+        ELSE
+
+            self . status_display ( message, msg_level )
+
+        ENDIF
+
+    ELSE
+
+        {***********************************************************************
+        * These Messages are Turned off so just ignore it.
+        ***********************************************************************}
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_message }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_open_log ( self )
+
+{ This action opens the specified Logfile. Used when logging interactive
+* sessions. It is controlled from the Status Extend property as to whether it
+* extends an existing file or overwrites it. Returns EMPTY if everything is
+* Ok.
+*
+* Parameters   : Self
+* Return Value : Text - Returns EMPTY if all OK, Error Message otherwise.
+*
+*******************************************************************************}
+
+    DECLARE status
+    status = ""
+
+    IF (     self . status_filename <> EMPTY ) AND
+       ( NOT self . status_back_mode         ) THEN
+
+        IF self . status_extend THEN
+
+            FILE EXTEND self . status_filename, status
+
+        ENDIF
+
+        IF status = EMPTY
+
+            { Extending the Current File. }
+
+        ELSE
+
+            FILE CREATE self . status_filename, status
+
+        ENDIF
+
+        self . status_logging = ( status = EMPTY )
+
+    ELSE
+
+        status = EMPTY
+
+    ENDIF
+
+    RETURN ( status )
+
+ENDROUTINE { status_window_action_status_open_log }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_colour ( self, VALUE msg_level )
+
+{ This action converts the msg level into a colour code for SMW display.
+*
+* Parameters   : Self
+*                Msg_Level - An Integer representing the Message Level.
+* Return Value : Integer   - The Colour value in which to display the message.
+*
+*******************************************************************************}
+
+    DECLARE colour
+
+    IF msg_level = STATUS_WINDOW_MSG_NONE THEN
+
+        colour = PROMPT_COLOUR_MAGENTA
+
+    ELSEIF msg_level = STATUS_WINDOW_MSG_LOW THEN
+
+        colour = PROMPT_COLOUR_BLACK
+
+    ELSEIF msg_level = STATUS_WINDOW_MSG_MED THEN
+
+        colour = PROMPT_COLOUR_BLUE
+
+    ELSEIF msg_level = STATUS_WINDOW_MSG_HIGH THEN
+
+        colour = PROMPT_COLOUR_RED
+
+    ELSE
+
+        colour = PROMPT_COLOUR_GREY
+
+    ENDIF
+
+    RETURN ( colour )
+
+ENDROUTINE { status_window_action_status_colour }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_icon ( self, VALUE msg_level )
+
+{ This action converts the msg level into an icon
+*
+* Parameters   : Self
+*                Msg_Level - An Integer representing the Message Level.
+* Return Value : Integer   - The Icon Number.
+*
+*******************************************************************************}
+
+    DECLARE icon
+    icon = msg_level
+    RETURN ( icon )
+
+ENDROUTINE { status_window_action_status_icon }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_display (       self      ,
+                                              VALUE message   ,
+                                              VALUE msg_level )
+
+{ This action places a message in the status window. The window acts as a stack
+* as it fills up from top to bottom, the messages at the top are removed to
+* make way for new messages.
+*
+* Parameters   : Self
+*                Message   - A Text String to display.
+*                Msg_Level - A Value representing the importance of the message.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE count, lines, grid, removed_one, list, num
+
+    IF NOT self . status_use_grid THEN
+
+        SET DATE FORMAT self . status_date_format
+        list = self . status_list
+
+	num = RIGHTSTRING ( PACKED_DECIMAL ( self . status_count ), 6 )
+        list . insert_item ( num, self . status_icon ( msg_level ) )
+        list . set_item    ( 2, STRIP ( NOW )  )
+        list . set_item    ( 3, message   )
+
+        RESTORE DATE FORMAT
+
+    ELSE
+
+        removed_one = FALSE
+        grid        = self . status_grid
+        lines       = grid . user_info
+
+        {***********************************************************************
+        * Work out where to place the message.
+        ***********************************************************************}
+
+        count = 0
+
+        REPEAT
+
+            count = count + 1
+
+        UNTIL blank ( lines [ 1, count ] )
+
+        {***********************************************************************
+        * Take one off the top and replace it with one on the bottom.
+        ***********************************************************************}
+
+        IF count = grid . cell_rows + 1 THEN
+
+            array_remove_slice ( lines, 2, 1 )
+            removed_one = TRUE
+            count = count - 1
+
+        ENDIF
+
+        {***********************************************************************
+        * Fill in the Message and Redisplay
+        ***********************************************************************}
+
+        lines [ 1, count ] = self . status_add_time ( message )
+        lines [ 2, count ] = self . status_colour ( msg_level )
+
+        IF removed_one THEN
+
+            grid . redisplay_contents ( )
+
+        ELSE
+
+            grid . redisplay_row ( count )
+
+        ENDIF
+
+        grid . set_position ( 1, count )
+
+    ENDIF
+    
+    CLIENT_SMW_MESSAGE_FLUSH ( )
+
+    {***************************************************************************
+    * If we are logging, write the message to the log file.
+    ***************************************************************************}
+
+    IF self . status_logging THEN
+
+        self . status_logfile ( message )
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_display }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_logfile (       self    ,
+                                              VALUE message )
+
+{ This Action sends the message to the process log file or the logfile
+*
+* Parameters   : Self
+*                Message - A Text String to send to the Logfile.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE status, text1
+
+    message = self . status_add_time ( message )
+
+    IF self . status_logging THEN
+
+        {**********************************************************************}
+        { Logging to a Specific File..                                         }
+        {**********************************************************************}
+
+        IF self . status_update_log THEN
+
+            self . status_extend_log ()    { LIT001 create/extend }
+
+        ENDIF
+
+
+        FILE WRITE self . status_filename, message, status
+
+        IF status <> EMPTY THEN
+
+            text1 = "Error Writing Log "
+            flash_message ( text1 : status, TRUE )
+
+        ENDIF
+
+        IF self . status_update_log THEN
+
+            self . status_close_log ()      { LIT001 close }
+
+        ENDIF
+
+    ELSE
+
+        LOG_MESSAGE "LOGFILE", message
+
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_add_time (        self    ,
+                                                VALUE message )
+
+{ This action adds the date and time to the message if the property status_add
+* time is set to TRUE. Otherwise it doesn't.
+*
+* Parameters   : Self
+*                Message - The Message to Append the Time to.
+* Return Value : Text    - The Time plus the Message.
+*
+*******************************************************************************}
+
+    DECLARE separator
+
+    SET DATE FORMAT self . status_date_format
+
+    IF self . status_add_time THEN
+
+        separator = " | "
+        message = STRIP ( NOW ) : separator : message
+
+    ENDIF
+
+    RESTORE DATE FORMAT
+
+    RETURN ( message )
+
+ENDROUTINE { status_window_action_status_add_time }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_length ( self, VALUE len )
+
+{ Set the Length of the Status Window.
+*
+* Parameters   : Self
+*                Len  - An integer which will be used for the Buffer Length.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    IF self . status_back_mode THEN
+
+        {**********************************************************************}
+        { Don't do anything as there is no window.                             }
+        {**********************************************************************}
+
+    ELSEIF self . status_use_grid THEN
+	
+        self . status_grid . cell_rows = len
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_length }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_extend_log ( self )    { LIT001 start }
+
+{ This action updates the log file by create/extend allowing the file to be written
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    IF self . status_logging THEN    
+
+	IF NOT ( FILE EXISTS ( self . status_filename ) )
+	
+	    	FILE CREATE self . status_filename
+	    	FILE EXTEND self . status_filename
+
+	ELSE
+	
+	    	FILE EXTEND self . status_filename
+
+	ENDIF
+    	
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_close_log ( self )
+
+{ This action closes the logfile allowing the contents to be viewed in Windows
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    IF self . status_logging THEN
+    
+	FILE CLOSE self . status_filename
+
+    ENDIF
+
+ENDROUTINE                                                    { LIT001 end }
+
+{******************************************************************************}
+
+ROUTINE status_window_action_status_end ( self )
+
+{ This action stops messages from being sent to the window and allows the user
+* to interact with the window. While we are at it close the logging file if we
+* are logging messages.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    IF self . status_logging THEN
+
+        FILE CLOSE self . status_filename
+
+    ENDIF
+
+    IF self . status_back_mode THEN
+
+        {***********************************************************************
+        * Don't bother killing the form.
+        ***********************************************************************}
+
+    ELSE
+
+        IF ( GLOBAL ( "TERMTYPE" ) = "GUI" ) AND
+           ( self . status_button  = TRUE  ) THEN
+
+            self . status_form . prompt_objects [ 1 ] . enabled = TRUE
+            self . status_form . prompt_objects [ 1 ] . repaste ( )
+
+        ELSE
+
+            self . status_form . footer = self . status_exit_footer
+            self . status_form . start_prompt ( )
+
+        ENDIF
+
+        self . status_form . wait_prompt ( )
+        self . status_form . end_prompt ( )
+
+    ENDIF
+
+ENDROUTINE { status_window_action_status_end }
+
+{******************************************************************************}
+
+ROUTINE display_cell_routine (       grid        ,
+                               VALUE cell_column ,
+                               VALUE cell_row    ,
+                                     window      ,
+                               VALUE column      ,
+                               VALUE row         ,
+                               VALUE cell_width  ,
+                               VALUE cell_height )
+
+{ This is the display routine for the grid. Nothing unusual here.
+*
+* Parameters   : Grid        - A Grid Object.
+*                Cell_Column - An Integer holding the Current Grid Column.
+*                Cell_Row    - An Integer holding the Current Grid Row.
+*                Window      - The Current Window
+*                Column      - An Integer holding the Window Column for Display
+*                Row         - An Integer holding the Window Row for Display.
+*                Cell_Width  - An Integer representing the cell width.
+*                Cell_Height - An Integer representing the cell height.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    IF BLANK ( grid . user_info [ 2, cell_row ] ) THEN
+
+        grid . user_info [ 2, cell_row ] = PROMPT_COLOUR_BLACK
+
+    ENDIF
+
+    DISPLAY grid . user_info [ cell_column, cell_row ]
+        AT column, row
+        IN WINDOW window
+        TO column + cell_width - 1
+        WITH ( foreground_colour = grid . user_info [ 2, cell_row ] )
+
+ENDROUTINE { display_cell_routine }
+
+{******************************************************************************}
+
+ROUTINE prompt_cell_routine (       grid        ,
+                              VALUE cell_column ,
+                              VALUE cell_row    ,
+                                    window      ,
+                              VALUE column      ,
+                              VALUE row         ,
+                              VALUE cell_width  ,
+                              VALUE cell_height )
+
+{ This is the prompt routine for the grid. Everything is prompted for with
+* display only set to TRUE.
+*
+* Parameters   : Grid        - A Grid Object.
+*                Cell_Column - An Integer holding the Current Grid Column.
+*                Cell_Row    - An Integer holding the Current Grid Row.
+*                Window      - The Current Window
+*                Column      - An Integer holding the Window Column for Display
+*                Row         - An Integer holding the Window Row for Display.
+*                Cell_Width  - An Integer representing the cell width.
+*                Cell_Height - An Integer representing the cell height.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    PROMPT FOR grid . user_info [ cell_column, cell_row ]
+        AT column, row
+        IN WINDOW window
+        BOLD
+        TO column + cell_width - 1
+        WITH (  display_only      = TRUE,
+                foreground_colour = grid . user_info [ 2, cell_row ] )
+
+ENDROUTINE { prompt_cell_routine }
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

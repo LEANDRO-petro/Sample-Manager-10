@@ -1,0 +1,138 @@
+{******************************************************************************
+*
+* Module Name   : EP_LIB_UTILS.RPF
+*
+* Purpose       : Common routines for standard reports
+*
+* Document Ref. : -
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+{ Routines contained within this report include
+
+	Get_identity         -  puts up a box on the screen and prompts for an
+			        old identity.
+	Mark_notes_present   - places the note indicator on the screen
+	Remove_notes_mark    - Remove the note indicator from the screen
+	Note_present         - checks to see if a note is present
+	Display_top_line     - Display the first line on the screen
+	Display_bottom_line  - Display the bottom line on the screen
+	Find_max_number      - Return the maximum number
+	Find_min_number      - Return the minimum number
+	Move_up_a_line       - Move up a line scrolling if necessary
+	Move_down_a_line     - Move down a line scrolling if necessary
+	Centre_text          - Centre a piece of text
+	Expand_message       - Expand a message
+	Contract             - Remove spaces from a string
+	GET_SMP_FOR_ANAL     - Returns Sample ID for a given analysis
+	confirm_with_message - Display a message and wait for user to confirm
+	confirm_with_text    - Display a bit of text and wait for user to confirm
+	popup_menu           - Does a client_do_popup_menu on an array, but return
+			       a number instead of the item text
+	flash_message_with_param - Same as flash message but accepts a parameter 
+				   or array of paramters to display
+	confirm_message_with_param - Same as confirm message but accepts a parameter 
+				     or array of paramters to display
+
+}
+JOIN STANDARD_LIBRARY std_client
+JOIN STANDARD_LIBRARY std_utils
+JOIN STANDARD_LIBRARY std_message
+JOIN STANDARD_LIBRARY std_prompt
+JOIN STANDARD_LIBRARY std_structure
+JOIN STANDARD_LIBRARY std_window
+JOIN STANDARD_LIBRARY std_vgl
+
+ENABLE WINDOWS
+SET NOTPROTECTED
+
+{------------------------------------------------------------------------------}
+
+CONSTANT LIB_UTILS_SQLSERVER = "SQLSERVER"
+
+{------------------------------------------------------------------------------}
+{******************************************************************************
+*
+* Module Name   : EP_LIB_UTILS.RPF
+* Purpose       : Common routines for standard reports
+* Document Ref. : 
+* Specification :
+* Portability   : Not Checked
+* Re-entrant    :
+*
+*******************************************************************************}
+
+SET NOTPROTECTED
+
+{******************************************************************************}
+
+	{ main program }
+	{ ROUTINE ep_lib_utils_spawn_reg }
+
+{
+*	Performs the spawn command redirecting the output to the
+*	specified log file.
+*
+*******************************************************************************}
+
+DECLARE script_file_name, status, spare_status, spawn_command, output, filename
+
+	IF GLOBAL ( "PLATFORM" ) = "NT" THEN
+		
+		filename = "\\SBCAS136\BRANET\export_file.txt"
+		spawn_command = "REGEDIT /E " : filename : ASCII(32) : ASCII(34) : "HKEY_LOCAL_MACHINE\SOFTWARE\" : ASCII(34)
+
+		SPAWN "cmd /E:ON /D /A /C " : spawn_command, status QUIETLY
+		
+		output = FILE EXISTS ( filename )
+		output = output
+
+		{IF ( output ) THEN FILE DELETE filename ENDIF}
+
+	ELSEIF GLOBAL ( "PLATFORM") = "UNIX" THEN
+
+		SPAWN spawn_command : " >> " : log_file_name : " 2>&1", status QUIETLY
+
+	ELSE
+
+		script_file_name = "SMP$TEXTREPORTS:spawn_" :
+		                   STRIP ( GLOBAL ( "PROCESS_ID" )) : ".com"
+
+		FILE CREATE script_file_name, status
+
+		IF status = EMPTY THEN
+
+			FILE WRITE script_file_name, "$ SET COMMAND SMP$ROOT:[000000]SMPSYS.CLD",
+			           spare_status
+			FILE WRITE script_file_name, "$ DEFINE SYS$ERROR SYS$OUTPUT",
+			           spare_status
+			FILE WRITE script_file_name, "$ DEFINE SYS$OUTPUT " : log_file_name,
+			           spare_status
+			FILE WRITE script_file_name, "$ " : spawn_command,
+			           spare_status
+			FILE WRITE script_file_name, "$ EXIT",
+			           spare_status
+
+			FILE CLOSE script_file_name, spare_status
+
+		ENDIF
+
+		IF status = EMPTY THEN
+
+			SPAWN "@" : script_file_name, status QUIETLY
+
+		ENDIF
+
+		FILE DELETE script_file_name, spare_status
+
+	ENDIF
+
+	RETURN ( status )
+{ End Main Program }
+{ ENDROUTINE }{ lib_utils_spawn_with_log }

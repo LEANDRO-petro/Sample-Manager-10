@@ -1,0 +1,132 @@
+
+{******************************************************************************
+*
+* Module Name   : TABLE_SAVER
+*
+* Purpose       : Gerar vários CSVs de tabelas
+*
+*******************************************************************************}
+{--------------------------------------------------------------------------------------------}
+{ Histórico de Modificação                                                                   }
+{ MID     Data           Quem  O que?                                                        }
+{ 011     2011-08-08     FK    utilitario para salvar dados dinâmicos                        }
+{                                                                                            }
+{                                                                                            }
+{********************************************************************************************}
+
+{ * Configurações iniciais }
+SET COMPILE_OPTION DECLARE
+SET NAME "DEFER/"
+ENABLE WINDOWS
+
+{ * Bibliotecas a serem importadas }
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_TRANSFER
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $TABLE_LOAD_SAVE_LIB
+
+{ * Declaração de variáveis }
+DECLARE global_table_names, cont, list_of_fields, arquivo, lista_aux, mensagem, pergunta
+DECLARE eh_view
+
+{ * Criação de alguns arrays }
+ARRAY global_table_names ARRAYSIZE ( 0 , 2 )
+ARRAY lista_aux
+
+{ * Busca o nome das tabelas e views }
+get_table_names ( global_table_names )
+
+
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+{ ******************* FAZER ARQUIVO COM OS NOMES DAS TABELAS SEPARADAS POR VIRGULAR ****************** }
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+
+{ * Criar o arquivo }
+DECLARE aux
+arquivo = "smp$sampletext:tabelas_nomes.txt"
+FILE DELETE arquivo,aux
+FILE CREATE arquivo
+
+{ * Loop para percorrer todas as tabelas e views }
+cont = 1
+WHILE (global_table_names [ cont,1 ] <> EMPTY) DO
+
+	{ * Filtra para não incluir views }
+	get_table_details 'global_table_names[cont,1]', "IS_VIEW", eh_view
+	
+	FILE EXTEND arquivo	
+	IF NOT(eh_view) THEN 
+
+		{ * escreve no arquivo o nome }
+		FILE WRITE arquivo, STRIP(global_table_names[cont,1]) : ","
+		
+	ENDIF
+	FILE CLOSE arquivo
+
+	{ * Próxima tabela ou view }
+	cont = cont + 1
+
+ENDWHILE { Fim do loop das tabelas e views }
+
+pergunta = "Gerar CSVs de todas as tabelas?"
+
+IF NOT(confirm_with_text(pergunta)) THEN
+	RETURN
+ENDIF
+
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+{ *************************************************************************************************** }
+
+{ * Loop para percorrer todas as tabelas  }
+cont = 1
+WHILE (global_table_names [ cont,1 ] <> EMPTY) DO
+
+	{ * Filtra para não incluir views }
+	get_table_details 'global_table_names[cont,1]', "IS_VIEW", eh_view
+
+	IF NOT(eh_view) 
+{	AND (STRIP(global_table_names[cont,1]) <> "JOB_HEADER") 	}
+{	AND (STRIP(global_table_names[cont,1]) <> "SAMPLE")	}
+{	AND (STRIP(global_table_names[cont,1]) <> "TEST")	}
+{	AND (STRIP(global_table_names[cont,1]) <> "RESULT")	}
+	AND (STRIP(global_table_names[cont,1]) <> "BATCH_ENTRY")
+	AND (STRIP(global_table_names[cont,1]) <> "BATCH_HEADER")
+	AND (STRIP(global_table_names[cont,1]) <> "WORKSHEET")
+	AND (STRIP(global_table_names[cont,1]) <> "INCIDENTS")
+	AND (STRIP(global_table_names[cont,1]) <> "ACCESS_LOG")
+{	AND (STRIP(global_table_names[cont,1]) <> "APPROVAL")	}
+	AND (STRIP(global_table_names[cont,1]) <> "BLOB_VALUES")
+	AND (STRIP(global_table_names[cont,1]) <> "PERSONNEL")
+	AND (STRIP(global_table_names[cont,1]) <> "PASSWORD")
+{	AND (STRIP(global_table_names[cont,1]) <> "INSTRUMENT_EVENT")	}
+{	AND (STRIP(global_table_names[cont,1]) <> "INCREMENTS")	}
+	AND (INDEX(STRIP(global_table_names[cont,1]), "ARCHIVE_") = 0) 
+	AND (INDEX(STRIP(global_table_names[cont,1]), "AUDIT_") = 0) 
+	AND (INDEX(STRIP(global_table_names[cont,1]), "ESIG_") = 0)
+		THEN 
+
+		{ * Busca o nome dos campos de cada tabela ou view }
+		ARRAY list_of_fields ARRAYSIZE ( 0 )
+		get_field_names_without_aliases ( global_table_names[cont,1],
+		                                  list_of_fields      )
+		
+		{ * Monta o nome do arquivo a ser gerado }
+		arquivo = "smp$sampletext:":global_table_names[cont,1]:".csv"
+		output_csv_file ( arquivo, global_table_names[cont,1],
+					list_of_fields, lista_aux,FALSE, mensagem)				
+		
+	ENDIF
+
+	{ * Próxima tabela ou view }
+	cont = cont + 1
+
+ENDWHILE { Fim do loop das tabelas e views }
+

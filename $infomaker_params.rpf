@@ -1,0 +1,1867 @@
+{*******************************************************************************
+* Module Name   : $INFOMAKER_PARAMS
+
+* Purpose       : Secondary LTE infomaker screen code
+
+* Portability   : Not Checked
+
+* Re-entrant    : No
+********************************************************************************} 
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Corrigindo bug para capturar parametros infomaker
+}
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_VGL
+JOIN STANDARD_LIBRARY STD_WINDOW
+
+JOIN LIBRARY $LABTABLIB
+JOIN LIBRARY $LIST_EDITOR
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $PROMPT_IMPRINT
+JOIN LIBRARY $LTE_INFOMAKER
+JOIN LIBRARY $LIB_TEXT
+JOIN LIBRARY $PROMPT_TOOLBAR
+
+SET NOTPROTECTED
+SET NAME "DEFER/"
+
+{**Local Constants ************************************************************} 
+
+
+{** Global Constants **********************************************************} 
+GLOBAL CONSTANT INFOMAKER_PARAMS_CLASS              = "INFOMAKER_PARAMS"
+
+GLOBAL CONSTANT INFOPARAM_RADIO_BROWSE        = 1
+GLOBAL CONSTANT INFOPARAM_PROMPT_TABLE        = 2
+GLOBAL CONSTANT INFOPARAM_PROMPT_FIELD        = 3
+GLOBAL CONSTANT INFOPARAM_RADIO_PHRASE        = 4
+GLOBAL CONSTANT INFOPARAM_PROMPT_PHRASE       = 5
+GLOBAL CONSTANT INFOPARAM_RADIO_FORMAT        = 6
+GLOBAL CONSTANT INFOPARAM_PROMPT_TYPE         = 7
+GLOBAL CONSTANT INFOPARAM_PROMPT_LENGTH       = 8
+GLOBAL CONSTANT INFOPARAM_RADIO_CUSTOM        = 9
+GLOBAL CONSTANT INFOPARAM_PROMPT_LIBRARY      = 10
+GLOBAL CONSTANT INFOPARAM_PROMPT_ROUTINE      = 11
+GLOBAL CONSTANT INFOPARAM_PROMPT_DEFAULT      = 12
+GLOBAL CONSTANT INFOPARAM_BUTTON_OK           = 13
+
+{** Global Variables **********************************************************} 
+
+{** Main Code *****************************************************************} 
+
+{* Start Of Routines **********************************************************} 
+
+{******************************************************************************}
+
+
+{*******************************************************************************
+*                             M A I N   C O D E
+*******************************************************************************}
+
+pbl_report("")
+
+{*******************************************************************************
+*                        G L O B A L   R O U T I N E S
+*******************************************************************************}
+
+GLOBAL ROUTINE lte_entry_point ( VALUE identity        , 
+                                 VALUE copied_identity ,
+                                 VALUE operation       )
+{ 
+* Summary    : The LTE Entry Point.
+*
+* Parameters   : Identity        - The Identity.
+*                Copied_Identity - The Copied Identity.
+*                Operation       - The Current LTE Operation Mode.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE answer
+
+    IF operation = "PRINT" THEN
+
+        print_option ( identity )
+
+    ELSE
+
+        answer = other_option ( identity, copied_identity, operation )
+        RETURN ( answer )
+
+    ENDIF
+    
+    
+
+ENDROUTINE
+
+{*******************************************************************************
+*                                R O U T I N E S
+*******************************************************************************}
+
+ROUTINE print_option ( VALUE identity ) 
+
+{ 
+* Summary    : Routine to call when printing the LTE.
+*
+* Parameters   : Identity        - The Identity.
+*
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE field_details
+    ARRAY field_details ARRAY_SIZE ( 0 , 2 )
+
+    field_details [ 1 , 1 ] = "DESCRIPTION"
+    field_details [ 1 , 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_DESCRIPTION", 1 )
+
+    field_details [ 2 , 1 ] = "DEFAULT_VALUE"
+    field_details [ 2 , 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_DEFAULT", 1 )
+
+    field_details [ 3 , 1 ] = "TYPE"
+    field_details [ 3 , 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_TYPE", 1 )
+
+    field_details [ 4 , 1 ] = "PROMPT1"
+    field_details [ 4 , 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_PROMPT1", 1 )
+
+    field_details [ 5 , 1 ] = "PROMPT2"
+    field_details [ 5 , 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_PROMPT2", 1 )
+
+    field_details [ 6 , 1 ] = "MANDATORY"
+    field_details [ 6 , 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_MANDATORY", 1 )
+
+    field_details [ 10, 1 ] = "IDENTITY"
+    field_details [ 10, 2 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_PROMPT2", 1 )
+
+    print_fields (  "INFOMAKER_PARAMETERS"                ,
+                    PAD ( identity , " " , 10 )     ,
+                    ""                              ,
+                    ""                              ,
+                    2                               ,
+                    28                              ,
+                    field_details                   )
+
+ENDROUTINE { print_option }
+
+{******************************************************************************}
+
+ROUTINE other_option (  VALUE identity        , 
+                        VALUE copied_identity ,
+                        VALUE operation       )
+{
+* Summary      : Handle the Data.
+*
+* Parameters   : Identity        - The Identity.
+*                Copied_Identity - The Copied Identity.
+*                Operation       - The Current LTE Operation Mode.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE prompt_details, answer, heading, library, report, arguments, 
+            prompt_array
+            
+    ARRAY prompt_array
+    
+    initialise ( prompt_details, heading )
+
+    list_editor_create_object ( the_list_editor )
+
+    the_list_editor . table         = "INFOMAKER_PARAMETERS"
+    the_list_editor . header        = 
+                      GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_HEADER" , 1 )
+    the_list_editor . footer        = ""
+    the_list_editor . pre_insert    = "PRE_INSERT_ROUTINE"
+    the_list_editor . post_insert   = EMPTY
+    the_list_editor . delete        = EMPTY
+    the_list_editor . library       = GLOBAL ( "CURRENT_LIBRARY" )
+    the_list_editor . compatability = PROMPT_DETAILS_310
+    the_list_editor . add_toolbutton_callback = "ADD_TOOLBUTTONS"
+
+    the_list_editor . setup_prompt_details ( prompt_details,
+                                             heading       )
+
+
+    the_list_editor . grid .user_info = prompt_array
+    
+    
+    {***********************************************************************
+    * When the secondary screen is called the grid is populated depending
+    * on the library and report.
+    ***********************************************************************}
+        
+    IF ( operation = "MODIFY" ) THEN
+     
+        library = SELECT infomaker_link . library
+        report = SELECT infomaker_link . report
+        arguments = SELECT infomaker_parameters . identity
+             
+           IF  ( NOT BLANK ( library ) ) AND 
+               ( NOT BLANK ( report ) ) AND
+               ( arguments = EMPTY ) THEN
+
+            
+            the_list_editor . set_table ()
+
+            the_list_editor . get_data ( TRUE )
+            the_list_editor . build_screens ()
+            
+            IF the_list_editor . grid . cell_rows < 2 THEN
+                populate_arguments ( the_list_editor )
+            ENDIF
+        
+        ENDIF
+    ENDIF
+    
+       
+    answer = the_list_editor . operation ( identity       ,
+                                           copied_identity,
+                                           operation      )
+
+    RETURN ( answer ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE add_toolbuttons( self, toolbar )
+
+{ 
+* Summary    : Create toolbar on list editor.
+
+* Parameters   : Self - List Editor
+*                Toolbar - Main toolbar on list editor.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE toolbutton
+    
+    CREATE OBJECT TOOLBAR_BUTTON_CLASS , toolbutton_sel
+    toolbutton_sel . tooltip = 
+    	GET_USER_MESSAGE ( "INFOMAKER_LINK_HEADER_BUILD_PROMPT" , 1 ) 
+    toolbutton_sel . mouse_click_routine = "define_prompt"
+    toolbutton_sel . set_icon( "INT_BUILD" )
+    toolbutton_sel . display_only    = TRUE
+    toolbar . add_separator( )
+    
+    toolbar . add_item ( toolbutton_sel )
+    
+    CREATE OBJECT TOOLBAR_BUTTON_CLASS , toolbutton_pop
+    toolbutton_pop . set_icon  ( "INT_ARROW_DOWN" )
+    toolbutton_pop . tooltip = 
+    	GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_POPULATE_BUTTON" , 1 )
+    toolbutton_pop . mouse_click_routine = "populate_arguments_toolbar"
+
+    IF self.display_only THEN
+        toolbutton_pop . enabled = FALSE
+    ENDIF
+
+    toolbar . add_item ( toolbutton_pop )
+
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE pre_insert_routine ( self        ,
+                             grid        ,
+                             cell_column ,
+                             cell_row    ,
+                             window      ,
+                             column      ,
+                             row         ,
+                             cell_width  ,
+                             cell_height ,
+                             new_value   )
+
+{ 
+* Summary    : Routine to insert a row. 
+
+* Parameters   : Self        - List Editor Object
+*                Grid        - A Grid Object.
+*                Cell_Column - An Integer holding the Current Grid Column.
+*                Cell_Row    - An Integer holding the Current Grid Row.
+*                Window      - The Current Window
+*                Column      - An Integer holding the Window Column for Display
+*                Row         - An Integer holding the Window Row for Display.
+*                Cell_Width  - An Integer representing the cell width.
+*                Cell_Height - An Integer representing the cell height.
+*                New_Value   - The New Value.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    
+    PROMPT FOR new_value
+        ON LINE row
+        FROM column TO column + ( cell_width - 5 )
+        FORMAT identity
+        IN WINDOW window
+        WITH  ( vgl_library          = GLOBAL ( "CURRENT_LIBRARY" )  ,
+                lowered              = TRUE                          )
+
+
+
+
+ENDROUTINE { pre_insert }
+
+
+{*****************************************************************************}
+
+ROUTINE initialise ( prompt_details  ,
+                     heading         )
+
+{ 
+* Summary    : Initialise the Field List.
+
+* Parameters   : Prompt_Details - The Details Array
+*                Heading        - The Heading Line.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+    DECLARE head_count, col_head, count
+    ARRAY prompt_details ARRAY_SIZE ( 0 , 6 )
+
+    {***********************************************************************
+    * Set up the list of fields to be processed.
+    ***********************************************************************}
+    
+    count = 1
+
+    prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_IDENTITY", 1 ) 
+    prompt_details [ count , 2 ] = "DISPLAY"
+    prompt_details [ count , 3 ] = "INFOMAKER_LINK"
+    prompt_details [ count , 4 ] = "IDENTITY"
+    prompt_details [ count , 5 ] = 10 
+    prompt_details [ count , 6 ] = 10 
+
+    count = count + 1
+
+    prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_DESCRIPTION", 1 ) 
+    prompt_details [ count , 2 ] = "FORMAT"
+    prompt_details [ count , 3 ] = "INFOMAKER_LINK"
+    prompt_details [ count , 4 ] = "DESCRIPTION"
+    prompt_details [ count , 5 ] = 30 
+    prompt_details [ count , 6 ] = 20 
+
+    count = count + 1
+    
+    
+    prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_PROMPT_DESCRIPTION", 1 )  
+    prompt_details [ count , 2 ] = "ROUTINE"
+    prompt_details [ count , 3 ] = GLOBAL ("CURRENT_LIBRARY")
+    prompt_details [ count , 4 ] = "DECRIPTION_PROMPT"
+    prompt_details [ count , 5 ] = 60 
+    prompt_details [ count , 6 ] = 35 
+    
+    count = count + 1
+
+    prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_MANDATORY", 1 ) 
+    prompt_details [ count , 2 ] = "FORMAT"
+    prompt_details [ count , 3 ] = "INFOMAKER_LINK"
+    prompt_details [ count , 4 ] = "MANDATORY"
+    prompt_details [ count , 5 ] = 0 
+    prompt_details [ count , 6 ] = 10 
+
+    {***********************************************************************
+    * Build up the Heading Line from the field list.  
+    ***********************************************************************}
+
+    head_count = 1
+    heading    = ""
+
+    WHILE head_count <= count DO
+
+        col_head = PAD ( prompt_details [ head_count, 1 ], " ",
+                         prompt_details [ head_count, 6 ]       )
+
+        heading    = heading : col_head : " "
+        head_count = head_count + 1 
+
+    ENDWHILE
+
+    
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE define_prompt ( self )
+{
+* Summary    : Call the build prompt form from any field, buy pressing the 
+*              toolbar
+*
+* Parameters : toolbar object
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE prompt1, prompt2, prompt_desc, form, selected_row
+    
+    selected_row = self . parent_prompt . grid . current_row
+    infomaker_params_class_define()
+        
+    CREATE OBJECT INFOMAKER_PARAMS_CLASS, form
+ 
+    IF self . parent_prompt . display_only THEN
+    	form . display_only = TRUE
+    ENDIF
+
+    form . load ()
+    form . create_build_form ()
+
+    prompt_desc = build_description ()
+
+    lib_grid_redisplay_row ( self . parent_prompt . grid, 
+    	     selected_row )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE populate_arguments_toolbar ( self )
+{
+* Summary    : Call populate_arguments
+*
+* Parameters : toolbar object
+*
+* Return     : None
+*
+*******************************************************************************}
+
+DECLARE list_obj
+
+    list_obj = self . parent_prompt
+    populate_arguments ( list_obj )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE populate_arguments ( self )
+{
+* Summary    : Populate list object with parameters
+*
+* Parameters : list editor object
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE report_name, library_name, infomaker_id, arg_array, list_editor_obj,
+            arg_count, argument_id, argument_found, new_object
+
+    report_name = EMPTY
+    library_name = EMPTY
+
+    library_name = SELECT infomaker_link . library
+    report_name = SELECT infomaker_link . report
+    infomaker_id = SELECT infomaker_link . identity
+
+    {001 \/}
+	ARRAY arg_array 
+    {001 /\}
+
+    IF ( library_name <> "" ) AND ( report_name <> "" ) THEN
+
+        arg_array = build_parmeters ( library_name , report_name )
+
+        list_editor_obj = self
+
+        arg_count = 0
+
+    {***********************************************************************
+    * Go through each argument and create a record in the db.
+    ***********************************************************************}
+
+	{001 /\}
+        {IF size_of_array ( arg_array ) <> 0 THEN}
+	IF (arg_array <> EMPTY) AND (size_of_array ( arg_array ) <> 0) THEN
+	{001 /\}
+
+            WHILE arg_count < size_of_array ( arg_array ) DO
+
+                arg_count = arg_count + 1
+
+                argument_id =     GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_ARG_PREFIX" , 1) : 
+                        STRIP ( STRING ( arg_count ) )
+
+
+                argument_found = SELECT infomaker_parameters . infomaker_link
+                        WHERE (infomaker_link = infomaker_id ) AND
+                        ( identity = argument_id )
+
+                IF argument_found = EMPTY THEN
+
+                    RESERVE ENTRY infomaker_parameters , infomaker_id    :
+                                argument_id
+
+                ELSE
+            
+                    list_editor_obj . remove_row ( arg_count )
+                
+                ENDIF
+
+                list_editor_obj . add_an_entry ( list_editor_obj . grid ,
+                        argument_id  ,
+                        arg_count      ,
+                        new_object )
+                    
+                ASSIGN infomaker_parameters . order_number  = arg_count
+                ASSIGN infomaker_parameters . description   = 
+                        GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_DESC_PREFIX" , 1) : 
+                        lib_text_identity_to_text( arg_array [ arg_count , 1 ] )
+                ASSIGN infomaker_parameters . default_value = ""
+                ASSIGN infomaker_parameters . type          = arg_array [ arg_count , 2 ]
+                ASSIGN infomaker_parameters . prompt1       = arg_array [ arg_count , 3 ]
+                ASSIGN infomaker_parameters . prompt2       = arg_array [ arg_count , 4 ]
+                ASSIGN infomaker_parameters . mandatory     = TRUE
+        
+            ENDWHILE
+        
+            lib_grid_redisplay_column ( list_editor_obj . grid , 3 )
+        
+            list_editor_obj . grid . re_display_contents( )
+        
+        ELSE
+
+            flash_message ( GET_USER_MESSAGE ( "INFOMAKER_LINK_ERROR_NO_PARAMETERS" , 1 ) , TRUE )
+
+        ENDIF
+
+    ELSE
+
+        flash_message (  GET_USER_MESSAGE ( "INFOMAKER_LINK_ERROR_INVALID_REPORT" , 1 ) , TRUE )
+
+    ENDIF
+        
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+{** Test Routines *************************************************************}
+
+ROUTINE login_imprint_library 
+
+{
+* Summary    : Lets the user select the pbl and connects to imprint and sets
+*              the library
+*              
+* Parameters : None
+*
+* Return     : imprint object
+*
+*******************************************************************************}
+
+    DECLARE imprint_path, pbl_name, imprint_obj
+
+    imprint_obj = EMPTY
+
+    IF GLOBAL ( "OLEIMPRINT_SERVER_SIDE" ) THEN
+        imprint_path = lib_utils_logical_to_string ( "smp$imprint" )
+    ELSE
+        imprint_path = client_get_imprint_path ()
+    ENDIF
+
+    IF imprint_path <> EMPTY THEN
+        pbl_name = prompt_for_pbl()
+    ELSE
+        flash_message ( GET_USER_MESSAGE ( "IMPRINT_CONNECT_UNSUCCESSFUL", 3 ) , 1 )
+    ENDIF
+
+    IF ( pbl_name <> EMPTY ) THEN
+
+        define_imprint_class ()
+
+        CREATE OBJECT IMPRINT , imprint_obj
+
+        imprint_obj . create_ole_object ()
+        imprint_obj . reset_ole_object ()
+        imprint_obj . login ()
+
+        IF GLOBAL ( "OLEIMPRINT_SERVER_SIDE" ) THEN
+
+		imprint_obj . library = lib_utils_logical_containing_file ( "smp$imprint",
+		                                                            pbl_name     )
+
+		IF imprint_obj . library <> EMPTY THEN
+			imprint_obj . library = imprint_obj . library : "\" : pbl_name
+		ELSE
+			imprint_obj . library = pbl_name
+		ENDIF
+
+        ELSE
+
+		imprint_obj . library = imprint_path : "\" : pbl_name
+
+        ENDIF
+
+        imprint_obj . set_PBL_Library ( imprint_obj . library )
+
+    ENDIF
+
+    RETURN ( imprint_obj )
+
+ENDROUTINE
+
+{******************************************************************************}
+        
+ROUTINE imprint_populate_parameters ( VALUE report, imprint_obj )
+
+{
+* Summary    : Populates the imprint object with parameters form passed report.
+*              
+* Parameters : Report Name
+*              Imprint object which has been connected to a library
+*
+* Return     : None, but imprint object is populated with parameters.
+*
+*******************************************************************************}
+
+    DECLARE export_syn, composite_syntax, report_count
+
+    export_syn = imprint_obj . export_syntax ( report )
+
+    imprint_obj . check_nested ( export_syn )
+
+    IF imprint_obj . nested_reports = EMPTY THEN
+
+        imprint_obj . get_parameters ( export_syn )
+
+        imprint_obj . get_parameter_info ( export_syn )
+
+    ELSE
+
+        composite_syntax  = export_syn
+
+        imprint_obj . get_parameters ( composite_syntax )
+
+        report_count = 0
+
+        WHILE report_count < size_of_array ( imprint_obj . nested_reports ) DO
+
+            report_count = report_count + 1
+
+            export_syn = imprint_obj . 
+                export_syntax ( 
+                STRIP ( 
+                imprint_obj . nested_reports 
+                [report_count] ) )
+
+
+            IF ( export_syn <> EMPTY ) AND ( export_syn <> "" ) THEN    
+
+                imprint_obj . get_parameter_info ( export_syn )
+
+            ELSE
+
+                imprint_obj . error = TRUE
+            ENDIF
+
+        ENDWHILE
+
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE create_reports ( VALUE option )
+{
+* Summary    : The user supplies a pbl and this routine searches
+*              all the infomaker reports within the pbl.  For each report the 
+*              parameters are parsed and all this infomation is used to
+*              create infomaker LTE records.
+* Parameters : menu option ( not used )
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE imprint_obj, rep_list, rep_array, count, info_found, arg_count,
+        arg_array, argument_id, argument_found, record_count, overwrite,
+        report_name, pblname
+
+                        
+    overwrite = ID_YES
+    record_count = 0    
+    count = 0
+
+    imprint_obj = login_imprint_library()
+
+    IF imprint_obj <> EMPTY THEN
+        
+        pblname = strip_file_from_path ( imprint_obj . library )
+        
+        rep_list = imprint_obj . list_reports ()
+        rep_array = convert_list_to_array ( rep_list )
+
+
+        
+        WHILE count < size_of_array( rep_array )
+        
+            count = count + 1
+        
+            report_name = TOUPPER( STRIP ( rep_array[ count , 1 ] ) )
+        
+            imprint_populate_parameters( report_name , imprint_obj )
+
+            {***********************************************************************
+            * Now the parameters are found create infomaker lte.
+            ***********************************************************************}
+            START READ TRANSACTION "add info"
+
+            info_found = SELECT infomaker_link . identity
+                    FOR UPDATE
+                    WHERE ( identity = report_name )
+                        
+            IF ( info_found <> EMPTY ) AND
+               ( overwrite <> ID_CANCEL ) AND 
+               ( overwrite <> ID_YESTOALL ) THEN
+
+                overwrite = client_message_box ( 
+                    GET_USER_MESSAGE ( "INFOMAKER_LINK_LINKRECORD_FOUND" , 1 )
+                        : info_found, "Convert Pbl", 
+                        MB_ICONEXCLAMATION + MB_YESNOCANCEL + MB_YESTOALL )
+
+                        
+                IF overwrite = ID_CANCEL THEN 
+                    count = size_of_array( rep_array )
+                ENDIF
+
+            ENDIF
+            
+
+            IF ( overwrite <> ID_CANCEL ) AND
+               ( overwrite <> ID_NO ) AND
+               ( NOT imprint_obj . error ) THEN
+
+                IF info_found  = EMPTY THEN
+                    RESERVE ENTRY infomaker_link , report_name
+                ENDIF
+
+
+                ASSIGN infomaker_link . library        = pblname
+                ASSIGN infomaker_link . description     = rep_array[ count , 2 ]
+                ASSIGN infomaker_link . report        = rep_array[ count , 1 ]
+
+
+                record_count = record_count + 1
+                window_set_status( "Adding report:" : rep_array[ count , 1 ] )
+                
+                START WRITE TRANSACTION "add info"
+                    UPDATE infomaker_link
+                COMMIT
+
+            {***********************************************************************
+            * Now the parameters are found create infomaker paremeters.
+            ***********************************************************************}
+
+                arg_count = 0
+                arg_array = imprint_obj . exp_parameters 
+
+                WHILE arg_count < size_of_array ( arg_array ) DO
+
+                    arg_count = arg_count + 1
+
+                    argument_id =     GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_2_ARG_PREFIX" , 1) : 
+                            STRIP ( STRING ( arg_count ) )
+
+                    info_found = SELECT infomaker_link . identity
+                        WHERE ( identity = report_name )
+
+                    START READ TRANSACTION "add info"
+
+                    argument_found = SELECT infomaker_parameters . infomaker_link
+                            FOR UPDATE
+                            WHERE ( infomaker_link = report_name ) AND
+                            ( identity = argument_id )
+
+
+                    IF argument_found = EMPTY THEN
+                            RESERVE ENTRY infomaker_parameters , info_found :
+                                    argument_id
+                        ENDIF
+
+                        ASSIGN infomaker_parameters . order_number    = arg_count
+                        ASSIGN infomaker_parameters . description    = 
+                            "Enter " : lib_text_identity_to_text( arg_array [ arg_count , 1 ] )
+                        ASSIGN infomaker_parameters . default_value    = ""
+                        
+                        
+                        
+                        IF ( arg_count = size_of_array ( arg_array ) ) AND
+                           ( arg_array [ arg_count , 2 ] = "FORMAT" ) AND 
+                           ( arg_array [ arg_count , 3 ] = "DATETIME") THEN
+                        
+                            ASSIGN infomaker_parameters . type    = "ROUTINE"
+                            ASSIGN infomaker_parameters . prompt1 = "$INFOMAKER_TEMP"
+                            ASSIGN infomaker_parameters . prompt2 = "READONLYDATETIMEPROMPT"
+                        
+                        ELSE
+                            ASSIGN infomaker_parameters . type        
+                                = arg_array [ arg_count , 2 ]
+                                
+                            IF arg_array [ arg_count , 3 ] <> EMPTY THEN
+                                ASSIGN infomaker_parameters . prompt1 = 
+                                    arg_array [ arg_count , 3 ]
+                            ELSE
+                                ASSIGN infomaker_parameters . prompt1 = ""
+                            ENDIF
+
+                            IF arg_array [ arg_count , 4 ] <> EMPTY THEN
+                                ASSIGN infomaker_parameters . prompt2    = 
+                                    arg_array [ arg_count , 4 ]
+                            ELSE
+                                ASSIGN infomaker_parameters . prompt2 = ""
+                            ENDIF
+                            
+                        ENDIF
+                        
+                        ASSIGN infomaker_parameters . mandatory        = TRUE
+
+                        START WRITE TRANSACTION "add info"
+                            UPDATE infomaker_parameters
+                        COMMIT
+
+                ENDWHILE
+
+            ENDIF
+        
+        ENDWHILE
+        
+            flash_message ( STRIP ( STRING ( record_count ) ) : 
+                GET_USER_MESSAGE ( "INFOMAKER_LINK_INFOMAKER_RECORDS", 1 ) , 1 )
+        
+        
+    ENDIF
+
+
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+{******************************************************************************}
+
+ROUTINE pbl_report( VALUE option )
+{
+* Summary    : Test routine. The user supplies a pbl and this routine searches
+*              all the infomaker reports within the pbl.  For each report the 
+*              parameters are parsed and all this infomation is written to an
+*              xml file.  This is primary for unit testing, to check the correct
+*              parameters are create compared to the where clause from the 
+*              infomaker report.
+
+* Parameters : menu option ( not used )
+
+* Return     : None
+
+*******************************************************************************}
+
+    DECLARE filename, status, imprint_obj, rep_list, rep_array, count, 
+        arg_count, arg_array, argument_id, pblname, report_name
+
+    filename = "smp$userfiles:info_pbltest" : GLOBAL ( "PROCESS_ID" )  : ".xml"
+
+    FILE CREATE  filename , status
+
+    imprint_obj = login_imprint_library()
+
+    pblname = strip_file_from_path ( imprint_obj . library )
+
+    IF imprint_obj <> EMPTY THEN
+    
+        rep_list = imprint_obj . list_reports ()
+
+        rep_array = convert_list_to_array ( rep_list )
+
+        FILE WRITE filename, "<" : STRIP ( pbl_name ) : ">" , status
+
+        count = 0
+        
+        WHILE count < size_of_array( rep_array )
+        
+            count = count + 1
+
+            report_name = TOUPPER( STRIP ( rep_array[ count , 1 ] ) )
+
+            imprint_populate_parameters( report_name , imprint_obj )
+
+            {***********************************************************************
+            * Now all the reports are found write the reports to the xml file
+            ***********************************************************************}
+
+            FILE WRITE filename, "<" : "Report_" : STRIP ( STRING( count ) ) : ">" :
+                STRIP ( rep_array[ count , 1 ] )  , status
+            
+                            
+            {***********************************************************************
+            * Write the where clause to the xml file
+            ***********************************************************************}
+
+            arg_count = 0
+            arg_array = imprint_obj . exp_parameters 
+
+            
+            FILE WRITE filename, "<where><!--" : 
+                    imprint_obj . select_string : 
+                    "--></where>" , status
+            
+            
+            {***********************************************************************
+            * Write each parameter to the xml file, with the parameter details.
+            ***********************************************************************}
+
+            FILE WRITE filename, "<paremeters>" , status
+
+            WHILE arg_count < size_of_array ( arg_array ) DO
+
+                arg_count = arg_count + 1
+
+                argument_id = ""
+                argument_id =     "ARG_" : 
+                        STRIP ( STRING ( arg_count ) )
+
+                FILE WRITE filename, "<" : argument_id : ">" ,status
+
+                FILE WRITE filename,     "<description>" : 
+                        "Enter " :  arg_array [ arg_count , 1 ] :
+                        "</description>" ,status
+
+                IF ( arg_array [ arg_count , 2 ] <> "" ) AND
+                   ( arg_array [ arg_count , 2 ] <> EMPTY ) THEN
+
+                    FILE WRITE filename, "<type>" : 
+                        arg_array [ arg_count , 2 ] :
+                        "</type>" ,status
+
+                ENDIF
+
+                IF ( arg_array [ arg_count , 3 ] <> "" ) AND
+                   ( arg_array [ arg_count , 3 ] <> EMPTY ) THEN
+
+                    FILE WRITE filename, "<prompt1>" : 
+                        arg_array [ arg_count , 3 ] :
+                        "</prompt1>" ,status
+
+                ENDIF
+
+                IF ( arg_array [ arg_count , 4 ] <> "" ) AND
+                   ( arg_array [ arg_count , 4 ] <> EMPTY ) THEN
+
+                    FILE WRITE filename, "<prompt2>" : 
+                        arg_array [ arg_count , 4 ] :
+                        "</prompt2>" ,status
+
+                ENDIF
+
+                FILE WRITE filename, "</" : argument_id : ">" ,status
+
+            ENDWHILE
+
+            FILE WRITE filename, "</paremeters>" , status
+
+
+
+            FILE WRITE filename, "</" : "Report_" : STRIP ( STRING( count ) ) : ">" ,status
+        
+        
+        ENDWHILE
+
+
+        FILE WRITE filename, "</" : pblname : ">" ,status
+        
+        FILE CLOSE filename, status
+        
+        flash_message ( GET_USER_MESSAGE ( "RP_OC" , 1 ) : ":" : filename , TRUE )
+
+    ENDIF
+        
+    
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+{******************************************************************************}
+
+ROUTINE prompt_for_pbl
+{
+* Summary    : Get a infomaker library.
+*
+* Parameters : None
+*
+* Return     : String - pbl name without path.  Empty if cancel is selected.
+*
+*******************************************************************************}
+
+    DECLARE imprint_path, form, client_browse, pbl_prompt
+
+    IF GLOBAL ( "OLEIMPRINT_SERVER_SIDE" ) THEN
+
+        imprint_path = "smp$imprint"
+        client_browse = FALSE
+        
+    ELSE
+
+        imprint_path = client_get_imprint_path ()
+        client_browse = TRUE
+    ENDIF
+
+    CREATE OBJECT PROMPT_CLASS_FORM, form
+
+    form . height = 1
+    form . width = 39
+    form . border = TRUE
+    form . header = GET_USER_MESSAGE ( "INFOMAKER_LINK_HEADER_PBL" , 1 )
+    form . row = 1
+    form . column = 5
+    form . footer = "Press <Exit> to quit"
+    form . prompt_id = "$INFOMAKER_PARAMS_PBL"
+
+    PROMPT OBJECT pbl_prompt    
+        BROWSE ON FILE
+        ON LINE 1 FROM 10
+        WITH ( file_extension = "pbl" ,
+           file_directory = imprint_path ,
+           client_file = client_browse )
+
+    form . add_prompt ( pbl_prompt )
+    form . add_display ( GET_USER_MESSAGE ( "INFOMAKER_LINK_SELECT_PBL" , 1 )  , 
+                1, 1, PROMPT_RENDITION_BOLD)
+
+        
+    form . start_prompt ()
+    form . wait_prompt ()
+    form . end_prompt ()
+
+    strip_off_filename ( pbl_prompt )
+
+    IF ( form . get_lastkey ( ) <> "EXIT" ) AND
+       ( pbl_prompt <> EMPTY ) THEN    
+       
+        RETURN ( pbl_prompt . value )
+    ELSE
+
+        RETURN ( EMPTY )
+        
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE decription_prompt (      self        ,
+                  grid          ,
+              VALUE cell_column     ,
+              VALUE cell_row    ,
+              VALUE column        ,
+              VALUE row        ,
+              VALUE cell_width    ,
+                  window        ,
+              VALUE is_display     )
+
+{
+* Summary    : Prompt Description routine.
+*
+* Parameters : Standard prompt routine values.
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE val, description
+    
+    description = build_description ()
+    
+    IF description <> EMPTY THEN
+        val = description
+    ELSE
+        val = GET_USER_MESSAGE("INFOMAKER_LINK_PROMPT_TEXT", 1)
+    ENDIF
+    
+    val = PAD ( val, "", 60 )
+    IF is_display THEN
+        
+        DISPLAY val AT 1 , 1 IN WINDOW window
+        
+    ELSE
+
+        PROMPT FOR val AT 1 , 1 IN WINDOW window
+        FORMAT text    
+        WITH (     display_only    = TRUE ,
+            vgl_library    = global ( "current_library" ) ,
+            browse_routine  = "description_prompt_browse" )
+        
+
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE description_prompt_browse ( self )
+
+{
+* Summary    : Once the browse has been selected, display the build prompt form.
+*
+* Parameters : self - description prompt object
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE prompt1, prompt2, prompt_desc, form
+    
+    infomaker_params_class_define()
+        
+    CREATE OBJECT INFOMAKER_PARAMS_CLASS, form
+    
+    form . load ()
+    form . create_build_form ()
+    
+    prompt_desc = build_description ()
+    
+    self . set_text (  prompt_desc )
+    self . repaste()
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE infomaker_params_class_define
+{
+* Summary    : Infomaker params class initialisation
+*
+* Parameters : self - INFOMAKER_PARAMS_CLASS
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DEFINE CLASS INFOMAKER_PARAMS_CLASS
+
+        INHERIT "STD_FORM"
+
+        INITIALISATION
+
+        PROPERTIES
+            "prompt_description"     { Desciption of the prompts 1 & 2 }
+            
+
+        ACTIONS
+            "create_build_form"      ,{ Returns current criteria name      }
+            "save"            ,
+            "load"            
+            
+    END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE infomaker_params_class_initialisation( self )
+{
+* Summary    : Infomaker params class initialisation
+*
+* Parameters : INFOMAKER_PARAMS_CLASS
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE tables, count, field_names, routines, routine_array
+
+        self . header             = GET_USER_MESSAGE ("INFOMAKER_LINK_HEADER_BUILD_PROMPT",1)
+        self . row                = 5
+        self . column             = 5
+        self . height             = 17
+        self . width              = 36
+        self . vgl_library        = global ( "current_library" )
+        self . button_style       = FORM_BUTTON_OK_CANCEL
+        self . return_behaviour   = FORM_RETURN_STAY
+        self . prompt_id      = "$INFOMAKER_PARAMS_PROMPT"
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_RADIO_BROWSE ]
+        BROWSE ON BOOLEAN
+        WITH (
+            caption = GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_BROWSE",1),
+        row         = 1 ,
+        column      = 4 ,
+        height      = 1 ,
+        width       = 1 ,
+        vgl_library = global ( "current_library" ) ,
+        is_radio    = TRUE , 
+        toggled_routine = "toggle_routine" ,
+        value = TRUE )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_PROMPT_TABLE",1)
+                    , 7 , 2, PROMPT_RENDITION_NORMAL ) 
+
+    GET_TABLE_NAMES ( tables )
+    count = 1
+    WHILE count <= SIZE_OF_ARRAY ( tables ) DO
+
+        tables [ count, 2 ] = tables [ count, 1 ]
+        count = count + 1
+
+    ENDWHILE
+
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_TABLE ]
+    CHOOSE OUTOF tables
+        WITH (
+        value       = "SAMPLE" ,
+        row         = 2 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        length      = 30 ,
+        vgl_library = global ( "current_library" ) ,
+        leave_prompt_routine = "leave_prompt_routine" ,
+        is_spin     = FALSE )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_PROMPT_FIELD",1)
+                    , 7 , 3, PROMPT_RENDITION_NORMAL ) 
+
+    
+    fields_names = browse_array_table ( "SAMPLE" )
+    
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_FIELD ]
+        CHOOSE OUTOF fields_names
+        WITH (
+        value       = "" ,
+        row         = 3 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        vgl_library = global ( "current_library" ) )
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_RADIO_PHRASE ]
+        BROWSE ON BOOLEAN
+        WITH (
+            caption = GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_PHRASE",1),
+        row         = 5 ,
+        column      = 4 ,
+        height      = 1 ,
+        width       = 1 ,
+        vgl_library = global ( "current_library" ) ,
+        is_radio    = TRUE , 
+        toggled_routine = "toggle_routine" )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_PROMPT_PHRASE",1)
+                    , 7 , 6, PROMPT_RENDITION_NORMAL ) 
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_PHRASE ]
+        BROWSE ON phrase_header.identity
+        WITH (
+        value       = "" ,
+        row         = 6 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        vgl_library = global ( "current_library" ) )
+
+        
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_RADIO_FORMAT ]
+        BROWSE ON BOOLEAN
+        WITH (
+        caption = GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_FORMAT",1),
+        row         = 8 ,
+        column      = 4 ,
+        height      = 1 ,
+        width       = 1 ,
+        vgl_library = global ( "current_library" ),
+        is_radio    = TRUE , 
+        toggled_routine = "toggle_routine" )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_LTE_2_TYPE",1)
+                    , 7 , 9, PROMPT_RENDITION_NORMAL ) 
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_TYPE ]
+        BROWSE ON VALID_PHRASE_ID.FORMAT_TYP
+
+        WITH (
+        value       = "TEXT" ,
+        row         = 9 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        vgl_library = global ( "current_library" ) ,
+        leave_prompt_routine = "leave_prompt_routine" )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_PROMPT_LENGTH",1)
+                    , 7 , 10, PROMPT_RENDITION_NORMAL ) 
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_LENGTH ]
+        FORMAT INTEGER
+        WITH (
+        value       = 10 ,
+        row         = 10 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        minimum     = 1,
+        lowered = TRUE,
+        vgl_library = global ( "current_library" ) )
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_RADIO_CUSTOM ]
+        BROWSE ON BOOLEAN
+        WITH (
+            caption = GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_ROUTINE",1),
+        row         = 12 ,
+        column      = 4 ,
+        height      = 1 ,
+        width       = 1 ,
+        vgl_library = global ( "current_library" ) ,
+        is_radio    = TRUE , 
+        toggled_routine = "toggle_routine" )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_PROMPT_VGL",1)
+                    , 7 , 13, PROMPT_RENDITION_NORMAL ) 
+
+        PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ]
+        BROWSE ON report . identity
+        WITH (
+        value       = global ( "current_library" ) ,
+        row         = 13 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        vgl_library = global ( "current_library" ) ,
+        leave_prompt_routine = "leave_prompt_routine" )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_PROMPT_ROUTINE",1)
+                    , 7 , 14, PROMPT_RENDITION_NORMAL ) 
+
+    routine_array = browse_array_library ( global ( "current_library" ) )
+    
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ]
+        CHOOSE OUTOF routine_array
+        WITH (
+        value       = "" ,
+        row         = 14 ,
+        column      = 19 ,
+        height      = 1 ,
+        width       = 15 ,
+        vgl_library = global ( "current_library" ) )
+            
+    self . add_display ( 
+        GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_DEFAULT",1), 
+        4 , 16, PROMPT_RENDITION_NORMAL ) 
+
+    PROMPT OBJECT self . prompt_objects [ INFOPARAM_PROMPT_DEFAULT ]
+        CLASS "STD_PROMPT_TEXT"
+        WITH ( 
+        value       = "" ,
+        row         = 16 ,
+        column      = 19 ,
+        height      = 1  ,
+        width       = 15 )
+
+        self . add_display ( GET_USER_MESSAGE ("INFOMAKER_LINK_FOOTER_BUILD_PROMPT",1)
+                    , 2 , 17.5, PROMPT_RENDITION_NORMAL ) 
+
+    self . add_frame ( GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_DEFAULT",1), 2 , 16, 1 , 34  ) 
+    self . add_frame ( GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_ROUTINE",1), 2 , 12, 3 , 34  )
+    self . add_frame ( GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_FORMAT",1), 2 , 8, 3 , 34  )
+    self . add_frame ( GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_PHRASE",1), 2 , 5 , 2 , 34  )
+    self . add_frame ( GET_USER_MESSAGE ("INFOMAKER_LINK_TYPE_BROWSE",1), 2 , 1, 3 , 34  ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+{******************************************************************************}
+
+ROUTINE infomaker_params_action_create_build_form ( self )
+{
+* Summary    : Create build prompt.
+*
+* Parameters : self - INFOMAKER_PARAMS_CLASS
+*
+* Return     : None
+*
+*******************************************************************************}
+
+   
+    self . start_prompt ()
+    
+    IF self . display_only THEN
+    
+        self . active_prompt = INFOPARAM_BUTTON_OK
+
+    
+    ENDIF
+	
+    self . load ()
+
+    self . wait_prompt ()
+    self . end_prompt ()
+
+
+
+    IF ( self . get_lastkey ( ) <> "EXIT" )
+
+        self . save ()
+        
+    ENDIF    
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE  infomaker_params_action_save ( self )
+{
+* Summary    : Save prompt information to the db. Note save information depends
+*              on which radio button is set to true.
+*
+* Parameters : self - INFOMAKER_PARAMS_CLASS
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE argument, text_prompt
+
+    argument = SELECT infomaker_parameters . identity
+
+    IF self . prompt_objects [ INFOPARAM_RADIO_BROWSE ] . value THEN
+
+        ASSIGN infomaker_parameters . type = "BROWSE"
+        ASSIGN infomaker_parameters . prompt1 =
+            self . prompt_objects [ INFOPARAM_PROMPT_TABLE ] . value
+        ASSIGN infomaker_parameters . prompt2 =
+            self . prompt_objects [ INFOPARAM_PROMPT_FIELD ] . value
+
+    ELSEIF self . prompt_objects [ INFOPARAM_RADIO_PHRASE ] . value THEN
+
+        ASSIGN infomaker_parameters . type = "PHRASE"
+        ASSIGN infomaker_parameters . prompt1 =
+            self . prompt_objects [ INFOPARAM_PROMPT_PHRASE ] . value
+        ASSIGN infomaker_parameters . prompt2 = ""    
+
+    ELSEIF self . prompt_objects [ INFOPARAM_RADIO_FORMAT ] . value THEN
+
+        ASSIGN infomaker_parameters . type = "FORMAT"
+
+        IF self . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . value = "TEXT" THEN
+        
+            text_prompt = STRIP ( self . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . value ) :
+                STRIP ( STRING ( self . prompt_objects [ INFOPARAM_PROMPT_LENGTH ] . value) )
+            
+            ASSIGN infomaker_parameters . prompt1 = text_prompt
+        ELSE
+        
+            ASSIGN infomaker_parameters . prompt1 = self . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . value
+        ENDIF
+        
+        ASSIGN infomaker_parameters . prompt2 = ""
+
+
+    ELSEIF self . prompt_objects [ INFOPARAM_RADIO_CUSTOM ] . value THEN
+
+        ASSIGN infomaker_parameters . type = "ROUTINE"
+
+        ASSIGN infomaker_parameters . prompt1 =
+            self . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . value
+        ASSIGN infomaker_parameters . prompt2 =
+            self . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ] . value
+        
+    ENDIF
+
+    ASSIGN infomaker_parameters . default_value =     
+        self . prompt_objects [ INFOPARAM_PROMPT_DEFAULT ] . value
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE  infomaker_params_action_load ( self )
+{
+* Summary    : Load prompt information for the db into the prompts on the
+*              build prompt.
+*
+* Parameters : self - INFOMAKER_PARAMS_CLASS
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE prompt_type, prompt1, prompt2, text_length, default, fields_names,
+        routines
+    
+    prompt_type = SELECT infomaker_parameters . type
+    prompt1 = SELECT infomaker_parameters . prompt1
+    prompt2 = SELECT infomaker_parameters . prompt2    
+    
+    IF ( prompt_type <> EMPTY ) AND ( prompt1 <> EMPTY ) THEN
+    
+        prompt1 = STRIP ( prompt1 )
+        prompt2 = STRIP ( prompt2 )
+
+        IF prompt_type = "BROWSE" THEN
+
+            toggle_routine ( self . prompt_objects [INFOPARAM_RADIO_BROWSE] )
+            
+            fields_names = browse_array_table ( prompt1 )
+            
+            self . prompt_objects 
+                [ INFOPARAM_PROMPT_FIELD ] . choose_array = fields_names
+                
+            
+            self . prompt_objects 
+                [ INFOPARAM_PROMPT_TABLE ] . set_text ( prompt1 )
+            self . prompt_objects 
+                [ INFOPARAM_PROMPT_FIELD ] . set_text ( prompt2 )
+
+        ELSEIF prompt_type = "PHRASE"
+        
+            toggle_routine ( self . prompt_objects [INFOPARAM_RADIO_PHRASE] )        
+
+            self . prompt_objects 
+                [ INFOPARAM_PROMPT_PHRASE ] . set_text ( prompt1 )
+
+        ELSEIF prompt_type = "FORMAT"
+        
+            toggle_routine ( self . prompt_objects [INFOPARAM_RADIO_FORMAT] )
+
+            IF INDEX ( prompt1 , "TEXT") > 0 THEN
+                text_length = RIGHTSTRING( prompt1 , LENGTH (prompt1)  - 4 )
+
+                self . prompt_objects 
+                    [ INFOPARAM_PROMPT_TYPE ] . set_text ( "TEXT" )
+                self . prompt_objects 
+                    [ INFOPARAM_PROMPT_LENGTH ] . 
+                    set_text ( STRIP ( text_length ) )
+            ELSE
+            
+                self . prompt_objects [ INFOPARAM_PROMPT_LENGTH ] . 
+                        set_enabled ( FALSE )
+            
+                self . prompt_objects 
+                    [ INFOPARAM_PROMPT_TYPE ] . set_text ( prompt1 )
+                
+            ENDIF
+
+        ELSEIF prompt_type = "ROUTINE"
+
+            toggle_routine ( self . prompt_objects [INFOPARAM_RADIO_CUSTOM] )
+            
+            routines = browse_array_library ( prompt1 )
+                        
+            self . prompt_objects 
+                [ INFOPARAM_PROMPT_ROUTINE ] . choose_array = routines
+            
+            self . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . set_text ( prompt1 )
+            self . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ] . set_text ( prompt2 )
+
+        
+        ELSE
+        
+            toggle_routine ( self . prompt_objects [INFOPARAM_RADIO_BROWSE] )
+        
+        ENDIF
+        
+        
+    
+    ENDIF
+
+    default = SELECT infomaker_parameters . default_value    
+    
+    IF default <> EMPTY THEN
+    
+        self . prompt_objects [ INFOPARAM_PROMPT_DEFAULT ] . set_text ( default )
+    
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE  build_description
+{
+* Summary    : Routine to build the prompt description depending on data stored
+*           in the infomaker_parameters table.
+*
+* Parameters : None
+*
+* Return     : None
+*
+*******************************************************************************}
+
+
+    DECLARE prompt1, prompt2, description, type, default, sep
+    
+    
+    description = EMPTY
+    
+    type = SELECT infomaker_parameters . type
+    prompt1 = SELECT infomaker_parameters . prompt1
+    prompt2 = SELECT infomaker_parameters . prompt2
+    default = SELECT infomaker_parameters . default_value
+    
+    IF NOT BLANK ( prompt1 ) THEN
+    
+        IF type = "ROUTINE" THEN
+        
+            description = GET_USER_MESSAGE("INFOMAKER_LINK_PROMPT_TEXT" , 2)
+            sep = "\"
+        
+        ELSE 
+        
+            description = GET_USER_MESSAGE("INFOMAKER_LINK_PROMPT_TEXT" , 3)
+            sep = "."
+        
+        ENDIF
+    
+        
+        prompt1 = STRIP ( prompt1 )
+        prompt2 = STRIP ( prompt2 )
+        type = STRIP ( type )
+        
+        IF ( INDEX ( prompt1, "TEXT") = 1 ) AND ( type = "FORMAT" ) THEN
+            description = description : prompt1 : prompt2
+        ELSE
+        
+            IF NOT BLANK ( prompt2 ) THEN
+                prompt2 = STRIP ( prompt2 )
+                description = description: prompt1 : sep : prompt2
+            ELSE
+                description = description : prompt1
+        
+            ENDIF
+        
+        
+        ENDIF
+        
+        
+        IF NOT BLANK (  default ) THEN
+        
+            description = description : "(" : STRIP ( default ) : ")"
+            
+        ENDIF
+    ENDIF
+
+
+    RETURN ( description )
+    
+ENDROUTINE
+
+
+{******************************************************************************}
+
+
+ROUTINE toggle_routine ( self )
+{
+* Summary    : Main toggle routine for build prompt radio buttons.
+*
+* Parameters : self - form object
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE form
+
+    form = self . parent_prompt
+
+    IF self . tag = INFOPARAM_RADIO_BROWSE THEN
+
+        form . prompt_objects [ INFOPARAM_RADIO_BROWSE ] . set_text ( TRUE )
+        form . prompt_objects [ INFOPARAM_RADIO_CUSTOM ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_PHRASE ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_FORMAT ] . set_text ( FALSE )
+        
+        form . prompt_objects [ INFOPARAM_PROMPT_TABLE ] . set_enabled ( TRUE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_FIELD ] . set_enabled ( TRUE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_PHRASE ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . set_enabled ( FALSE ) 
+        form . prompt_objects [ INFOPARAM_PROMPT_LENGTH ] . set_enabled ( FALSE )
+
+    ELSEIF self . tag = INFOPARAM_RADIO_CUSTOM THEN
+
+        form . prompt_objects [ INFOPARAM_RADIO_BROWSE ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_CUSTOM ] . set_text ( TRUE )
+        form . prompt_objects [ INFOPARAM_RADIO_PHRASE ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_FORMAT ] . set_text ( FALSE )
+
+        form . prompt_objects [ INFOPARAM_PROMPT_TABLE ] . set_enabled ( FALSE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_FIELD ] . set_enabled ( FALSE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . set_enabled ( TRUE )
+        form . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ] . set_enabled ( TRUE )
+        form . prompt_objects [ INFOPARAM_PROMPT_PHRASE ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . set_enabled ( FALSE ) 
+        form . prompt_objects [ INFOPARAM_PROMPT_LENGTH ] . set_enabled ( FALSE )
+
+    ELSEIF self . tag = INFOPARAM_RADIO_PHRASE THEN
+
+        form . prompt_objects [ INFOPARAM_RADIO_BROWSE ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_CUSTOM ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_PHRASE ] . set_text ( TRUE )
+        form . prompt_objects [ INFOPARAM_RADIO_FORMAT ] . set_text ( FALSE )
+
+        form . prompt_objects [ INFOPARAM_PROMPT_TABLE ] . set_enabled ( FALSE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_FIELD ] . set_enabled ( FALSE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_PHRASE ] . set_enabled ( TRUE )
+        form . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . set_enabled ( FALSE ) 
+        form . prompt_objects [ INFOPARAM_PROMPT_LENGTH ] . set_enabled ( FALSE )
+
+    ELSEIF self . tag = INFOPARAM_RADIO_FORMAT THEN
+
+        form . prompt_objects [ INFOPARAM_RADIO_BROWSE ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_CUSTOM ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_PHRASE ] . set_text ( FALSE )
+        form . prompt_objects [ INFOPARAM_RADIO_FORMAT ] . set_text ( TRUE )
+        
+        form . prompt_objects [ INFOPARAM_PROMPT_TABLE ] . set_enabled ( FALSE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_FIELD ] . set_enabled ( FALSE )    
+        form . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_ROUTINE ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_PHRASE ] . set_enabled ( FALSE )
+        form . prompt_objects [ INFOPARAM_PROMPT_TYPE ] . set_enabled ( TRUE ) 
+        form . prompt_objects [ INFOPARAM_PROMPT_LENGTH ] . set_enabled ( TRUE )
+    ENDIF
+
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE leave_prompt_routine ( self )
+{
+* Summary    : Leave prompt routine, modifys prompts based on data selected.
+*
+* Parameters : self - prompt object
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE parent, fields_names, count, routines, routine_array
+
+    parent = self . parent_prompt
+
+    IF self . tag = INFOPARAM_PROMPT_TABLE THEN
+        
+        fields_names = browse_array_table ( 
+            parent . prompt_objects [ INFOPARAM_PROMPT_TABLE ] . text )
+
+        parent . prompt_objects 
+            [ INFOPARAM_PROMPT_FIELD ] . choose_array = fields_names
+  
+    ELSEIF self . tag = INFOPARAM_PROMPT_LIBRARY THEN
+
+        ARRAY routine_array
+                        
+        routine_array = browse_array_library ( 
+            parent . prompt_objects [ INFOPARAM_PROMPT_LIBRARY ] . text )
+        
+        parent . prompt_objects 
+            [ INFOPARAM_PROMPT_ROUTINE ] . choose_array = routine_array
+
+    ELSEIF self . tag = INFOPARAM_PROMPT_TYPE THEN
+
+        IF self . value = "TEXT" THEN
+            parent . prompt_objects    
+                [ INFOPARAM_PROMPT_LENGTH ] . display_only = FALSE
+        ELSE
+            parent . prompt_objects    
+                [ INFOPARAM_PROMPT_LENGTH ] . display_only = TRUE
+        ENDIF
+
+    ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE browse_array_table ( VALUE table )
+{
+* Summary    : Return a browse array based on parameter.
+*
+* Parameters : VALUE table_name
+*
+* Return     : ARRAY 2 dimensional browse array
+*
+*******************************************************************************}
+
+    DECLARE browse_array    
+    
+    {Get field names based on table}
+    GET_FIELD_NAMES( table , browse_array )
+    count = 1
+    WHILE count <= SIZE_OF_ARRAY ( browse_array ) DO
+
+        browse_array [ count, 2 ] = browse_array [ count, 1 ]
+        count = count + 1
+    
+    ENDWHILE
+    
+    RETURN ( browse_array )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE browse_array_library ( VALUE library )
+{
+* Summary    : Return a browse array based on parameter.
+*
+* Parameters : VALUE table_name
+*
+* Return     : ARRAY 2 dimensional browse array
+*
+*******************************************************************************}
+
+    DECLARE browse_array, count    
+    
+    ARRAY browse_array
+    ARRAY routine_array
+    
+    IF NOT BLANK( library ) THEN
+    	vgl_find_routines ( library , routine_array )
+    ELSE
+    	routine_array[1] = ""
+    ENDIF
+    count = 1
+    WHILE count <= SIZE_OF_ARRAY ( routine_array ) DO
+
+        browse_array [ count , 1 ] = STRIP ( routine_array [ count ] )
+        browse_array [ count , 2 ] = STRIP ( routine_array [ count ] )
+        count = count + 1
+    
+    ENDWHILE
+        
+    RETURN ( browse_array )
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

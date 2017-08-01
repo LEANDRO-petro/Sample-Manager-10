@@ -1,0 +1,461 @@
+{******************************************************************************
+*
+* Module Name   : $LIB_TSR_FORM
+*
+* Purpose       : Result List form handling
+*
+* Document Ref. : 
+*
+* Specification :
+*
+*
+* Re-entrant    : Yes
+*
+*******************************************************************************}
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY std_prompt
+JOIN STANDARD_LIBRARY std_class
+
+JOIN LIBRARY $prompt_split
+JOIN LIBRARY $lib_re_globals
+JOIN LIBRARY $lib_utils
+JOIN LIBRARY $lib_tsr_user
+JOIN LIBRARY $lib_re_tree
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_tsr_form_initialise
+
+	IF NOT GLOBAL ( "LIBRARY_INITIALISED" ) THEN
+
+		DEFINE CLASS RE_LIST_FORM
+
+			INHERIT
+				PROMPT_CLASS_FORM
+
+			PROPERTIES
+				"TSR_GRID" ,
+				"OLD_SHOW_PROMPT_STATUS"
+
+			ACTIONS
+				"START_PROMPT" ,
+				"WAIT_PROMPT"  ,
+				"END_PROMPT"
+
+	        END CLASS
+
+		DEFINE CLASS RE_LIST_MAIN_FORM
+
+			INHERIT
+				PROMPT_CLASS_FORM
+
+			PROPERTIES
+				"TSR_FORM" ,
+				"STATUS_PROMPT"
+
+			ACTIONS
+				"WAIT_PROMPT"
+
+	        END CLASS
+
+		SET GLOBAL "LIBRARY_INITIALISED" TO TRUE
+
+		set_up_std_prompt_split_class ( )
+		lib_re_tree_initialise ( )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_tsr_form_create_form (       tsr_form     ,
+                                         grid_object  ,
+                                   VALUE screen_title )
+
+	DECLARE main_form,
+	        form_object,
+	        split2,
+	        split1,
+	        split3,
+	        gui_width,
+	        gui_height,
+	        top_split_height,
+	        left_split_width,
+	        split_column_width,
+	        info_screens_count,
+	        count,
+	        main_split_row,
+	        main_split_width,
+	        status_prompt
+
+	{ Setup the info screens }
+
+	grid_object . info_screens_setup ( )
+
+	{ Setup the TSR form }
+
+	CREATE OBJECT RE_LIST_FORM, form_object
+
+	form_object . row    = grid_object . row
+	form_object . column = grid_object . column
+	form_object . height = grid_object . height
+	form_object . width  = grid_object . width
+
+	form_object . use_top_line = TRUE
+	form_object . proportional = TRUE
+	form_object . button_style = FORM_BUTTON_NONE
+
+	form_object . header = GET_USER_MESSAGE ( screen_title, 1 )
+
+	grid_object . row    = 0
+	grid_object . column = 0
+
+	form_object . tsr_grid = form_object . add_prompt ( grid_object )
+
+	lib_tsr_user_screen_setup ( grid_object ,
+	                            form_object )
+
+	info_screens_count = grid_object . info_screens_count ( )
+
+	IF ( NOT GLOBAL ( "RES_SPLITTER" )) OR
+	   (( NOT grid_object . re_tree_on ) AND ( info_screens_count = 0 )) THEN
+
+		form_object . row    = 0
+		form_object . column = 4
+			
+		grid_object . height = form_object . height - 1
+
+		IF NOT grid_object . toolbox_or_buttons THEN
+
+			grid_object . row = 1
+
+			form_object . width  = form_object . width + 11
+
+		ELSE
+	
+			grid_object . row = 2
+			grid_object . height = grid_object . height - 1
+
+		ENDIF
+
+		tsr_form = form_object
+
+	ELSE
+
+		grid_object . full_screen = TRUE
+
+		{ Setup the main TSR form }
+
+		CREATE OBJECT RE_LIST_MAIN_FORM, main_form
+
+		object_assign_uncounted ( main_form . tsr_form, form_object )
+
+		gui_width  = GLOBAL ( "GUI_WIDTH"  )
+		gui_height = GLOBAL ( "GUI_HEIGHT" )
+
+		IF info_screens_count = 3 THEN
+			left_split_width = grid_object . mlp_form . width + 3
+		ELSE
+			left_split_width = form_object . width * 0.4
+		ENDIF
+
+		IF grid_object . toolbox_or_buttons THEN
+			main_form . width  = find_min_number (
+			                       gui_width - 6                              ,
+			                       form_object . width + left_split_width + 1 )
+		ELSE
+			main_form . width  = find_min_number (
+			                       gui_width - 6                               ,
+			                       form_object . width + left_split_width + 12 )
+		ENDIF
+		
+		main_form . row    = 3
+		main_form . column = find_max_number (( gui_width - main_form . width ) / 2,
+		                                        1                                  )
+		main_form . prompt_id = STRIP ( OBJECT_GET_CLASS_NAME ( grid_object )) : STRIP ( grid_object . re_mode )
+
+		IF info_screens_count > 0 THEN
+
+			main_form . height = find_min_number ( gui_height - 3           ,
+			                                       9 + form_object . height )
+			top_split_height = find_min_number ( form_object . height   ,
+			                                     main_form . height - 9 )
+
+		ELSE
+			top_split_height   = form_object . height
+			main_form . height = form_object . height + 4
+		ENDIF
+
+		main_form . use_top_line = TRUE
+		main_form . proportional = TRUE
+		main_form . button_style = FORM_BUTTON_NONE
+
+		tsr_form = main_form
+
+		IF grid_object . toolbox_or_buttons THEN
+			main_split_row   = 2
+			main_split_width = main_form . width
+			left_split_width = find_max_number ( 
+			                     20                                          ,
+			                     main_form . width - form_object . width - 1 )
+		ELSE
+			main_split_row   = 1
+			main_split_width = main_form . width - 11
+			left_split_width = find_max_number ( 
+			                     20                                           ,
+			                     main_form . width - form_object . width - 12 )
+		ENDIF
+
+	        PROMPT OBJECT status_prompt
+	        	FORMAT TEXT
+	                WITH ( row = main_form . height,
+	                       column = 0.4 ,
+	                       width = main_form . width + 2 )
+
+		main_form . status_prompt = main_form . add_display ( status_prompt )
+
+		IF grid_object . re_tree_on THEN
+
+			{ Split the re grid from the tree }
+
+			CREATE OBJECT PROMPT_SPLIT_CLASS , split1
+
+			split1 . height = top_split_height
+			split1 . column = 0
+
+			split1 . row    = main_split_row
+			split1 . width  = main_split_width
+
+			split1 . set_size ( 2, 1 )
+			split1 . set_column_width ( 1, left_split_width )
+
+			split1 . add_form  ( 2, 1, form_object )
+
+			split1 . add_form  ( 1, 1, grid_object . re_tree_form )
+
+			form_object . height = top_split_height - 2
+			form_object . width  = split1 . width - left_split_width - 2
+
+		ELSE
+
+			split1 = EMPTY
+			top_split_height = top_split_height - main_split_row - 1.5
+
+		ENDIF
+
+		IF info_screens_count > 0 THEN
+
+			{ Add a lower split area }
+
+			CREATE OBJECT PROMPT_SPLIT_CLASS , split2
+
+			split2 . row    = main_split_row
+			split2 . height = main_form . height - main_split_row - 1.5
+			split2 . width  = main_split_width
+			split2 . column = 0
+
+			split2 . set_size ( 1, 2 )
+			split2 . set_row_height ( 1 , top_split_height )
+
+			IF split1 <> EMPTY THEN
+				split2 . add_split ( 1, 1, split1 )
+			ELSE
+				split2 . add_form  ( 1, 1, form_object )
+			ENDIF
+
+			IF info_screens_count > 1 THEN
+
+				{ Split the lower portion }
+
+				CREATE OBJECT PROMPT_SPLIT_CLASS , split3
+
+				split3 . height = 1
+				split3 . width  = main_split_width
+				split3 . row    = 0
+				split3 . column = 0
+
+				split3 . set_size ( info_screens_count, 1 )
+
+				{ Add to base form }
+
+				split_column_width = ROUND ( main_split_width / info_screens_count )
+
+				split2 . add_split ( 1, 2, split3 )
+
+				count = 1
+
+				WHILE count < info_screens_count DO
+
+					split3 . set_column_width ( count              ,
+					                            split_column_width )
+					count = count + 1
+
+				ENDWHILE
+
+			ENDIF
+
+			count = 0
+
+			IF grid_object . limits_box_on THEN
+
+				count = count + 1
+
+				grid_object . mlp_form . row    = 1
+				grid_object . mlp_form . column = 1
+				grid_object . mlp_form . height = 1
+				grid_object . mlp_form . width  = 1
+
+				IF info_screens_count > 1 THEN
+					split3 . add_form ( count, 1, grid_object . mlp_form )
+				ELSE
+					split2 . add_form ( 1, 2, grid_object . mlp_form )
+				ENDIF
+
+			ENDIF
+
+			IF grid_object . audit_box_on THEN
+
+				count = count + 1
+
+				grid_object . audit_form . row    = 1
+				grid_object . audit_form . column = 1
+				grid_object . audit_form . height = 1
+				grid_object . audit_form . width  = 1
+
+				IF info_screens_count > 1 THEN
+					split3 . add_form ( count, 1, grid_object . audit_form )
+				ELSE
+					split2 . add_form ( 1, 2, grid_object . audit_form )
+				ENDIF
+
+			ENDIF
+
+			IF grid_object . graph_on THEN
+
+				count = count + 1
+
+				grid_object . graph_form . row    = 1
+				grid_object . graph_form . column = 1
+				grid_object . graph_form . height = 1
+				grid_object . graph_form . width  = 1
+
+				IF info_screens_count > 1 THEN
+					split3 . add_form ( count, 1, grid_object . graph_form )
+				ELSE
+					split2 . add_form ( 1, 2, grid_object . graph_form )
+				ENDIF
+
+			ENDIF
+
+			IF grid_object . incidents_on THEN
+
+				count = count + 1
+
+				grid_object . incidents_form . row    = 1
+				grid_object . incidents_form . column = 1
+				grid_object . incidents_form . height = 1
+				grid_object . incidents_form . width  = 1
+
+				IF info_screens_count > 1 THEN
+					split3 . add_form ( count, 1, grid_object . incidents_form )
+				ELSE
+					split2 . add_form ( 1, 2, grid_object . incidents_form )
+				ENDIF
+
+			ENDIF
+
+			main_form . add_prompt ( split2 )
+
+		ELSE
+
+			{ Add the main splitter to the main form }
+
+			IF split1 <> EMPTY THEN
+				main_form . add_prompt ( split1 )
+			ELSE
+				main_form . add_prompt ( form_object )
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE re_list_form_action_start_prompt ( self )
+
+	DECLARE loop
+
+	object_invoke_class ( self , PROMPT_CLASS_FORM , "START_PROMPT" )
+
+	self . prompt_objects [ self . tsr_grid ] . local_start_prompt ( )
+
+	loop = self
+
+	WHILE loop . parent_prompt <> EMPTY DO
+
+		loop . parent_prompt . active_prompt = self . tag
+
+		loop = loop . parent_prompt
+
+	ENDWHILE
+
+	self . active_prompt = self . tsr_grid
+
+	self . old_show_prompt_status = GLOBAL ( "SHOW_PROMPT_STATUS" )
+	SET GLOBAL "SHOW_PROMPT_STATUS" TO FALSE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE re_list_form_action_wait_prompt ( self )
+
+	object_invoke_class ( self , PROMPT_CLASS_FORM , "WAIT_PROMPT" )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE re_list_form_action_end_prompt ( self )
+
+	self . prompt_objects [ self . tsr_grid ] . local_end_prompt ( )
+
+	object_invoke_class ( self , PROMPT_CLASS_FORM , "END_PROMPT" )
+
+	SET GLOBAL "SHOW_PROMPT_STATUS" TO self . old_show_prompt_status
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE re_list_main_form_action_wait_prompt ( self )
+
+	DECLARE allowed_to_leave, tsr_form
+
+	allowed_to_leave = FALSE
+	tsr_form = self . tsr_form
+
+	WHILE NOT allowed_to_leave DO
+
+		object_invoke_class ( self , PROMPT_CLASS_FORM , "WAIT_PROMPT" )
+	
+		allowed_to_leave = tsr_form .
+		                       prompt_objects [ tsr_form . tsr_grid ] .
+		                           ask_store_results ( )
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

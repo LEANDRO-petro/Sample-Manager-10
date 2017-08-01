@@ -1,0 +1,115 @@
+{******************************************************************************
+*
+* Module Name   : ROTINAS_LF.RPF
+*
+* Purpose       : Conjunto de rotinas para consultas diversas no sistema.
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : Yes
+*
+*******************************************************************************}
+SET NAME "DEFER/"
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_VGL
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_WINDOW
+
+JOIN LIBRARY $BROWSE
+JOIN LIBRARY $LIB_BROWSER_MULTI
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $MRU_LIST_FIELD
+JOIN LIBRARY $MRU_LIST_COMMAND
+JOIN LIBRARY $PROMPT_IMPRINT
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN LIBRARY $lib_utils
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE HOJEATEMEIANOITE(column, row, win_name, disp_type)
+	
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	DECLARE HOJE, HOJESEMHORA, HORAFINAL, month, year, day, prazo
+	
+	HORAFINAL = "23:59:59"
+		
+	SET DATE FORMAT "DZ/MZ/YYYY H24:MI:SS"
+	
+	HOJESEMHORA = string ( NOW )
+	
+	day = NUMERIC ( SUBSTRING (HOJESEMHORA, 1,2))
+	
+	month = NUMERIC ( SUBSTRING ( HOJESEMHORA , 4 , 2 ))
+	
+	year = NUMERIC ( SUBSTRING ( HOJESEMHORA , 7 , 4 ))
+	
+	
+	IF (MONTH = 1) OR (MONTH = 3) OR (MONTH = 5) OR (MONTH = 7) OR (MONTH = 8) OR (MONTH = 10) THEN
+	   IF (DAY = 31) THEN
+	   	DAY = 01
+	   	MONTH = MONTH + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ELSEIF (MONTH = 12) THEN
+	   IF DAY = 31 THEN
+	   	DAY = 01
+	   	MONTH = 1
+	   	year = year + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ELSEIF (MONTH = 2) THEN
+	   IF DAY = 28 THEN
+	   	DAY = 01
+	   	MONTH = MONTH + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ELSE
+	   IF (DAY = 30) THEN
+	   	DAY = 01
+	   	MONTH = MONTH + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ENDIF
+	
+	HOJE = STRIP(NUMBER_TO_TEXT ( DAY , "99" )) : "/" : STRIP(NUMBER_TO_TEXT ( month , "99" )) : "/" : STRIP(NUMBER_TO_TEXT ( year , "9999" )) : " " : HORAFINAL
+	
+	prazo = date ( HOJE)
+	
+	RESTORE DATE FORMAT
+
+	IF NOT disp_type THEN
+		PROMPT FOR prazo
+	       		IN WINDOW win_name
+	       		AT column, row
+	       	IF (variable_is_assigned (prazo)=TRUE) THEN
+			ASSIGN SAMPLE.DATERESREQ = prazo
+		ENDIF
+	ELSE
+		DISPLAY prazo
+	    	IN WINDOW win_name
+	    	AT column, row
+	ENDIF
+	
+ENDROUTINE
+
+
+

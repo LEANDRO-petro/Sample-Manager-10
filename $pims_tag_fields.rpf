@@ -1,0 +1,291 @@
+{******************************************************************************
+*
+* Module Name   : $PIMS_TAG_FIELDS
+*
+* Purpose       : Utility functions providing information about configured
+*                 lookup fields in the pims_tag table
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+SET NAME "DEFER/"
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+
+JOIN LIBRARY $LIB_UNIT
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_LOG_VIEWER
+JOIN LIBRARY $CRITERIA_CACHE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_fields_select_array ( select_array, samp_id )
+
+{
+*
+*   Populate a select_array from the configured lookup fields
+*
+*******************************************************************************}
+
+	DECLARE status, field_names, dont_stop, count, field_value, num_fields
+	DECLARE amostra
+
+	dont_stop = TRUE
+	status = EMPTY
+	
+	get_unordered_field_names ( "pims_tag", field_names )
+	
+	count = 1
+	num_fields = size_of_array ( field_names ) 
+	
+	WHILE ( dont_stop ) DO
+	
+		IF ( TOUPPER(field_names[count,1]) = "STATUS" ) THEN
+		
+			dont_stop = FALSE
+			
+		ENDIF
+		
+		count = count + 1
+		
+	ENDWHILE
+	
+	amostra = SELECT vw_pims_sample_view . id_numeric
+		  WHERE id_numeric = samp_id
+
+      IF ( amostra <> EMPTY ) THEN
+		WHILE ( count <= num_fields ) AND 
+	      	( status = EMPTY      ) DO
+		
+			{* IF  ( valid_field ( "sample",field_names[count,1] ) )      *}
+            	IF ( valid_field ( "vw_pims_sample_view",field_names[count,1] ))
+		
+				{* field_value = SELECT sample . 'field_names[count,1]' *}
+				field_value = SELECT vw_pims_sample_view . 'field_names[count,1]'
+		
+				array_select_add ( select_array     ,
+			      	             ARRAY_SELECT_AND ,
+			            	       EMPTY            ,
+			                  	 EMPTY            )
+
+				array_select_add ( select_array      ,
+			      	             ARRAY_SELECT_PUSH ,
+			            	       EMPTY             ,
+			                  	 EMPTY             )
+			                   
+				array_select_add ( select_array         ,
+			      	             ARRAY_SELECT_EQ      ,
+			            	       field_names[count,1] ,
+			                  	 field_value          )
+				
+				pims_tag_fields_add_unassigned_field ( select_array         ,
+			                                      field_names[count,1] )
+
+				array_select_add ( select_array     ,
+			      	             ARRAY_SELECT_POP ,
+			            	       EMPTY            ,
+			                  	 EMPTY            )
+			ELSE
+		
+				message_fetch ( "PIMS_TAG_INVALID_FIELD", status )
+				message_add_parameter ( status, STRIP ( field_names[count,1] ) )
+				status = message_get_text ( status, 1 )	
+			
+			ENDIF
+			count = count + 1
+		ENDWHILE
+	ELSE
+		status = "amostra não encontrda na fila de envio"
+	ENDIF
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_fields_add_unassigned_field ( select_array ,
+                                               field_name   )
+
+{
+*
+*   Adds the correct select array predicate to test for an unassigned
+*   value according to the data type of the supplied field
+*
+*******************************************************************************}
+
+	DECLARE type
+
+	{* GET_FIELD_DETAILS sample . 'field_name', "DATA_TYPE", type   *}
+	GET_FIELD_DETAILS vw_pims_sample_view . 'field_name', "DATA_TYPE", type
+
+	IF ( type = "Boolean" ) THEN
+
+	ELSE
+
+		array_select_add ( select_array    ,
+		                   ARRAY_SELECT_OR ,
+		                   EMPTY           ,
+		                   EMPTY           )
+
+		array_select_add ( select_array    ,
+		                   ARRAY_SELECT_EQ ,
+		                   field_name      ,
+		                   ""              )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_fields_prompt_details ( prompt_count   , 
+                                         prompt_details )
+
+{
+*
+*   Populate a prompt_details array from the configured lookup fields
+*
+*******************************************************************************}
+
+	DECLARE status, field_names, dont_stop, count, num_fields, field_name
+
+	dont_stop = TRUE
+	status = EMPTY
+	
+	get_unordered_field_names ( "pims_tag", field_names )
+	
+	count = 1
+	num_fields = size_of_array ( field_names ) 
+	
+	WHILE ( dont_stop ) DO
+	
+		IF ( TOUPPER(field_names[count,1]) = "STATUS" ) THEN
+		
+			dont_stop = FALSE
+		
+		ENDIF
+		
+		count = count + 1
+		
+	ENDWHILE
+	
+	WHILE ( count <= num_fields ) AND 
+	      ( status = EMPTY    ) DO
+		
+		{* IF  ( valid_field ( "sample",field_names[count,1] ) )   *}
+		IF  ( valid_field ( "vw_pims_sample_view",field_names[count,1] ) )
+
+			prompt_count = prompt_count + 1
+
+		{*	field_name = criteria_cache_field_title ( "sample"             ,  *}
+		{*	                                          field_names[count,1] )  *}
+
+			field_name = criteria_cache_field_title ( "vw_pims_sample_view"     ,
+			                                          field_names[count,1] )
+
+			prompt_details [ prompt_count , 1 ] = field_name
+			prompt_details [ prompt_count , 2 ] = "FORMAT"
+			prompt_details [ prompt_count , 3 ] = "PIMS_TAG"
+			prompt_details [ prompt_count , 4 ] = field_names[count,1]
+			prompt_details [ prompt_count , 5 ] = 0 
+			prompt_details [ prompt_count , 6 ] = LENGTH ( field_name )			
+
+		ELSE
+		
+			message_fetch ( "PIMS_TAG_INVALID_FIELD", status )
+			message_add_parameter ( status, STRIP ( field_names[count,1] ) )
+			status = message_get_text ( status, 1 )
+			
+		ENDIF
+		
+		count = count + 1
+	
+	ENDWHILE
+	
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_fields_print_details ( field_count   , 
+                                        field_details )
+
+{
+*
+*   Populate a print_details array from the configured lookup fields
+*
+*******************************************************************************}
+
+	DECLARE status, field_names, dont_stop, count, num_fields
+
+	dont_stop = TRUE
+	status = EMPTY
+	
+	get_unordered_field_names ( "pims_tag", field_names )
+	
+	count = 1
+	num_fields = size_of_array ( field_names ) 
+	
+	WHILE ( dont_stop ) DO
+	
+		IF ( TOUPPER(field_names[count,1]) = "STATUS" ) THEN
+		
+			dont_stop = FALSE
+			
+		ENDIF
+		
+		count = count + 1
+		
+	ENDWHILE
+	
+	WHILE ( count <= num_fields ) AND 
+	      ( status = EMPTY      ) DO
+		
+		{* IF  ( valid_field ( "sample",field_names[count,1] ) )      *}
+		IF  ( valid_field ( "vw_pims_sample_view",field_names[count,1] ) )
+
+			field_count = field_count + 1
+		
+			field_details [ field_count, 1 ] = TOUPPER ( field_names[count,1] ) 
+			field_details [ field_count, 2 ] = 
+				criteria_cache_field_title ( "sample", field_names[count,1] ) 
+		
+		ELSE
+		
+			message_fetch ( "PIMS_TAG_INVALID_FIELD", status )
+			message_add_parameter ( status, STRIP ( field_names[count,1] ) )
+			status = message_get_text ( status, 1 )
+		
+		ENDIF
+		
+		count = count + 1
+	
+	ENDWHILE
+	
+	RETURN ( status )
+
+ENDROUTINE
+
+

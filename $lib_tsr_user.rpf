@@ -1,0 +1,870 @@
+{******************************************************************************
+*
+* Module Name   : $LIB_TSR_USER
+*
+* Purpose       : Result List screen user customisation report
+*
+* Document Ref. : SE/T/TVGL-WORK-RESENTO/1/5
+*
+* Specification :
+*
+* Portability   : All VGSM 3.0 compliant systems
+*
+* Re-entrant    : Yes
+*
+*******************************************************************************}
+SET NOTPROTECTED
+
+SET COMPILE_OPTION DECLARE
+
+JOIN LIBRARY $LIB_RE_GLOBALS
+
+JOIN LIBRARY $lib_utils
+
+JOIN STANDARD_LIBRARY STD_DATABASE
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_tsr_user_define_columns ( size_array       ,
+				      title_array      ,
+				      field_name_array ,
+				      fixed_columns    )
+
+{*******************************************************************************
+*
+*	Routine to define columns to be used in TSR, DSR, ASR.
+*	All screen definitions must contain TEXT and STATUS fields.
+*
+*		The SIZE_ARRAY array determines the size of each column.
+*		This is a single dimension array.
+*
+*		The TITLE_ARRAY array allows the definition of column
+*		headers. This is a multi-dimensional array the first element
+*		being used for the first the line, the second element the
+*		second line etc. In this case only the first line is displayed.
+*
+*		The FIELD_NAME_ARRAY gives the name of the table and field to
+*		select the column data from. The first element is the table
+*		name, the second element is the field name. Tables allowed
+*		are SAMPLE, TEST and RESULT.
+*
+*		FIXED_COLUMNS is the number of left hand columns that are
+*		always on screen.
+*
+*******************************************************************************}
+
+        size_array [ 1 ] = 13
+        size_array [ 2 ] = 25
+        size_array [ 4 ] = 20
+        size_array [ 5 ] = 10
+
+	IF global ( "TERMTYPE" ) = "GUI" THEN
+		size_array  [ 3 ]    = 4
+        	size_array  [ 6 ]    = 6
+		title_array [ 3, 1 ] = "Type"
+		title_array [ 6, 1 ] = "Status"
+
+		{
+		size_array       [ 7 ]    = 8
+		title_array      [ 7, 1 ] = "Off Spec"
+		field_name_array [ 7, 1 ] = "RESULT"
+		field_name_array [ 7, 2 ] = "out_of_range"
+		}
+
+	ELSE
+		size_array  [ 3 ]    = 1
+        	size_array  [ 6 ]    = 1
+		title_array [ 3, 1 ] = "T"
+		title_array [ 6, 1 ] = "S"
+	ENDIF
+
+	title_array [ 1, 1 ] = "Analysis"
+	title_array [ 2, 1 ] = "Component Name"
+	title_array [ 4, 1 ] = "Value"
+	title_array [ 5, 1 ] = "Units"
+	title_array [ 7, 1 ] = "Off Spec"
+
+        field_name_array [ 1, 1 ] = "TEST"
+        field_name_array [ 1, 2 ] = "ANALYSIS"
+
+        field_name_array [ 2, 1 ] = "RESULT"
+        field_name_array [ 2, 2 ] = "NAME"
+
+        field_name_array [ 3, 1 ] = "RESULT"
+        field_name_array [ 3, 2 ] = "RESULT_TYPE"
+
+        field_name_array [ 4, 1 ] = "RESULT"
+        field_name_array [ 4, 2 ] = "TEXT"
+
+        field_name_array [ 5, 1 ] = "RESULT"
+        field_name_array [ 5, 2 ] = "UNITS"
+
+        field_name_array [ 6, 1 ] = "RESULT"
+        field_name_array [ 6, 2 ] = "STATUS"
+
+	fixed_columns = 3
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_tsr_user_screen_setup ( tsr_grid ,
+				    tsr_form )
+
+{*******************************************************************************
+*
+*	Routine to modify the standard TSR Grid and Form objects
+*
+*******************************************************************************}
+
+{	Use the following settings for full screen borderless TSR ie like 2.6
+
+        tsr_form . row    = 5
+        tsr_form . column = 1
+        tsr_form . border = FALSE
+        tsr_form . height = GLOBAL ( "SCREEN_HEIGHT" ) - 4
+        tsr_form . width  = GLOBAL ( "SCREEN_WIDTH" )
+
+        tsr_grid . width      = tsr_form . width
+        tsr_grid . height     = tsr_form . height - 3
+        tsr_grid . browse_row = tsr_form . height
+}
+
+ENDROUTINE
+
+
+
+{******************************************************************************}
+                                                                 
+GLOBAL
+ROUTINE lib_tsr_user_pre_results_entry ( VALUE sample_id_numeric ,
+					 VALUE re_mode           )
+
+{*******************************************************************************
+*
+*	Routine called from TSR,DSR,ASR after the user has entered the sample
+*	but before the forms are created or the database searched.
+*
+*                     
+*	re_mode will contain one of the following contant values
+*
+*	RE_MODIFY     TSR
+*	RE_AUTHORISE  ASR
+*	RE_DISPLAY    DSR
+*
+*	Return FALSE to stop the user going into results entry
+*
+*	This routine is called within a read transaction.
+*                    
+*
+*******************************************************************************}
+	
+	DECLARE IS_OK
+	
+	IS_OK = TRUE
+	
+	if re_mode <> RE_DISPLAY then
+		
+DECLARE ANLS, STOCK, USER_STOCK, MSG, ANLS_VERSION, ANALYSIS_VERS
+		
+		IS_OK = TRUE
+		MSG = ""
+		
+		ANLS = SELECT TEST.ANALYSIS WHERE SAMPLE = sample_id_numeric and STATUS <> "X"
+		ANLS_VERSION = SELECT TEST.ANALYSIS_VERSION
+		
+		WHILE (ANLS <> EMPTY) DO
+			MSG = MSG : ASCII(13) 
+			MSG = MSG : ASCII(13) : "- TEST NUMBER: " : STRIP(SELECT TEST.TEST_NUMBER)
+			
+			{VERIFICAR QUAL MATERIAL A ANALISE PRECISA}
+			STOCK = SELECT VERSIONED_ANALYSIS_STOCK_USE.STOCK WHERE ANALYSIS = ANLS AND ANALYSIS_VERSION = ANLS_VERSION
+			
+			IF (STOCK <> EMPTY) THEN
+				WHILE (STOCK <> EMPTY) DO
+					{VERIFICAR SE O USUARIO JA PREENCHEU AS INFORMAÇÕES PARA ESSE MATERIAL}
+					USER_STOCK = SELECT STOCK_USE_BY_USER.STOCK_BATCH WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS AND STOCK = STOCK AND ANALYSIS_VERSION = ANLS_VERSION
+					
+					IF USER_STOCK <> EMPTY THEN
+						
+						{CHECAR SE A QUANTIDADE DO LOTE ATUAL É MAIOR OU IGUAL A QUANTIDADE NECESSARIA}
+						DECLARE qtde_inicial, qtde_atual, qtde_usada_agora, unid_inicial, unid_atual, qtde_usada
+						qtde_usada=0
+						qtde_usada_agora = SELECT STOCK_USE_BY_USER.AMOUNT_USED
+						unid_atual = STRIP(TOUPPER(SELECT STOCK_USE_BY_USER.UNIT))
+						qtde_inicial = SELECT stock_batch.initial_amount WHERE stock_batch_id = USER_STOCK
+						unid_inicial = STRIP(TOUPPER(SELECT stock_batch.unit))
+						qtde_usada = SELECT SUM stock_inventory.amount WHERE stock_batch_id = USER_STOCK  AND unit = unid_atual
+						IF (STRIP(qtde_usada) = "") OR (qtde_usada = EMPTY) THEN
+							qtde_usada = 0
+						ENDIF
+						IF(STRIP(qtde_usada_agora) <> "") AND (STRIP(qtde_inicial) <> "") THEN
+							{converte unidade}
+							IF(unid_atual = "ML") AND (unid_inicial = "L") THEN
+								qtde_inicial = qtde_inicial * 1000
+							ENDIF
+							IF(unid_atual = "MG") AND (unid_inicial = "G") THEN
+								qtde_inicial = qtde_inicial * 1000
+							ENDIF
+							IF(unid_atual = "G") AND (unid_inicial = "KG") THEN
+								qtde_inicial = qtde_inicial * 1000
+							ENDIF
+							IF(unid_atual = "MG") AND (unid_inicial = "KG") THEN
+								qtde_inicial = qtde_inicial * 1000000
+							ENDIF
+
+							qtde_atual = qtde_inicial - qtde_usada
+							IF(qtde_usada_agora > qtde_atual) THEN
+								{PROBLEMAS COM QUANTIDADE}
+								IS_OK = FALSE
+								MSG = MSG : ASCII(13) : "O lote de material " : STRIP(USER_STOCK) : " não possui a quantidade suficiente para executar essa análise."
+							ENDIF
+						ENDIF
+						
+						{CHECAR PRAZO DE VALIDADE}
+						DECLARE PRAZO
+						PRAZO = SELECT STOCK_BATCH.EXPIRY_DATE
+						IF (PRAZO <> EMPTY) THEN
+							IF (NOW>PRAZO) THEN
+								{PROBLEMA COM PRAZO DE VALIDADE}
+								IS_OK = FALSE
+								MSG = MSG : ASCII(13) : "O lote de material " : STRIP(USER_STOCK) : " está vencido e não pode ser utilizado."
+							ENDIF
+						ELSE
+							{LOTE NAO POSSUI PRAZO DE VALIDADE DEFINIDO}
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "O lote de material " : STRIP(USER_STOCK) : " não possui data de validade definido."
+						ENDIF
+						
+						{CHECAR STATUS DO LOTE}
+						DECLARE STOCK_STATUS
+						STOCK_STATUS = SELECT STOCK_BATCH.STATUS
+						IF (STOCK_STATUS <> "V") THEN
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "O lote de material " : STRIP(USER_STOCK) : " está em um estado inválido (" : STRIP(STOCK_STATUS) : ")"
+							{PROBLEMAS COM STATUS DO LOTE}
+						ENDIF
+						
+					ELSE
+						{USUARIO NÀO PREENCHEU ALGO NECESSARIO}
+						IS_OK = FALSE
+						MSG = MSG : ASCII(13) : "Não foi informado o lote de material para o material " : STRIP(STOCK) : " na análise (" : STRIP(ANLS) : ")"
+					ENDIF
+					
+
+						{CHECAR VERSÃO DO TESTE-USER}
+						ANALYSIS_VERS = SELECT INSTRUMENT_USE_BY_USER.ANALYSIS_VERSION
+						IF(ANALYSIS_VERS <> ANLS_VERSION)
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "A versão do teste " : STRIP(ANLS_VERSION) : " é diferente da versão informada (" : STRIP(ANALYSIS_VERS) : ")"
+						ENDIF
+
+					NEXT VERSIONED_ANALYSIS_STOCK_USE
+					STOCK = SELECT VERSIONED_ANALYSIS_STOCK_USE.STOCK
+				ENDWHILE
+			ENDIF
+			
+			{VERIFICAR O INSTRUMENTO PARA CADA COMPONENTE}
+			
+			DECLARE COMP, INST_TYPE, USER_INST, CALIB_DATE, SERV_DATE, STAT, NEED_CALIB, NEED_SERV
+			
+			COMP = SELECT VERSIONED_COMPONENT.NAME WHERE ANALYSIS = ANLS AND ANALYSIS_VERSION = ANLS_VERSION
+			
+			WHILE (COMP<>EMPTY) DO
+				
+				INST_TYPE = SELECT VERSIONED_COMPONENT.INSTRUMENT_TEMPLATE
+								
+				IF ( (INST_TYPE<>EMPTY) AND (BLANK(INST_TYPE)=FALSE) AND (LENGTH(STRIP(INST_TYPE))>0) ) THEN
+					
+					{COMPONENTE PRECISA DE INSTRUMENT}
+					{VERIFICAR SE FOI INFORMADO}
+					USER_INST = SELECT INSTRUMENT_USE_BY_USER.INSTRUMENT WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS AND COMPONENT = COMP
+					
+					IF (USER_INST<>EMPTY) THEN
+						{VERIFICAR SE O INSTRUMENTO PRECISA DE CALIBRAÇÃO}
+						{NEED_CALIB = SELECT INSTRUMENT.REQUIRES_CALIBRATION WHERE IDENTITY = USER_INST
+						IF NEED_CALIB = TRUE THEN
+							CALIB_DATE = SELECT INSTRUMENT.NEXT_CALIB_DATE
+							IF (CALIB_DATE<NOW) THEN
+								IS_OK = FALSE
+								MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " não está calibrado"
+							ENDIF
+						ENDIF}
+						{VERIFICAR SE O INSTRUMENTO PRECISA DE MANUTENÇÃO}
+						NEED_SERV = SELECT INSTRUMENT.REQUIRES_SERVICING  WHERE IDENTITY = USER_INST
+						IF NEED_SERV = TRUE THEN
+							{VERIFICAR SE O INSTRUMENTO ESTÁ COM MANUTENCAO EM DIA}
+							SERV_DATE = SELECT INSTRUMENT.NEXT_SERVICE_DATE
+							IF (SERV_DATE<NOW) THEN
+								{INSTRUMENTO PRECISA DE MANUTENCAO}
+								IS_OK = FALSE
+								MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " precisa de calibração."
+							ENDIF
+						ENDIF
+						{VERIFICAR SE O INSTRUMENTO ESTÁ DISPONIVEL}
+						STAT = SELECT INSTRUMENT.STATUS  WHERE IDENTITY = USER_INST
+						IF STAT <> "V" THEN
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " não está OPERACIONAL"
+						ENDIF
+						{STAT = SELECT INSTRUMENT.AVAILABLE
+						IF STAT <> TRUE THEN
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " não está OPERACIONAL"
+						ENDIF}
+						{CHECAR VERSÃO DO TESTE-USER}
+						ANALYSIS_VERS = SELECT INSTRUMENT_USE_BY_USER.ANALYSIS_VERSION
+						IF(ANALYSIS_VERS <> ANLS_VERSION)
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "A versão da análise " : STRIP(ANLS) : "/" : STRIP(ANLS_VERSION) : " é diferente da versão do equipamento/análise/componente vinculado na sua chave."
+						ENDIF
+					ELSE
+						{INSTRUMENTO NÃO FOI INFORMADO PARA O COMPONENTE}
+						IS_OK = FALSE
+						MSG = MSG : ASCII(13) : "Não foi informado nenhum instrumento para o componente " : STRIP(COMP) : " na análise (" : STRIP(ANLS) : ")"
+					ENDIF
+
+				ELSE
+
+					{VERIFICAR SE O INSTRUMENT ASSOCIADO A CHAVE DO USUÁRIO ESTÁ OPERACIONAL}
+					USER_INST = SELECT INSTRUMENT_USE_BY_USER.INSTRUMENT WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS AND COMPONENT = COMP AND ANALYSIS_VERSION = ANLS_VERSION
+
+					IF (USER_INST<>EMPTY) THEN
+						{VERIFICAR SE O INSTRUMENTO PRECISA DE CALIBRAÇÃO}
+						{NEED_CALIB = SELECT INSTRUMENT.REQUIRES_CALIBRATION WHERE IDENTITY = USER_INST
+						IF NEED_CALIB = TRUE THEN							
+							CALIB_DATE = SELECT INSTRUMENT.NEXT_CALIB_DATE
+							IF (CALIB_DATE<NOW) THEN								
+								IS_OK = FALSE
+								MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " não está calibrado"
+							ENDIF
+						ENDIF}
+						{VERIFICAR SE O INSTRUMENTO PRECISA DE MANUTENÇÃO}
+						NEED_SERV = SELECT INSTRUMENT.REQUIRES_SERVICING  WHERE IDENTITY = USER_INST
+						IF NEED_SERV = TRUE THEN
+							{VERIFICAR SE O INSTRUMENTO ESTÁ COM MANUTENCAO EM DIA}
+							SERV_DATE = SELECT INSTRUMENT.NEXT_SERVICE_DATE
+							IF (SERV_DATE<NOW) THEN
+								{INSTRUMENTO PRECISA DE MANUTENCAO}
+								IS_OK = FALSE
+								MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " precisa de calibração."
+							ENDIF
+						ENDIF
+						{VERIFICAR SE O INSTRUMENTO ESTÁ DISPONIVEL}
+						STAT = SELECT INSTRUMENT.STATUS  WHERE IDENTITY = USER_INST
+						IF STAT <> "V" THEN
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " não está OPERACIONAL"
+						ENDIF
+						{STAT = SELECT INSTRUMENT.AVAILABLE
+						IF STAT <> TRUE THEN
+							IS_OK = FALSE
+							MSG = MSG : ASCII(13) : "O instrumento " : STRIP(USER_INST) : " não está OPERACIONAL"
+						ENDIF}
+					
+					ENDIF
+
+				ENDIF
+				
+
+				NEXT VERSIONED_COMPONENT
+				COMP = SELECT VERSIONED_COMPONENT.NAME
+			ENDWHILE
+						
+			
+			NEXT TEST
+			ANLS = SELECT TEST.ANALYSIS
+			ANLS_VERSION = SELECT TEST.ANALYSIS_VERSION
+		ENDWHILE
+	endif
+
+	IF IS_OK = FALSE THEN
+		MSG = MSG : ASCII(13) 
+		MSG = MSG : ASCII(13) : "NÃO SERÁ POSSÍVEL ENTRAR RESULTADO PARA ESSA AMOSTRA. CORRIJA OS PROBLEMAS ANTES DE CONTINUAR."
+		FLASH_MESSAGE(MSG,TRUE)                                 
+	ENDIF
+	
+	RETURN (IS_OK)
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_tsr_user_post_results_entry ( VALUE sample_id_numeric ,
+					  VALUE re_mode           )
+
+{*******************************************************************************
+*
+*	Routine called from TSR,DSR,ASR after the user has left the results
+*	entry screen.
+*
+*	re_mode will contain one of the following contant values
+*
+*	RE_MODIFY     TSR
+*	RE_AUTHORISE  ASR
+*	RE_DISPLAY    DSR
+*
+*	This routine is called within a read transaction.
+*
+*******************************************************************************}
+
+		
+	IF (RE_MODE <> RE_DISPLAY) THEN
+		{CHECK IF THE RESULTS WERE ENTERED}
+		{para cada resultado, atribuir o instrumento}
+{
+		DECLARE ANLS, TST_NUM, COMP, INST, stock, stock_batch,AMT, UNIT, STOCK_BATCH_ID, HAS_INVENTORY
+		
+		ANLS = SELECT TEST.ANALYSIS WHERE SAMPLE = sample_id_numeric
+				
+		WHILE (ANLS <> EMPTY) DO
+			TST_NUM = SELECT TEST.TEST_NUMBER
+}
+			{ATUALIZAR CONSUMO DE MATERIAIS}
+			
+{
+			stock = SELECT STOCK_USE_BY_USER.STOCK WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS
+			
+			IF (STOCK<>EMPTY) THEN
+				START WRITE TRANSACTION "UPDATE STOCK FOR ANALYSIS"
+				
+				STOCK_BATCH = SELECT STOCK_USE_BY_USER.STOCK_BATCH
+				AMT = SELECT STOCK_USE_BY_USER.AMOUNT_USED
+				UNIT = SELECT STOCK_USE_BY_USER.UNIT
+				
+				
+				
+				STOCK_BATCH_ID = SELECT STOCK_BATCH.STOCK_BATCH_ID WHERE STOCK_BATCH_ID = STOCK_BATCH
+				STOCK_BATCH = SELECT STOCK_BATCH.STOCK_BATCH
+}
+				{CHECK IF THE INVENTORY ALREADY HAS THE SAME INFORMATION}
+{
+				HAS_INVENTORY = SELECT STOCK_INVENTORY.TEST WHERE STOCK = STOCK AND STOCK_BATCH_ID = STOCK_BATCH_ID AND TEST = TST_NUM
+				
+				IF (HAS_INVENTORY=EMPTY) THEN
+					DECLARE next_stock_number,status
+
+					next_stock_number = SELECT MAX stock_inventory . order_number
+							   WHERE stock = stock AND
+								 stock_batch = stock_batch
+
+					IF next_stock_number = EMPTY THEN
+						next_stock_number = 0
+					ENDIF
+
+					REPEAT
+						next_stock_number = PACKED_DECIMAL ( next_stock_number + 1 )
+
+						RESERVE ENTRY stock_inventory, stock : stock_batch : next_stock_number, status
+
+					UNTIL status = EMPTY
+
+					ASSIGN stock_inventory.stock_batch_id  = STOCK_BATCH_ID
+					ASSIGN stock_inventory.use_type        = "TEST"
+					ASSIGN stock_inventory.test            = TST_NUM
+					ASSIGN stock_inventory.consumed_flag   = TRUE
+					ASSIGN stock_inventory.amount          = AMT
+					ASSIGN stock_inventory.unit            = UNIT
+					ASSIGN stock_inventory.date_created    = now
+					ASSIGN stock_inventory.created_by      = OPERATOR
+
+					UPDATE STOCK_INVENTORY
+					COMMIT
+				ENDIF
+			ENDIF
+			
+			
+			
+			COMP = SELECT RESULT.NAME FOR UPDATE WHERE TEST_NUMBER = TST_NUM
+			
+			WHILE (COMP<> EMPTY) DO
+}
+				{GET THE INSTRUMENT}
+{
+				INST = SELECT INSTRUMENT_USE_BY_USER.INSTRUMENT WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS AND COMPONENT = COMP
+				
+				IF ((INST<>EMPTY) OR (LENGTH(STRIP(INST))<=0)) THEN
+					ASSIGN RESULT.INSTRUMENT = INST
+					IF transaction_is_write() = false then
+						START WRITE TRANSACTION "UPDATE INSTRUMENT FOR RESULT"
+					endif
+					UPDATE RESULT
+					COMMIT
+				ENDIF
+				NEXT RESULT
+				COMP = SELECT RESULT.NAME
+			ENDWHILE
+			
+			NEXT TEST
+			ANLS = SELECT TEST.ANALYSIS
+		ENDWHILE
+}
+	ENDIF
+
+
+ENDROUTINE
+
+{******************************************************************************}
+                                                                 
+GLOBAL
+ROUTINE lib_ttr_user_pre_results_entry ( VALUE test_name         ,
+					 VALUE sample_id_numeric ,
+					 VALUE re_mode           )
+
+{*******************************************************************************
+*
+*	Routine called from TTR, DTR, ATR after the user has entered the sample
+*	but before the forms are created or the database searched.
+*
+*                     
+*	re_mode will contain one of the following contant values
+*
+*	RE_MODIFY     TTR
+*	RE_AUTHORISE  ATR
+*	RE_DISPLAY    DTR
+*
+*	Return FALSE to stop the user going into results entry
+*
+*	This routine is called within a read transaction.
+*
+
+*******************************************************************************}
+
+	RETURN ( TRUE )                                  
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_ttr_user_post_results_entry ( VALUE test_name         ,
+					  VALUE sample_id_numeric ,
+					  VALUE re_mode           )
+
+{*******************************************************************************
+*
+*	Routine called from TTR, DTR, ATR after the user has left the results
+*	entry screen.
+*
+*	re_mode will contain one of the following contant values
+*
+*	RE_MODIFY      TTR
+*	RE_AUTHORISE   ATR
+*	RE_DISPLAY     DTR
+*
+*	Return FALSE to stop the user going into results entry
+*
+*	This routine is called within a read transaction.
+*
+*******************************************************************************}
+                     
+ENDROUTINE
+
+{******************************************************************************}
+                                                                 
+GLOBAL
+ROUTINE lib_stt_user_pre_results_entry ( VALUE test_number       ,
+					 VALUE sample_id_numeric ,
+					 VALUE re_mode           )
+
+{*******************************************************************************
+*
+*	Routine called from STT after the user has entered the sample
+*	but before the forms are created or the database searched.
+*                       
+*                     
+*	re_mode will contain the following contant value
+*
+*	RE_DISPLAY   
+*                      
+*	Return FALSE to stop the user going into results entry
+*
+*	This routine is called within a read transaction.
+*
+*******************************************************************************}
+
+	RETURN ( TRUE ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_stt_user_post_results_entry ( VALUE test_number       ,
+					  VALUE sample_id_numeric ,
+					  VALUE re_mode           )
+
+{*******************************************************************************
+*
+*	Routine called from STT after the user has left the results
+*	entry screen.
+*
+*	re_mode will contain the following contant value
+*
+*	RE_DISPLAY   
+*
+*	This routine is called within a read transaction.
+*
+*******************************************************************************}
+
+ENDROUTINE
+
+{******************************************************************************}
+
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_tsr_user_specified_auth_routine ( library_name, routine_name )
+
+{
+* Used to override the standard SM authorise result routine.  Specify an
+* alternative library and routine, and ensure user_specified is TRUE.                    
+*
+*******************************************************************************}
+
+    DECLARE user_specified
+
+    user_specified = FALSE
+
+{
+    library_name = "***"
+    routine_name = "***"
+
+    user_specified = TRUE
+}
+
+    RETURN ( user_specified )
+
+ENDROUTINE { user_specify_auth_routine }
+
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_tsr_user_specified_reject_routine ( library_name, routine_name )
+
+{
+*	Used to override the standard SM reject result routine.
+*	Specify an alternative library and routine,
+*	and ensure user_specified is TRUE.
+*
+*******************************************************************************}
+
+    DECLARE user_specified
+
+    user_specified = FALSE
+
+{
+    library_name = "***"
+    routine_name = "***"
+
+    user_specified = TRUE
+}
+
+    RETURN ( user_specified )
+
+
+ENDROUTINE { user_specify_reject_routine }
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE lib_tsr_user_job_list_columns ( size_array       ,
+                                        title_array      ,
+                                        field_name_array ,
+                                        fixed_columns    )
+
+{*******************************************************************************
+*
+*	Routine to define columns to be used in Job list result entry.
+*	All screen definitions must contain TEXT and STATUS fields.
+*
+*		The SIZE_ARRAY array determines the size of each column.
+*		This is a single dimension array.
+*
+*		The TITLE_ARRAY array allows the definition of column
+*		headers. This is a multi-dimensional array the first element
+*		being used for the first the line, the second element the
+*		second line etc. In this case only the first line is displayed.
+*
+*		The FIELD_NAME_ARRAY gives the name of the table and field to
+*		select the column data from. The first element is the table
+*		name, the second element is the field name. Tables allowed
+*		are SAMPLE, TEST and RESULT.
+*
+*		FIXED_COLUMNS is the number of left hand columns that are
+*		always on screen.
+*
+*******************************************************************************}
+
+	IF GLOBAL ( "SAMP_BROWSE" ) = "T" THEN
+		size_array [ 1 ] = 30
+	        field_name_array [ 1, 1 ] = "SAMPLE"
+	        field_name_array [ 1, 2 ] = "ID_TEXT"
+
+	ELSE
+		size_array [ 1 ] = 10
+	        field_name_array [ 1, 1 ] = "SAMPLE"
+	        field_name_array [ 1, 2 ] = "ID_NUMERIC"
+	ENDIF
+
+        size_array [ 2 ] = 13
+        size_array [ 3 ] = 25
+	size_array [ 4 ] = 4
+        size_array [ 5 ] = 20
+        size_array [ 6 ] = 10
+	size_array [ 7 ] = 6
+
+	title_array [ 1, 1 ] = "Sample"
+	title_array [ 2, 1 ] = "Analysis"
+	title_array [ 3, 1 ] = "Component Name"
+	title_array [ 4, 1 ] = "Type"
+	title_array [ 5, 1 ] = "Value"
+	title_array [ 6, 1 ] = "Units"
+	title_array [ 7, 1 ] = "Status"
+
+
+        field_name_array [ 2, 1 ] = "TEST"
+        field_name_array [ 2, 2 ] = "ANALYSIS"
+
+        field_name_array [ 3, 1 ] = "RESULT"
+        field_name_array [ 3, 2 ] = "NAME"
+
+        field_name_array [ 4, 1 ] = "RESULT"
+        field_name_array [ 4, 2 ] = "RESULT_TYPE"
+
+        field_name_array [ 5, 1 ] = "RESULT"
+        field_name_array [ 5, 2 ] = "TEXT"
+
+        field_name_array [ 6, 1 ] = "RESULT"
+        field_name_array [ 6, 2 ] = "UNITS"
+
+        field_name_array [ 7, 1 ] = "RESULT"
+        field_name_array [ 7, 2 ] = "STATUS"
+
+	fixed_columns = 3
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_tsr_user_custom_buttons (       toolbar        ,
+                                            tsr_form_object,
+                                            tsr_grid_object,
+                                      VALUE re_mode        ,
+                                      VALUE toolbox_mode   )
+
+{
+*
+*	Allows addition of buttons to the Result Entry form toolbar
+*
+*	TOOLBAR is the toolbat object
+*
+*	TSR_FORM_OBJECT is the Result Entry form object
+*
+*	TSR_GRID_OBJECT is the Result Entry grdo object
+*
+*	RE_MODE is the Result Entry mode e.g. RE_MODIFY
+*		see $LIB_RE_GLOBALS for a full list
+*
+*	TOOLBOX_MODE boolean value, TRUE if using toolbar
+*	                            FALSE if using buttons
+*
+*******************************************************************************}
+
+	{
+
+	IF ( toolbox_mode = RE_MODIFY ) THEN
+
+		toolbar . add_a_button ( toolbox_mode                    	,
+		                         tsr_form_object                   	,
+		                         tsr_grid_object                  	,
+		                         ICON_HAPPY_FACE                  	,   
+		                         "Informar Instrumento e Materiais"   	,   
+		                         "lib_tsr_toolbox_InstMat"    		,   
+		                         FALSE                           	,
+		                         FALSE                           	,
+		                         "$lib_tsr_user"                 	)   
+
+		
+	ENDIF
+}
+	
+
+ENDROUTINE
+
+ROUTINE lib_tsr_toolbox_InstMat ( self )
+
+	MENUPROC 1022
+
+ENDROUTINE
+
+{------------------------------------------------------------------------------}
+{
+
+ROUTINE lib_tsr_toolbox_interfere ( self )
+
+	DECLARE fill_text
+	fill_text = "Interference"
+	lib_tsr_toolbox_text ( self, fill_text )
+
+ENDROUTINE
+
+}
+{------------------------------------------------------------------------------}
+{
+
+ROUTINE lib_tsr_toolbox_text ( self, res_text )
+
+	DECLARE result_object, grid, reselected, res_type
+
+	CONSTANT INVAL_RES_TYPE = "T"
+
+	grid          = self . user_info
+	result_object = grid . result_array [ grid . current_row ]
+	res_type      = SELECT result . result_type IN OBJECT result_object
+
+	IF NOT result_object . result_entered () THEN
+
+		IF result_object . upgradelock ( reselected ) THEN
+
+			IF res_type <> INVAL_RES_TYPE THEN
+
+				ASSIGN result.result_type IN OBJECT result_object = INVAL_RES_TYPE
+				object_set_current_table ( result_object, "RESULT" )
+				result_object = lib_re_result_create_result_from_result ( result_object.test_object )
+
+			ENDIF
+
+			result_object . result_val = 0.0
+			result_object . result_unit = " "
+			result_object . result_str = res_text
+
+			grid . result_array [ grid . current_row ] = result_object
+			result_object . store_result ( grid )
+
+			result_object . downgradelock ()
+			grid . redisplay_row ( grid . current_row )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+}
+{******************************************************************************}
+{ End of example button routines                                               }
+{******************************************************************************}
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}
+

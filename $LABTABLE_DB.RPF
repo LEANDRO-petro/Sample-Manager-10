@@ -1,0 +1,2725 @@
+{*******************************************************************************
+*
+* Module Name   : $LABTABLE_DB
+*
+* Purpose       : Database Driven Laboratory Table Editors
+*
+* Document Ref  : N/a
+*
+*******************************************************************************}
+
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+08/01/2013	Mudanças para correção de BUG - todas
+}
+
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_VGL
+
+JOIN LIBRARY $EXPLORER_UTILS
+JOIN LIBRARY $LIB_LIST_CHOOSER
+JOIN LIBRARY $LIB_LIST_VIEWER
+JOIN LIBRARY $LIST_EDITOR
+JOIN LIBRARY $LABTABLIB
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $ROLE_LIB
+JOIN LIBRARY $LIB_DB                { 1.1 build default value }
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $LIB_MENU
+JOIN LIBRARY $LIB_TEXT
+JOIN LIBRARY $QUERY
+
+SET COMPILE_OPTION DECLARE
+SET NOTPROTECTED
+SET NAME "DEFER/"
+ENABLE WINDOWS
+
+{******************************************************************************}
+
+GLOBAL CONSTANT LABTABLE_DB_CLASS     = "LABTABLE_DB"     { LabTable DB        }
+GLOBAL CONSTANT LABTABLE_DETAIL_CLASS = "LABTABLE_DETAIL" { LabTable Details   }
+
+CONSTANT LABTABLEDB_CLUSTER         = "LABDBCLUSTER"   { Global Cluster        }
+CONSTANT GLOBAL_NOISY               = "NOISY"          { Noisy User Global     }
+
+CONSTANT TABLE_PROMPT     = 1
+CONSTANT INTER_PROMPT     = 2
+CONSTANT OPTION_PROMPT    = 3
+CONSTANT ICON_PROMPT      = 3
+CONSTANT CONTXT_PROMPT    = 4
+CONSTANT CHOICE_PROMPT    = 5
+
+CONSTANT FIRST_COLUMN     = 2
+CONSTANT SECOND_COLUMN    = 15
+CONSTANT THIRD_COLUMN     = 30
+CONSTANT FOURTH_COLUMN    = 45
+CONSTANT FIFTH_COLUMN     = 60
+
+CONSTANT ID_COL           = 1                         { Option Identity Column }
+CONSTANT TX_COL           = 2                         { Description Column     }
+CONSTANT OK_COL           = 3                         { Chosen Column          }
+CONSTANT MG_COL           = 4                         { Short Message Column   }
+CONSTANT LB_COL           = 5                         { Library Column         }
+CONSTANT RT_COL           = 6                         { Routine Column         }
+CONSTANT RO_COL           = 7                         { Role Column            }
+CONSTANT MU_COL           = 8                         { Menu Procedure Column  }
+CONSTANT AC_COL           = 9                         { Action Type Column     }
+CONSTANT CO_COL           = 10                        { Committed Column       }
+
+{*******************************************************************************
+*                          M A I N   C O D E
+*******************************************************************************}
+
+labtable_db ( "0" )
+
+EXIT
+
+{*******************************************************************************
+*                      G L O B A L   R O U T I N E S
+*******************************************************************************}
+
+GLOBAL ROUTINE labtable_db_define_class
+
+{ This global routine is used for initialising the Labtable DB class. This
+* does not need to be called if the library has already been initialised
+* elsewhere.
+*
+*******************************************************************************}
+
+	define_list_chooser_class ( )
+	define_list_viewer_class  ( )
+
+	{**********************************************************************}
+	{* Make sure we know about the LabTable Class                         *}
+	{**********************************************************************}
+
+	IF NOT CLASS_DEFINED ( "STD_LABTABLE_EDITOR" ) THEN
+
+		CALLROUTINE "LABTABLE_INITIALISE"
+		    IN LIBRARY "$LABTABLIB"
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Labtable DB Class Definition.                                      *}
+	{**********************************************************************}
+
+	DEFINE CLASS LABTABLE_DB_CLASS
+
+		INITIALISATION
+
+		PROPERTIES
+
+			"operation"    , { Operation to Carry Out              }
+			"fields_out"   , { Prompt Details Array                }
+			"vgl_report"   , { Report where a Labtable lives       }
+			"interface"    , { Laboratory Table Identity           }
+			"table_name"   , { Table for LTE                       }
+			"table_text"   , { Pretty Table Name                   }
+			"table_icon"   , { Icon to use for this Table.         }
+			"labtable"     , { Laboratory Table Object             }
+			"list"         , { List Editor Object                  }
+			"list_header"  , { List Header Message                 }
+			"list_valid"   , { List Validation Routine             }
+			"list_pre"     , { List Pre Insert Routine             }
+			"list_post"    , { List Post Insert Routine            }
+			"list_delete"  , { List Delete Routine                 }
+			"list_select"  , { List Select Routine                 }
+			"output_list"  , { List of Fields to Output            }
+			"key0"         , { Key 0 for new record                }
+			"options"      , { Array of Valid Menu Options         }
+			"context"      , { Menu Add Context                    }
+			"noisy"        , { Noisy Messages                      }
+			"footer"       , { Footer Message                      }
+			"header"       , { Header Message                      }
+			"list_callback", { Callback for list select key0       }
+			"list_toolbar"   { Callback for list toolbar           }
+
+		ACTIONS
+
+			"create"         , { Save Object to Database           }
+			"create_header"  , { Create Header Information         }
+			"create_fields"  , { Create Field Information          }
+			"create_actions" , { Create Action Information         }
+			"create_menu"    , { Create the Menu Options           }
+			"update_header"  , { Update Header Information         }
+			"update_field"   , { Update a Specific Field           }
+			"update_action"  , { Update a Specific Action          }
+			"update_message" , { Update a Specific Message         }
+			"message"        , { Look for Message                  }
+		        "load"           , { Load a Lab Table object from DB   }
+			"load_header"    , { Load in the Header Information    }
+			"load_actions"   , { Load in the Action Information    }
+			"load_fields"    , { Load in the Field Information     }
+			"load_list"      , { Load in the List Information      }
+			"find_menu"      , { Find an Existing Menu Item        }
+		        "discover"       , { Discover Labtable objects         }
+			"valid_report"   , { Check that this is Ok VGL         }
+			"show_menu"      , { Show the Appropriate Menu Options }
+			"is_lte"         , { Is this VGL report an LTE?        }
+			"add_menu"       , { Add a menu option                 }
+			"get_param"      , { Work out the Parameter String     }
+			"get_option"     , { Work out what to do               }
+			"get_menu"       , { Get Menu Choices                  }
+			"get_options"    , { Get an Array of Menu Options      }
+			"get_choices"    , { Get a Collection of Menu Choices  }
+			"get_table_name" , { Get the Table Name                }
+			"do_list"        , { Do a List Operation               }
+			"do_option"        { Do Stuff                          }
+
+	END CLASS
+
+ENDROUTINE { labtable_db_define_class }
+
+{******************************************************************************}
+
+GLOBAL ROUTINE labtable_db_migrate (       labtable         , 
+                                     VALUE header_message   ,
+                                           fields_to_output )
+
+{ Migrate a Laboratory Table object to the Database.
+*
+* Parameters   : Labtable         - Labtable Object
+*                Header_Message   - The Header Message
+*                Fields To Output - List of Print Fields
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db
+	labtable_db_define_class ( )
+
+	CREATE OBJECT LABTABLE_DB_CLASS, db
+
+	db . output_list = fields_to_output
+	db . labtable    = labtable
+	db . vgl_report  = labtable . lte_report
+	db . table_name  = labtable . name_of_table
+	db . interface   = db . vgl_report
+	db . header      = header_message
+
+	db . create ( )
+
+ENDROUTINE
+
+{*******************************************************************************
+*                             R O U T I N E S 
+*******************************************************************************}
+
+ROUTINE labtable_db ( VALUE option )
+
+{ Present a menu of available options
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE menu, count
+	ARRAY menu ARRAYSIZE ( 0, 4 )
+
+	count = 1
+
+	menu [ count, 1 ] = "*"
+	menu [ count, 2 ] = "Lab Table DB Options"
+
+	count = count + 1
+
+	menu [ count, 1 ] = STRIP ( PACKED_DECIMAL ( count - 1 ) )
+	menu [ count, 2 ] = GET_USER_MESSAGE ( "LABTABLE_DB_OPTCONV", 1 ) 
+	menu [ count, 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	menu [ count, 4 ] = "labtable_discover"
+
+	count = count + 1
+
+	menu [ count, 1 ] = STRIP ( PACKED_DECIMAL ( count - 1 ) )
+	menu [ count, 2 ] = GET_USER_MESSAGE ( "LABTABLE_DB_OPTALL", 1 ) 
+	menu [ count, 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	menu [ count, 4 ] = "labtable_discover_all"
+
+	count = count + 1
+
+	menu [ count, 1 ] = STRIP ( PACKED_DECIMAL ( count - 1 ) )
+	menu [ count, 2 ] = GET_USER_MESSAGE ( "LABTABLE_DB_ADD", 1 ) 
+	menu [ count, 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	menu [ count, 4 ] = "labtable_lte"
+
+	count = count + 1
+
+	menu [ count, 1 ] = STRIP ( PACKED_DECIMAL ( count - 1 ) )
+	menu [ count, 2 ] = GET_USER_MESSAGE ( "LABTABLE_DB_MODIFY", 1 ) 
+	menu [ count, 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	menu [ count, 4 ] = "labtable_lte"
+
+	count = count + 1
+
+	menu [ count, 1 ] = STRIP ( PACKED_DECIMAL ( count - 1 ) )
+	menu [ count, 2 ] = GET_USER_MESSAGE ( "LABTABLE_DB_TEST", 1 ) 
+	menu [ count, 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	menu [ count, 4 ] = "labtable_test"
+
+	count = count + 1
+
+	menu [ count, 1 ] = STRIP ( PACKED_DECIMAL ( count - 1 ) )
+	menu [ count, 2 ] = GET_USER_MESSAGE ( "LABTABLE_DB_OPTMENU", 1 ) 
+	menu [ count, 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	menu [ count, 4 ] = "labtable_menu"
+
+	CALLMENU OUTOF menu AT 25, 8
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_option ( VALUE option )
+
+{ Call the LabTable Functions
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db, complete
+	complete = FALSE
+
+	labtable_db_define_class ( )
+
+	CREATE OBJECT LABTABLE_DB_CLASS, db
+		
+	IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+		PROMPT FOR db . table_name
+
+		IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+			PROMPT FOR db . interface
+
+			IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+				complete = TRUE
+				PROMPT FOR db . operation
+
+				IF db . load ( ) THEN
+
+					db . do_option ( )
+
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+	IF NOT complete THEN
+
+		IF db . get_option ( ) THEN
+		
+			IF db . load ( ) THEN
+
+				db . do_option ( )
+
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_test ( VALUE option )
+
+{ Test the LabTable Functions
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db
+
+	labtable_db_define_class ( )
+
+	CREATE OBJECT LABTABLE_DB_CLASS, db
+
+	WHILE db . get_option ( ) DO
+		
+		IF db . load ( ) THEN
+
+			db . do_option ( )
+
+		ENDIF
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_menu ( VALUE option )
+
+{ Test the LabTable Functions
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db
+
+	labtable_db_define_class ( )
+
+	CREATE OBJECT LABTABLE_DB_CLASS, db
+
+	WHILE db . get_menu ( ) DO
+
+		db . table_name = ""
+		db . interface  = ""
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_discover ( VALUE option )
+
+{ Discover Labtable objects
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db, vgl
+	labtable_db_define_class ( )
+
+	WHILE PROMPT_IN_WINDOW ( "REPORT"               , 
+	                         GET_USER_MESSAGE ( "LABTABLE_DB_REPORT", 1 ), 
+	                         GET_USER_MESSAGE ( "LABTABLE_DB_FIND", 1 )  , 
+	                         EMPTY                                       , 
+	                         vgl                                         )
+
+		CREATE OBJECT LABTABLE_DB_CLASS, db
+
+		db . vgl_report = vgl
+		db . discover ( )
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_discover_all ( VALUE option )
+
+{ Discover All Labtable objects
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db, report, count, reports, processed
+	count     = 0
+	processed = 0
+
+	labtable_db_define_class ( )
+
+	{**********************************************************************}
+	{* Lets make this quiet                                               *}
+	{**********************************************************************}
+
+	IF NOT USER_CLUSTER_EXISTS ( LABTABLEDB_CLUSTER ) THEN
+
+		ADD_GLOBAL_CLUSTER ( LABTABLEDB_CLUSTER )
+
+	ENDIF
+
+	IF USER_GLOBAL_EXISTS ( LABTABLEDB_CLUSTER, GLOBAL_NOISY ) THEN
+
+		DELETE_USER_GLOBAL ( LABTABLEDB_CLUSTER, GLOBAL_NOISY )
+
+	ENDIF
+
+	ADD_USER_GLOBAL ( LABTABLEDB_CLUSTER, GLOBAL_NOISY  )
+	ASSIGN_USER_GLOBAL ( LABTABLEDB_CLUSTER, GLOBAL_NOISY, FALSE )
+
+	{**********************************************************************}
+	{* Deal With EMPTY values.                                            *}
+	{**********************************************************************}
+
+	IF confirm_with_message ( "LABTABLE_DB_DISCOVER_ALL" ) THEN
+
+		ARRAY reports
+
+		report = SELECT report . identity
+		         WHERE identity > ""
+
+		WHILE ( report <> EMPTY ) DO
+
+			reports [ count ] = report
+			count = count + 1
+
+			NEXT report
+			report = SELECT report . identity
+
+		ENDWHILE
+
+		count = 1
+
+		WHILE ( reports [ count ] <> EMPTY ) DO
+
+			CREATE OBJECT LABTABLE_DB_CLASS, db
+			db . vgl_report = reports [ count ]
+
+			IF db . discover ( ) THEN
+
+				processed = processed + 1
+
+			ENDIF
+
+			count = count + 1
+
+		ENDWHILE
+
+		flash_message ( processed, TRUE )
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Reset the Noisy Global                                             *}
+	{**********************************************************************}
+
+	ASSIGN_USER_GLOBAL ( LABTABLEDB_CLUSTER, GLOBAL_NOISY, TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_lte ( VALUE option )
+
+{ Call the LabTable LTE Functions
+*
+* Parameters   : Option - Menu Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE db
+
+	labtable_db_define_class ( )
+
+	CREATE OBJECT LABTABLE_DB_CLASS, db
+		
+	db . table_name = "INTERFACE"
+	db . interface  = "DEFAULT"
+
+	IF option = 4 THEN
+
+		db . operation  = "ADD_IDENT"
+
+	ELSE
+
+		db . operation  = "MODIFY_IDENT"
+
+	ENDIF
+
+	IF db . load ( ) THEN
+
+		db . do_option ( )
+
+	ENDIF
+
+ENDROUTINE
+
+{*******************************************************************************
+*                 L A B T A B L E    D B    C L A S S 
+*******************************************************************************}
+
+ROUTINE labtable_db_class_initialisation ( self )
+
+{ This initialisation routine is called when an object is created from the
+* LabTable DB Class. 
+*
+* Parameters   : Self
+*
+*******************************************************************************}
+
+	DECLARE noisy
+	noisy = TRUE
+
+	IF USER_GLOBAL_EXISTS ( LABTABLEDB_CLUSTER, GLOBAL_NOISY ) THEN
+
+		noisy = READ_USER_GLOBAL ( LABTABLEDB_CLUSTER, GLOBAL_NOISY )
+
+	ENDIF
+
+	self . noisy       = noisy
+	self . table_name  = ""
+	self . interface   = ""
+	self . list_header = ""
+	self . list        = EMPTY
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_do_option ( self )
+
+{ Send the class off on its merry way.
+*
+* Parameters   : Self
+*                Option - Laboratory Table Option
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE ignore
+	ignore = ""
+
+	IF VARIABLE_IS_ASSIGNED ( self . labtable ) THEN
+		
+		IF ( self . operation <> "OPEN" ) THEN
+
+			CALLROUTINE "SMPLTEPERFORMOPTION" 
+			    IN LIBRARY "$LABTABLIB"
+			    USING self . table_name                    ,  
+			          self . labtable . user_name_of_table ,
+			          self . labtable . prompt_details     ,
+			          self . labtable . messages           ,
+			          self . labtable . default_value      ,
+			          self . labtable . input_message      ,
+			          self . header                        ,
+			          ignore                               , 
+			          ignore                               ,
+			          self . labtable . directory          ,
+			          self . labtable . extension          ,
+			          self . labtable . help_context       ,
+			          self . vgl_report                    ,
+			          self . fields_out                    ,
+			          self . labtable . special_actions    ,
+			          self . operation
+
+		ELSE
+
+			query_table_default_criteria ( self . table_name )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_do_list (      self      ,
+                                          labtable  ,
+                                    VALUE operation )
+
+{ Deal with List Editors rather than LTE's
+*
+* Parameters   : Self
+*                Operation - The LTE Operation Mode
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE answer, count, fields, field, name, lab, max, pos
+
+	IF ( operation = "PRINT" ) THEN
+
+		answer = EMPTY
+		count  = 1
+		max    = 1
+		lab    = self . labtable
+		
+		ARRAY fields ARRAY_SIZE ( 0, 2 )
+
+		WHILE ( self . fields_out [ count ] <> EMPTY ) DO
+
+			pos = self . fields_out [ count ]
+
+			field = STRIP ( lab . prompt_details [ pos, 4 ] )
+			name  = STRIP ( lab . prompt_details [ pos, 1 ] )
+
+			fields [ pos, 1 ] = field
+			fields [ pos, 2 ] = name
+
+			IF STRINGLENGTH ( field ) > max THEN
+
+				max = STRINGLENGTH ( field )
+
+			ENDIF
+
+			count = count + 1
+		
+		ENDWHILE
+
+		print_fields ( self . table_name, labtable . identity,
+		               self . header, "", 2, max, fields  )
+
+	ELSE
+
+
+		IF ( self . list = EMPTY ) THEN
+
+			self . load_list ( )
+
+		ENDIF
+
+		answer = self . list . operation ( labtable . identity  ,
+	        	                           labtable . copy_value,
+		                                   operation            )
+
+	ENDIF
+
+	RETURN ( answer )
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_load ( self )
+
+{ Load information from the Database.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE table
+
+	table = SELECT interface . table_name
+	        WHERE  table_name = self . table_name
+	        AND    interface  = self . interface
+
+	IF table <> EMPTY THEN
+
+		self . load_header  ( )
+		self . load_actions ( )
+		self . load_fields  ( )
+		self . load_list    ( )
+
+		{ -------------------------------------------------------------- }
+		{ Re-select this table for $labtablib correct db-pointer  1.1 }
+		{ -------------------------------------------------------------- }
+
+		table = SELECT interface . table_name
+		        WHERE  table_name = self . table_name
+		        AND    interface  = self . interface
+
+		{ -------------------------------------------------------------- }
+		{ $labtablib does not have correct validate, etc callbacks 1.1   }
+		{ -------------------------------------------------------------- }
+	
+
+	ENDIF
+
+	RETURN ( table <> EMPTY )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_load_header ( self )
+
+{ Load Header information from the Database.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE lab, key_array, key_count   { 1.1 }
+
+	CREATE OBJECT "STD_LABTABLE_EDITOR", self . labtable
+
+	lab  = self . labtable
+
+	lab . default_value = SELECT interface . default_value
+	lab . directory     = SELECT interface . file_directory
+	lab . extension     = SELECT interface . file_extension
+	lab . help_context  = STRIP ( SELECT interface . help_context  )
+	self . vgl_report   = STRIP ( SELECT interface . report_name   )
+
+	lab . input_message      = self . message ( SELECT interface . input_message      )
+	lab . user_name_of_table = self . message ( SELECT interface . display_table_name )
+	self . header            = self . message ( SELECT interface . header_message     )
+	self . footer            = ""
+
+	{**********************************************************************}
+	{* General Messages                                                   *}
+	{**********************************************************************}
+
+	ARRAY lab . messages
+
+	lab . messages [ 1 ] = self . message ( SELECT interface . identity_message  )
+	lab . messages [ 2 ] = self . message ( SELECT interface . identity2_message )
+	lab . messages [ 3 ] = self . message ( SELECT interface . identity3_message )
+	lab . messages [ 4 ] = self . message ( SELECT interface . identity4_message )
+	lab . messages [ 5 ] = self . message ( SELECT interface . modify_on_message )
+	lab . messages [ 6 ] = self . message ( SELECT interface . modify_by_message )
+	lab . messages [ 7 ] = self . message ( SELECT interface . read_message      )
+	lab . messages [ 8 ] = self . message ( SELECT interface . write_message     )
+	lab . messages [ 9 ] = self . message ( SELECT interface . approval_message  )
+
+	{**********************************************************************}
+	{* General List Control routines                                      *}
+	{**********************************************************************}
+
+	self . list_valid    = SELECT interface . list_validation
+	self . list_pre      = SELECT interface . list_pre_insert
+	self . list_post     = SELECT interface . list_post_insert
+	self . list_delete   = SELECT interface . list_delete
+	self . list_select   = SELECT interface . list_select
+	self . list_callback = SELECT interface . list_callback
+	self . list_toolbar  = SELECT interface . list_toolbar
+
+	{**********************************************************************}
+	{* Deal With EMPTY values.                                            *}
+	{**********************************************************************}
+
+	IF lab . directory = "" THEN
+
+		lab . directory = EMPTY
+
+	ENDIF
+
+	IF lab . extension = "" THEN
+
+		lab . extension = EMPTY
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Validate DEFAULT VALUES 1.1                                        *}
+	{**********************************************************************}
+
+	IF lab . default_value = "" THEN
+
+		lab . default_value = EMPTY
+
+	ELSEIF NOT ( lib_db_select_padded ( self.table_name, lab.default_value, FALSE ) )
+	
+		FLASH_MESSAGE ( "Invalid default value ": self.table_name: " ":lab.default_value, TRUE )
+		lab.default_value = EMPTY
+
+	ELSE 
+
+		ARRAY key_array ARRAYSIZE(0)
+
+		key_array         = lib_db_padded_to_array ( self.table_name, lab.default_value )
+		lab.default_value = ""
+		key_count         = 1
+		
+		WHILE ( key_array[key_count] <> EMPTY ) DO
+		
+			lab.default_value = lab.default_value : key_array[key_count]
+			key_count         = key_count + 1
+			
+		ENDWHILE
+		
+	ENDIF               { end 1.1 }
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_load_actions ( self )
+
+{ Load Action information from the Database.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE item, message, lib, rout, count, type, detl, items, loaded,
+	        privilege, ok
+
+	count  = 1
+	loaded = FALSE
+
+	ARRAY self . labtable . special_actions
+	self . labtable . special_actions [ count, 1 ] = "*"
+	self . labtable . special_actions [ count, 2 ] = ""
+	self . labtable . special_actions [ count, 3 ] = EMPTY
+	self . labtable . special_actions [ count, 4 ] = EMPTY
+	self . labtable . special_actions [ count, 5 ] = EMPTY
+
+	{**********************************************************************}
+	{* Load in the Actions                                                *}
+	{**********************************************************************}
+
+	item = SELECT interface_action . order_number
+	       WHERE  table_name = self . table_name
+	       AND    interface  = self . interface
+	       ORDER ON order_number
+
+	WHILE item <> EMPTY DO 
+
+		ok = TRUE
+		privilege = SELECT interface_action . required_privilege
+
+		IF ( NOT BLANK ( privilege ) AND ( privilege <> 0 )) THEN
+
+			ok = role_lib_has_privilege ( privilege )
+
+		ENDIF
+
+		IF ok THEN
+
+			count = count + 1
+
+			message = self . message ( SELECT interface_action . message )
+
+			type = SELECT interface_action . type 
+
+			IF type = "ROUTINE" THEN
+
+				lib  = STRIP ( SELECT interface_action . report_name  )
+				rout = STRIP ( SELECT interface_action . user_routine )
+				detl = EMPTY
+
+			ELSE
+
+				lib  = GLOBAL ( "CURRENT_LIBRARY" )
+				rout = "LTEDETAILS"
+			
+				CREATE OBJECT LABTABLE_DB_CLASS, detl
+			
+				detl . table_name = SELECT interface_action . link_table_name
+				detl . interface  = SELECT interface_action . link_interface
+
+			ENDIF
+
+			self . labtable . special_actions [ count, 1 ] = STRIP ( item )
+			self . labtable . special_actions [ count, 2 ] = message
+			self . labtable . special_actions [ count, 3 ] = lib
+			self . labtable . special_actions [ count, 4 ] = rout
+			self . labtable . special_actions [ count, 5 ] = detl
+
+			loaded = TRUE
+
+		ENDIF
+
+		NEXT interface_action
+		item = SELECT interface_action . order_number
+
+	ENDWHILE
+
+	{**********************************************************************}
+	{* Make sure the detail objects are loaded                            *}
+	{**********************************************************************}
+
+	items  = count
+	count  = 1
+
+	WHILE ( count <= items ) 
+
+		detl = self . labtable . special_actions [ count, 5 ]
+
+		IF detl <> EMPTY THEN
+
+			detl . load ( )
+
+		ENDIF		
+
+		count = count + 1
+
+	ENDWHILE
+
+	{**********************************************************************}
+	{* If we dont have any entries then clear the array                   *}
+	{**********************************************************************}
+
+	IF NOT loaded THEN
+
+		ARRAY self . labtable . special_actions
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_load_fields ( self )
+
+{ Load Field information from the Database.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE item, message, lib, rout, field, table, type, count, out, lab,
+	        size, col_head, add, addrout
+	count = 1
+	out   = 1
+	lab   = self . labtable
+
+	ARRAY self . labtable . prompt_details
+	ARRAY self . fields_out
+
+	item = SELECT interface_field . order_number
+	       WHERE  table_name = self . table_name
+	       AND    interface  = self . interface
+	       ORDER ON order_number
+
+	WHILE item <> EMPTY DO 
+
+		message = self . message ( SELECT interface_field . message )
+	
+	        IF ( SELECT interface_field . mandatory ) THEN
+
+			message = message : ">"
+
+		ENDIF
+
+		lib     = STRIP ( SELECT interface_field . report_name  )
+		rout    = STRIP ( SELECT interface_field . user_routine )
+		type    = STRIP ( SELECT interface_field . type         )
+		field   = STRIP ( SELECT interface_field . field_name   )
+		table   = STRIP ( SELECT interface_field . table_name   )
+
+		add     = TRUE
+		addrout = SELECT interface_field . add_routine
+		size    = SELECT interface_field . list_width
+
+		IF ( NOT BLANK ( addrout ) ) THEN
+
+			IF VGL_VALIDATE_ROUTINE ( lib, addrout ) THEN
+
+				CALLROUTINE addrout
+				    IN LIBRARY lib
+				    USING self , message, 
+				          lib  , rout   , type, 
+				          field, table  , size
+				    RETURNING add
+
+			ENDIF
+
+		ENDIF
+
+		IF add THEN
+
+			lab . prompt_details [ count, 1 ] = message
+			lab . prompt_details [ count, 2 ] = type
+			lab . prompt_details [ count, 5 ] = 0
+			lab . prompt_details [ count, 6 ] = size
+
+			IF type = "ROUTINE" THEN
+
+				lab . prompt_details [ count, 3 ] = lib
+				lab . prompt_details [ count, 4 ] = rout
+
+			ELSE
+
+				lab . prompt_details [ count, 3 ] = table
+				lab . prompt_details [ count, 4 ] = field
+
+				IF ( SELECT interface_field . print ) THEN
+
+					self . fields_out [ out ] = count
+					out = out + 1
+
+				ENDIF
+
+			ENDIF
+
+			col_head = PAD ( message, " ", size )
+			self . list_header = self . list_header : col_head : " "
+
+			count = count + 1
+
+		ENDIF
+
+		NEXT interface_field
+		item = SELECT interface_field . order_number
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_load_list ( self )
+
+{ Create a List Editor Object
+*
+* Parameters   : Self
+*                Operation - The LTE Operation Mode
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	list_editor_create_object ( self . list )
+
+	self . list . table         = self . table_name
+	self . list . header        = self . header
+	self . list . library       = self . vgl_report
+	self . list . footer        = self . footer
+	self . list . compatability = PROMPT_DETAILS_310
+
+	self . list . validation    = self . list_valid
+	self . list . pre_insert    = self . list_pre
+	self . list . post_insert   = self . list_post
+	self . list . delete        = self . list_delete
+	self . list . select        = self . list_select
+
+	self . list . select_callback          = self . list_callback
+	self . list . add_tool_button_callback = self . list_toolbar
+
+	IF BLANK ( self . list . pre_insert ) THEN
+
+		self . list . pre_insert = "GENERICPREINSERTROUTINE"
+		self . list . library    = GLOBAL ( "CURRENT_LIBRARY" )
+
+	ENDIF
+
+	self . list . setup_prompt_details ( self . labtable . prompt_details,
+	                                     self . list_header              )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_message ( self, VALUE message )
+
+{ See if this is a message.
+*
+* Parameters   : Self
+*                Message - The Message or Text string
+* Return Value : String  - Translated Text
+*
+*******************************************************************************}
+
+	DECLARE val
+
+	val = GET_USER_MESSAGE ( message, 1 )
+
+	IF val = ERROR THEN
+
+		val = STRIP ( message )
+
+	ENDIF
+
+	RETURN ( val )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_create ( self )
+
+{ Save information to the Database.
+*
+* Parameters   : Self
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE table, lab, ok
+	ok = FALSE
+
+	table = SELECT interface . table_name
+	        WHERE  table_name = self . table_name
+	        AND    interface  = self . interface
+
+	IF ( table = EMPTY ) THEN
+
+		START WRITE TRANSACTION "Creating LTE Entry"
+
+		IF self . create_header  ( )
+
+			lab = self . labtable
+
+			self . create_actions ( lab . special_actions )
+			self . create_fields  ( lab . prompt_details  )
+
+			COMMIT
+
+			IF self . noisy THEN
+
+				flash_message ( "LABTABLE_DB_DONE", TRUE )
+
+			ENDIF
+
+			ok = TRUE
+
+		ELSE
+
+			ROLLBACK
+
+		ENDIF
+
+	ELSEIF self . noisy
+
+		flash_message ( "LABTABLE_DB_EXISTS", TRUE )
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_create_header ( self )
+
+{ Save header information to the Database.
+*
+* Parameters   : Self
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE lengf1, lengf2, status
+
+	GET_FIELD_DETAILS interface . table_name, "FIELD_SIZE", lengf1
+	GET_FIELD_DETAILS interface . interface,  "FIELD_SIZE", lengf2
+
+	self . key0 = PAD ( self . table_name, " ", lengf1 ) : 
+	              PAD ( self . interface,  " ", lengf2 )
+
+	RESERVE ENTRY interface, self . key0, status
+
+	IF ( status = EMPTY )
+
+		self . update_header ( )
+
+	ENDIF
+
+	RETURN ( status = EMPTY )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_update_header ( self )
+
+{ Save header information to the Database.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE lab, def, dir, ext
+
+	lab = self . labtable
+
+	{**********************************************************************}
+	{* Deal With EMPTY values.                                            *}
+	{**********************************************************************}
+
+	ext = lab . extension
+	dir = lab . directory
+	def = lab . default_value
+
+	IF def = EMPTY THEN
+		def = ""
+	ENDIF
+
+	IF dir = EMPTY THEN
+		dir = ""
+	ENDIF
+
+	IF ext = EMPTY THEN
+		ext = ""
+	ENDIF
+
+	{**********************************************************************}
+	{* Assign the values.                                                 *}
+	{**********************************************************************}
+
+	ASSIGN interface . help_context       = lab . help_context
+	ASSIGN interface . default_value      = def
+	ASSIGN interface . file_directory     = dir
+	ASSIGN interface . file_extension     = ext
+	ASSIGN interface . input_message      = lab . input_message
+	ASSIGN interface . display_table_name = lab . user_name_of_table
+
+	ASSIGN interface . report_name        = STRIP ( self . vgl_report )
+	ASSIGN interface . header_message     = self . header
+
+	self . update_message ( "IDENTITY_MESSAGE" , 1 )
+	self . update_message ( "IDENTITY2_MESSAGE", 2 )
+	self . update_message ( "IDENTITY3_MESSAGE", 3 )
+	self . update_message ( "IDENTITY4_MESSAGE", 4 )
+	self . update_message ( "MODIFY_ON_MESSAGE", 5 )
+	self . update_message ( "MODIFY_BY_MESSAGE", 6 )
+	self . update_message ( "READ_MESSAGE"     , 7 )
+	self . update_message ( "WRITE_MESSAGE"    , 8 )
+	self . update_message ( "APPROVAL_MESSAGE" , 9 )
+
+	UPDATE interface
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_update_message ( self, VALUE field, VALUE pos )
+
+{ Save message information to the Database.
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE message
+	message = ""
+
+	IF self . labtable . messages [ pos ] <> EMPTY THEN
+		
+		message = self . labtable . messages [ pos ]
+
+	ENDIF
+
+	ASSIGN interface . 'field' = message
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_create_fields ( self, fields )
+
+{ Save fields information to the Database.
+*
+* Parameters   : Self
+*                Fields  - Prompt Details Array
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE count, key0, status, pcount, print
+	status = EMPTY
+	count  = 1
+
+	WHILE ( fields [ count, 1 ] <> EMPTY ) AND
+	      ( status = EMPTY               ) DO
+
+		key0 = self . key0 : PACKED_DECIMAL ( count )
+
+		RESERVE ENTRY interface_field, key0, status
+
+		IF ( status = EMPTY ) THEN
+
+			print = FALSE
+			pcount = 1
+
+			WHILE ( self . output_list [ pcount ] <> EMPTY ) AND
+			      ( NOT print                              ) DO
+
+				print = ( self . output_list [ pcount ] = count )
+				pcount = pcount + 1
+
+			ENDWHILE
+			
+			self . update_field ( fields [ count, 1 ] ,
+                                              fields [ count, 2 ] , 
+			                      fields [ count, 3 ] ,
+			                      fields [ count, 4 ] ,
+			                      print               )
+
+		ENDIF
+
+		count = count + 1	
+
+	ENDWHILE
+
+	RETURN ( status = EMPTY )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_update_field (       self   ,
+                                          VALUE message,
+                                          VALUE type   ,
+                                          VALUE table  ,
+                                          VALUE field  ,
+                                          VALUE print )
+
+{ Update field information to the Database.
+*
+* Parameters   : Self
+*                Message - Message String
+*                Type    - Field Type
+*                Table   - Table where the field lives/Library
+*                Field   - Field Name/Routine
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	ASSIGN interface_field . message = STRIP ( message )
+	ASSIGN interface_field . type    = type
+	ASSIGN interface_field . print   = print
+
+	IF ( type = "ROUTINE" ) THEN
+
+		ASSIGN interface_field . report_name  = STRIP ( table )
+		ASSIGN interface_field . user_routine = STRIP ( field )
+
+	ELSE
+
+		ASSIGN interface_field . field_name   = STRIP ( field )
+
+	ENDIF
+
+	UPDATE interface_field
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_create_actions ( self, actions )
+
+{ Save header information to the Database.
+*
+* Parameters   : Self
+*                Actions - Special Actions Array
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE count, key0, status, num
+	status = EMPTY
+	count  = 1
+	num    = 1
+
+	WHILE ( actions [ count, 1 ] <> EMPTY ) AND
+	      ( status = EMPTY                ) DO
+
+		IF ( actions [ count, 3 ] <> EMPTY ) THEN
+
+			num  = PACKED_DECIMAL ( num )
+			key0 = self . key0 : num
+
+			RESERVE ENTRY interface_action, key0, status
+
+			IF ( status = EMPTY ) THEN
+
+				self . update_action ( actions [ count, 1 ] ,
+				                       actions [ count, 2 ] ,
+				                       actions [ count, 3 ] ,
+				                       actions [ count, 4 ] )
+
+				num = num + 1
+
+			ENDIF
+
+		ENDIF
+
+		count = count + 1	
+
+	ENDWHILE
+
+	RETURN ( status = EMPTY )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_update_action (       self      ,
+                                           VALUE title     ,
+                                           VALUE message   ,
+                                           VALUE lib       ,
+                                           VALUE rout      )
+
+{ Update action information to the Database.
+*
+* Parameters   : Self
+*                Title     - Title Character
+*                Message   - Button Text
+*                Lib       - VGL Library
+*                Rout      - VGL Routine
+*                Order Num - Order Number
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	message = STRIP ( STRIP ( message ) # STRIP ( title ) )
+
+	ASSIGN interface_action . message      = STRIP ( message )
+	ASSIGN interface_action . report_name  = STRIP ( lib     )
+	ASSIGN interface_action . user_routine = STRIP ( rout    )
+
+	UPDATE interface_action
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_discover ( self )
+
+{ Discover Labtable Objects
+*
+* Parameters   : Self
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE routines, option, ok, vgl
+	ok  = FALSE
+	vgl = self . vgl_report
+
+	IF ( self . valid_report ( vgl ) ) THEN	
+
+		VGL_FIND_ROUTINES ( vgl, routines ) 
+
+		{**************************************************************}
+		{* If the code falls over here with a "This Format must..."   *}
+		{* Ensure that the VGL report specified in the variable VGL   *}
+		{* has SET NOTPROTECTED at the top, also check all of its     *}
+		{* joined VGL reports.                                        *}
+		{**************************************************************}
+
+		IF self . is_lte ( routines ) THEN
+
+			ok     = TRUE
+			option = "MIGRATE_DATA"
+
+			CALLROUTINE "DOTHEWORK"
+			    IN LIBRARY vgl
+			    USING option
+			    NEW CONTEXT
+
+		ELSEIF self . noisy
+
+			flash_message ( "LABTABLE_DB_NOTLTE", TRUE )
+
+		ENDIF
+
+	ELSEIF self . noisy
+
+		flash_message ( "LABTABLE_DB_BADVGL", TRUE )
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_valid_report ( self, VALUE vgl )
+
+{ Is this a Valid Report
+*
+* Parameters   : Self
+* Return Value : Boolean  - True if this is ok
+*
+*******************************************************************************}
+
+	DECLARE ok, count, reports
+	ok = TRUE
+
+	{**********************************************************************}
+	{* List of standard VGL reports that fail to link.                    *}
+	{**********************************************************************}
+
+	ARRAY reports
+
+	reports [ 1 ] = "$LTE_TEM"
+
+	{**********************************************************************}
+	{* See if all is well                                                 *}
+	{**********************************************************************}
+
+	count = 1
+
+	WHILE ( reports [ count ] <> EMPTY ) AND ( ok ) DO
+
+		ok    = ( STRIP ( vgl ) <> reports [ count ] )
+		count = count + 1
+		
+	ENDWHILE
+
+	IF ok THEN
+
+		VGL_COMPILE_REPORT_SILENT ( vgl )
+
+		ok = GLOBAL ( "REPORT_COMPILED" ) OR 
+		     GLOBAL ( "COMPILE_WARNING" )
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_is_lte ( self, routines )
+
+{ Does the Routine profile match that of an LTE?
+*
+* Parameters   : Self
+*                Routines - Array of Routines
+* Return Value : Boolean  - True if this is a LTE Report
+*
+*******************************************************************************}
+
+	DECLARE do_work, add_option, count, table_setup, rout
+
+	count       = 1
+	add_option  = FALSE
+	do_work     = FALSE
+	table_setup = FALSE
+
+	WHILE VARIABLE_IS_ASSIGNED ( routines [ count ] ) DO
+
+		rout = routines [ count ]
+
+		IF rout = "ADDOPTION" THEN
+
+			add_option = TRUE
+
+		ELSEIF rout = "DOTHEWORK" THEN
+
+			do_work = TRUE
+
+		ELSEIF rout = "TABLESETUP" THEN
+
+			table_setup = TRUE
+
+		ENDIF
+		
+		count = count + 1
+
+	ENDWHILE
+
+	RETURN ( add_option AND do_work AND table_setup )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_get_option ( self )
+
+{ Ask the user
+*
+* Parameters   : Self
+* Return Value : Boolean - Options chosen. FALSE when exit pressed.
+*
+*******************************************************************************}
+
+	DECLARE form, ok, button_array, pos, row, options, mandy_array, prompts,
+	        mandy_array_a
+
+	ok = FALSE
+
+	{**********************************************************************}
+	{* Blank Options until table chosen.                                  *}
+	{**********************************************************************}
+
+	ARRAY options
+	self . options = options
+
+	IF ( self . table_name = EMPTY ) OR BLANK ( self . table_name ) THEN
+
+		options [ 1, 1 ] = ""
+		options [ 1, 2 ] = ""
+
+	ELSE
+
+		options = self . get_options ( self . table_name, TRUE )
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Mandatory Arrays                                                   *}
+	{**********************************************************************}
+
+	ARRAY mandy_array
+	ARRAY mandy_array_a
+
+	ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+	                   "TABLE_NAME", self . table_name )
+	ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_AND, EMPTY, EMPTY )
+	ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+	                   "TYPE", "LTE" )
+
+	ARRAY_SELECT_ADD ( mandy_array_a, ARRAY_SELECT_EQ, 
+	                   "TYPE", "LTE" )
+
+	{**********************************************************************}
+	{* Build up a Form to prompt for details.                             *}
+	{**********************************************************************}
+
+	CREATE OBJECT "STD_FORM", form
+
+	form . header = GET_USER_MESSAGE ( "LABTABLE_DB_HEADER", 1 ) 
+	form . width  = 50
+	form . row    = 5
+	form . column = 5
+
+	form . validation_routine = "form_validation_routine"
+	form . vgl_library        = GLOBAL ( "CURRENT_LIBRARY" )
+
+	row = 1
+
+	PROMPT OBJECT form . prompt_objects [ TABLE_PROMPT ] 
+	   AT SECOND_COLUMN, row
+	   BROWSE ON interface . table_name
+	   WITH ( value                = self . table_name           ,
+	          leave_prompt_routine = "prompt_leave_table"        ,
+	          user_info            = self                        ,
+	          mandatory_array      = mandy_array_a               ,
+	          vgl_library          = GLOBAL ( "CURRENT_LIBRARY" ))
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_TABLE", 1 ), 
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL )
+
+	row = row + 1
+
+	PROMPT OBJECT form . prompt_objects [ INTER_PROMPT ] 
+	   AT SECOND_COLUMN, row
+	   BROWSE ON interface . interface
+	   WITH ( value           = self . interface,
+	          mandatory_array = mandy_array    )
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_INTERFACE", 1 ), 
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL     )
+
+	row = row + 1
+
+	PROMPT OBJECT form . prompt_objects [ 3 ] 
+	   AT SECOND_COLUMN, row
+	   TO SECOND_COLUMN + 29
+	   CHOOSE OUT_OF options
+	   WITH ( value  = self . operation )
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_OPERATION", 1 ), 
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL     )
+
+	form . height = row + 3
+
+	{**********************************************************************}
+	{* Buttons                                                            *}
+	{**********************************************************************}
+
+	ARRAY button_array
+
+	pos = 1                          
+	lib_grid_lastkey_button ( button_array, pos, "DO",   EMPTY )
+	lib_grid_lastkey_button ( button_array, pos, "EXIT", EMPTY )
+
+	lib_form_add_control_buttons ( form, button_array )
+
+	{**********************************************************************}
+	{* Set the prompt on its way                                          *}
+	{**********************************************************************}
+
+	form . start_prompt ( )
+
+	IF NOT BLANK ( self . interface ) THEN
+
+		form . set_position ( OPTION_PROMPT )
+
+	ENDIF
+
+	form . wait_prompt  ( )
+	form . end_prompt   ( )
+
+	{**********************************************************************}
+	{* Process the Return                                                 *}
+	{**********************************************************************}
+
+	IF form . get_lastkey ( ) = "DO" THEN
+
+		prompts = form . prompt_objects 
+
+		self . table_name = prompts [ TABLE_PROMPT  ] . value
+		self . interface  = prompts [ INTER_PROMPT  ] . value
+		self . operation  = prompts [ OPTION_PROMPT ] . value
+
+		ok = TRUE 
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_get_menu ( self )
+
+{ Ask the user
+*
+* Parameters   : Self
+* Return Value : Boolean - Options chosen. FALSE when exit pressed.
+*
+*******************************************************************************}
+
+	DECLARE form, ok, button_array, pos, row, chooser, mandy_array, 
+	        prompts, chosen, contexts, temp, mandy_array_a
+
+	ok = FALSE
+
+	{**********************************************************************}
+	{* Mandatory Arrays                                                   *}
+	{**********************************************************************}
+
+	ARRAY mandy_array
+	ARRAY mandy_array_a
+
+	ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+	                   "TABLE_NAME", self . table_name )
+	ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_AND, EMPTY, EMPTY )
+	ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+	                   "TYPE", "LTE" )
+
+	ARRAY_SELECT_ADD ( mandy_array_a, ARRAY_SELECT_EQ, 
+	                   "TYPE", "LTE" )
+
+	{**********************************************************************}
+	{* Make sure the default option is NOT Core                           *}
+	{**********************************************************************}
+
+	contexts = lib_menu_get_context_list ( )
+
+	IF contexts [ 1, 2 ] = "CORE" THEN
+
+		ARRAY temp ARRAYSIZE ( 2 )
+
+		temp [ 1 ] = contexts [ 1, 1 ]
+		temp [ 2 ] = contexts [ 1, 2 ]
+		contexts [ 1, 1 ] = contexts [ 2, 1 ]
+		contexts [ 1, 2 ] = contexts [ 2, 2 ]
+		contexts [ 2, 1 ] = temp [ 1 ]
+		contexts [ 2, 2 ] = temp [ 2 ]
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Build up a Form to prompt for details.                             *}
+	{**********************************************************************}
+
+	CREATE OBJECT "STD_FORM", form
+
+	form . header = GET_USER_MESSAGE ( "LABTABLE_DB_LTMENU", 1 ) 
+	form . width  = 48
+	form . row    = 5
+	form . column = 5
+
+	form . validation_routine = "form_menu_validation_routine"
+	form . vgl_library        = GLOBAL ( "CURRENT_LIBRARY" )
+
+	row = 1
+
+	PROMPT OBJECT form . prompt_objects [ TABLE_PROMPT ] 
+	   AT SECOND_COLUMN, row
+	   BROWSE ON interface . table_name
+	   WITH ( value                = self . table_name           ,
+	          leave_prompt_routine = "prompt_menu_leave_table"   ,
+	          mandatory_array      = mandy_array_a               ,
+	          vgl_library          = GLOBAL ( "CURRENT_LIBRARY" ))
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_TABLE", 1 ),
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL )
+
+	row = row + 1
+
+	PROMPT OBJECT form . prompt_objects [ INTER_PROMPT ]
+	   AT SECOND_COLUMN, row
+	   BROWSE ON interface . interface
+	   WITH ( value           = self . interface,
+	          mandatory_array = mandy_array     )
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_INTERFACE", 1 ), 
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL     )
+
+	row = row + 1	
+
+	PROMPT OBJECT form . prompt_objects [ ICON_PROMPT ]
+	   AT SECOND_COLUMN, row
+	   BROWSE ON icon . identity
+	   WITH ( value = self . table_icon )
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_ICON", 1 ) ,
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL )
+
+	row = row + 1	
+
+	PROMPT OBJECT form . prompt_objects [ CONTXT_PROMPT ]
+	   AT SECOND_COLUMN, row
+	   CHOOSE OUTOF contexts
+
+	form . add_display ( GET_USER_MESSAGE ( "LABTABLE_DB_CONTEXT", 1 ), 
+	                     FIRST_COLUMN, row, PROMPT_RENDITION_NORMAL   )
+
+	row = row + 2
+
+	CREATE OBJECT LIST_CHOOSER_CLASS, chooser
+
+	chooser . row        = row
+	chooser . column     = FIRST_COLUMN
+	chooser . width      = form . width - FIRST_COLUMN
+	chooser . height     = 8
+	chooser . desc_field = ""
+	chooser . user_info  = self
+
+	chooser . create_list ( )
+
+	form . add_prompt ( chooser )
+
+	form . height = row + chooser . height + 3
+
+	{**********************************************************************}
+	{* Buttons                                                            *}
+	{**********************************************************************}
+
+	ARRAY button_array
+
+	pos = 1                          
+	lib_grid_lastkey_button ( button_array, pos, "DO",   EMPTY )
+	lib_grid_lastkey_button ( button_array, pos, "EXIT", EMPTY )
+
+	lib_form_add_control_buttons ( form, button_array )
+
+	{**********************************************************************}
+	{* Set the prompt on its way                                          *}
+	{**********************************************************************}
+
+	form . start_prompt ( )
+
+	IF NOT BLANK ( self . interface ) THEN
+
+		form . set_position ( OPTION_PROMPT )
+
+	ENDIF
+
+	form . wait_prompt  ( )
+	form . end_prompt   ( )
+
+	{**********************************************************************}
+	{* Process the Return                                                 *}
+	{**********************************************************************}
+
+	IF form . get_lastkey ( ) = "DO" THEN
+
+		prompts = form . prompt_objects 
+
+		self . table_name = prompts [ TABLE_PROMPT  ] . value
+		self . interface  = prompts [ INTER_PROMPT  ] . value
+		self . operation  = prompts [ CHOICE_PROMPT ] . value
+		self . context    = prompts [ CONTXT_PROMPT ] . value
+		self . table_icon = prompts [ ICON_PROMPT   ] . value
+
+		chooser . data . set_first ( )
+
+		WHILE chooser . data . current <> EMPTY DO
+
+			chosen = chooser . data . current . checked
+			pos    = chooser . data . current . position
+
+			self . options [ pos, OK_COL ] = chosen
+
+			chooser . data . set_next ( )
+
+		ENDWHILE
+
+		self . create_menu ( self . options )
+		self . show_menu   ( self . options )
+
+		ok = TRUE 
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_get_options ( self, VALUE table, VALUE invert )
+
+{ Ask the user
+*
+* Parameters   : Self
+*                Options - Collection of Options
+*                Invert  - Invert the Column ordering
+* Return Value : Boolean - More than One Item Found.
+*
+*******************************************************************************}
+
+	DECLARE options, count, approval, inspect, version, remove, id, text
+	ARRAY options
+
+	{**********************************************************************}
+	{* Work out the appropriate columns                                   *}
+	{**********************************************************************}
+
+	id   = 1
+	text = 2
+
+	IF invert THEN
+		
+		id   = 2
+		text = 1
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Build up the list of options                                       *}
+	{**********************************************************************}
+
+	count = 1
+
+	options [ count, id     ] = "OPEN"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_OPEN", 1 ) 
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_OPEN", 1 ) 
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_DISPLAYER"
+	options [ count, AC_COL ] = "OPEN"
+	options [ count, CO_COL ] = TRUE
+
+	count = count + 1
+
+	options [ count, id     ] = "ADD_IDENT"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_ADDOPT", 1 )
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_ADD", 1 )
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_MAINTAINER"
+	options [ count, AC_COL ] = "ADD"
+	options [ count, CO_COL ] = FALSE
+
+	count = count + 1
+
+	options [ count, id     ] = "COPY_IDENT"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_COPYOPT", 1 )
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_COPY", 1 )
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_MAINTAINER"
+	options [ count, AC_COL ] = "COPY"
+	options [ count, CO_COL ] = FALSE
+
+	count = count + 1
+
+	options [ count, id     ] = "MODIFY_IDENT"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_MODOPT", 1 )
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_MODIFY", 1 )
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_MAINTAINER"
+	options [ count, AC_COL ] = "MODIFY"
+	options [ count, CO_COL ] = FALSE
+
+	count = count + 1
+
+	options [ count, id     ] = "DISPLAY_IDENT"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_DISPOPT", 1 )
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_DISPLAY", 1 )
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_DISPLAYER"
+	options [ count, AC_COL ] = "DISPLAY"
+	options [ count, CO_COL ] = TRUE
+
+	count = count + 1
+
+	options [ count, id     ] = "LIST_IDENTS"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_LISTOPT", 1 )	
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_LIST", 1 )
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_DISPLAYER"
+	options [ count, AC_COL ] = "LIST"
+	options [ count, CO_COL ] = TRUE
+
+	count = count + 1
+
+	options [ count, id     ] = "PRINT_IDENT"
+	options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_PRINTOPT", 1 )
+	options [ count, OK_COL ] = TRUE
+	options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_PRINT", 1 )
+	options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+	options [ count, RT_COL ] = "LABTABLE_OPTION"
+	options [ count, RO_COL ] = "STATIC_DISPLAYER"
+	options [ count, AC_COL ] = "PRINT"
+	options [ count, CO_COL ] = TRUE
+
+	{**********************************************************************}
+	{* Only add applicable options.                                       *}
+	{**********************************************************************}
+
+	GET_TABLE_DETAILS 'table', "REMOVE_FIELD", remove
+
+	IF ( remove <> EMPTY ) THEN
+
+		count = count + 1
+
+		options [ count, id     ] = "REMOVE_IDENT"
+		options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_REMOPT", 1 )
+		options [ count, OK_COL ] = TRUE
+		options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_REMOVE", 1 )
+		options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+		options [ count, RT_COL ] = "LABTABLE_OPTION"		
+		options [ count, RO_COL ] = "STATIC_MAINTAINER"
+		options [ count, AC_COL ] = "REMOVE"
+		options [ count, CO_COL ] = FALSE
+
+		count = count + 1
+
+		options [ count, id     ] = "RESTORE_IDENT"
+		options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_RESTOPT", 1 )	
+		options [ count, OK_COL ] = TRUE
+		options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_RESTORE", 1 )
+		options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+		options [ count, RT_COL ] = "LABTABLE_OPTION"
+		options [ count, RO_COL ] = "STATIC_MAINTAINER"
+		options [ count, AC_COL ] = "RESTORE"
+		options [ count, CO_COL ] = FALSE
+
+	ENDIF
+
+	GET_TABLE_DETAILS 'table', "VERSION_FIELD", version
+
+	IF ( version <> EMPTY ) THEN
+
+		count = count + 1
+
+		options [ count, id     ] = "NEW_VERSION"
+		options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_VEROPT", 1 )
+		options [ count, OK_COL ] = TRUE
+		options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_VERSION", 1 )
+		options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+		options [ count, RT_COL ] = "LABTABLE_OPTION"
+		options [ count, RO_COL ] = "STATIC_MAINTAINER"
+		options [ count, AC_COL ] = "ADD"
+		options [ count, CO_COL ] = TRUE
+
+
+	ENDIF
+
+	GET_TABLE_DETAILS 'table', "INSPECTION_FIELD", inspect
+	GET_TABLE_DETAILS 'table', "APPROVAL_STATUS" , approval
+
+	IF ( inspect <> EMPTY ) AND ( approval <> EMPTY ) THEN
+
+		count = count + 1
+
+		options [ count, id     ] = "APPROVE_IDENT"
+		options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_APPOPT", 1 )
+		options [ count, OK_COL ] = TRUE
+		options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_APPROVE", 1 )
+		options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+		options [ count, RT_COL ] = "LABTABLE_OPTION"
+		options [ count, RO_COL ] = "STATIC_MAINTAINER"
+		options [ count, AC_COL ] = "APPROVAL"
+		options [ count, CO_COL ] = FALSE
+
+		count = count + 1
+
+		options [ count, id     ] = "SUBMIT_IDENT"
+		options [ count, text   ] = GET_USER_MESSAGE ( "LABTABLE_DB_SUBOPT", 1 )
+		options [ count, OK_COL ] = TRUE
+		options [ count, MG_COL ] = GET_USER_MESSAGE ( "LABTABLE_DB_SUBMIT", 1 )
+		options [ count, LB_COL ] =  GLOBAL ( "CURRENT_LIBRARY" )
+		options [ count, RT_COL ] = "LABTABLE_OPTION"
+		options [ count, RO_COL ] = "STATIC_AUTHORISER"
+		options [ count, AC_COL ] = "SUBMIT"
+		options [ count, CO_COL ] = FALSE
+
+	ENDIF
+
+	RETURN ( options )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_get_choices ( self, VALUE table, collect )
+
+{ Ask the user
+*
+* Parameters   : Self
+*                Options - Collection of Options
+* Return Value : Boolean - More than One Item Found.
+*
+*******************************************************************************}
+
+	DECLARE options, count, item
+	count = 1
+
+	CREATE OBJECT "STD_COLLECTION", collect
+
+	options = self . get_options ( table, FALSE )
+
+	WHILE options [ count, 1 ] <> EMPTY DO
+
+		CREATE OBJECT LIST_CHOOSER_ITEM_CLASS, item
+
+		item . value       = options [ count, 1 ]
+		item . checked     = TRUE
+		item . icon        = 0
+		item . description = options [ count, 2 ]
+		item . position    = count
+
+		collect . add ( item )
+
+		count = count + 1
+
+	ENDWHILE
+
+	self . options    = options
+	self . table_icon = explorer_utils_get_table_default_icon ( table )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_create_menu ( self, options )
+
+{ Create the Appropriate Menu Options
+*
+* Parameters   : Self
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE count, proc, added, new, skip, message
+	added = FALSE
+	count = 1
+	new   = 0
+	skip  = 0
+
+	self . get_table_name ( )
+
+	{**********************************************************************}
+	{* Go through the Options Array                                       *}
+	{**********************************************************************}
+
+	START WRITE TRANSACTION "Creating Menu Items"
+
+	WHILE options [ count, ID_COL ] <> EMPTY DO
+
+		IF options [ count, OK_COL ] THEN	
+
+			proc = self . find_menu ( options [ count ] )
+
+			IF proc = EMPTY THEN
+
+				proc  = self . add_menu ( options [ count ] )
+				
+				IF proc <> EMPTY THEN
+
+					new   = new + 1
+					added = TRUE
+
+				ENDIF
+
+			ELSE
+
+				skip = skip + 1
+
+			ENDIF
+
+			options [ count, MU_COL ] = proc
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	{**********************************************************************}
+	{* Save the Changes if there have been any.                           *}
+	{**********************************************************************}
+
+	IF added THEN
+
+		COMMIT
+
+	ELSE	
+
+		ROLLBACK
+
+	ENDIF
+
+	{**********************************************************************}
+	{* Tell the User What Happened.                                       *}
+	{**********************************************************************}
+
+	IF skip = 0 THEN
+
+		MESSAGE_FETCH ( "LABTABLE_DB_ADDED", message )
+		MESSAGE_ADD_PARAMETER ( message, STRIP ( new ) )
+
+	ELSE
+		
+		MESSAGE_FETCH ( "LABTABLE_DB_SKIPPED", message )
+		MESSAGE_ADD_PARAMETER ( message, STRIP ( new  ) )
+		MESSAGE_ADD_PARAMETER ( message, STRIP ( skip ) )
+		
+	ENDIF
+
+	flash_message ( MESSAGE_GET_TEXT ( message, 1 ), TRUE )
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_find_menu ( self, option )
+
+{ Find specific menu item.
+*
+* Parameters   : Self
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE proc
+
+	proc = SELECT master_menu . procedure_num
+	       WHERE table_name = self . table_name
+	       AND   library    = option [ LB_COL ]
+	       AND   routine    = option [ RT_COL ]
+	       AND   type       = "MENU"
+	       AND   parameters = self . get_param ( option )
+
+	RETURN ( proc )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_get_table_name ( self )
+
+{ Work out the Pretty Table Name
+*
+* Parameters   : Self
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE table
+
+	table = SELECT interface . table_name
+	        WHERE table_name = self . table_name
+	        AND   interface  = self . interface
+
+	IF table <> EMPTY THEN
+
+		self . table_text = SELECT interface . display_table_name
+
+	ENDIF
+
+	RETURN ( table <> EMPTY )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_get_param ( self, option )
+
+{ Work out a specific parameter string
+*
+* Parameters   : Self
+* Return Value : String - Parameter String to run this function.
+*
+*******************************************************************************}
+
+	DECLARE param
+
+	param = STRIP ( self . table_name ) : "," : 
+	        STRIP ( self . interface  ) : "," :
+	        STRIP ( option [ ID_COL ] )
+
+	RETURN ( param )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_add_menu ( self, option )
+
+{ Find specific menu item.
+*
+* Parameters   : Self
+* Return Value : Boolean - True if all is well.
+*
+*******************************************************************************}
+
+	DECLARE proc, status, role, lengf, desc
+
+	GET_FIELD_DETAILS role_entry . role_id, "FIELD_SIZE", lengf
+
+	proc = lib_menu_get_new_proc_num ( self . context )
+	role = PAD ( option [ RO_COL ], " ", lengf ) : PACKED_DECIMAL ( proc )
+
+	RESERVE ENTRY master_menu, PACKED_DECIMAL ( proc ), status
+
+	IF ( status = EMPTY ) THEN
+
+		desc = STRIP ( self . table_text ) : " " : option [ TX_COL ]
+
+		ASSIGN master_menu . type        = "MENU"
+		ASSIGN master_menu . description = desc
+		ASSIGN master_menu . library     = option [ LB_COL ]
+		ASSIGN master_menu . routine     = option [ RT_COL ]
+		ASSIGN master_menu . short_text  = option [ MG_COL ]
+		ASSIGN master_menu . parameters  = self . get_param ( option )
+		ASSIGN master_menu . table_name  = self . table_name
+		ASSIGN master_menu . action_type = option [ AC_COL ]
+		ASSIGN master_menu . data_type   = "STATIC"
+		ASSIGN master_menu . committed   = option [ CO_COL ]
+		ASSIGN master_menu . icon        = self . table_icon
+
+		UPDATE master_menu
+
+		RESERVE ENTRY role_entry, role, status
+
+		UPDATE role_entry
+
+	ENDIF
+
+	IF ( status <> EMPTY ) THEN
+
+		flash_message ( status, TRUE )
+
+	ENDIF
+
+	RETURN ( SELECT master_menu . procedure_num )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE labtable_db_action_show_menu ( self, options)
+
+{ Find specific menu item.
+*
+* Parameters   : Self
+*                Array of Menu Options
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE viewer, criteria, count, more, proc
+	ARRAY criteria
+
+	{**********************************************************************}
+	{* Work out what menu items to add                                    *}
+	{**********************************************************************}
+
+	more  = FALSE
+	count = 1
+
+	WHILE options [ count, ID_COL ] <> EMPTY DO
+
+		proc = options [ count, MU_COL ]
+
+		IF ( proc <> EMPTY ) THEN
+
+			IF more THEN
+
+				ARRAY_SELECT_ADD ( criteria, ARRAY_SELECT_OR  , 
+				                   EMPTY, EMPTY               )
+			
+			ENDIF
+
+			ARRAY_SELECT_ADD ( criteria, ARRAY_SELECT_EQ, 
+			                   "PROCEDURE_NUM", proc    )
+
+			more = TRUE
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	ARRAY_SELECT_ADD ( criteria, ARRAY_SELECT_ORDER, 
+	                   "PROCEDURE_NUM", ARRAY_SELECT_ASCENDING )
+
+	{**********************************************************************}
+	{* Show the Viewer                                                    *}
+	{**********************************************************************}
+
+	IF more THEN
+
+		CREATE OBJECT LIST_VIEWER_CLASS, viewer
+
+		viewer . autosize     = TRUE
+		viewer . menu_columns = TRUE
+		viewer . display_only = FALSE
+		viewer . header       = GET_USER_MESSAGE ( "LABTABLE_DB_MENOPTS", 1 )
+		viewer . table        = "MASTER_MENU"
+		viewer . criteria     = criteria
+		
+		viewer . go ( )
+
+	ELSE
+
+		flash_message ( "LABTABLE_DB_NO_MENU", TRUE )
+
+	ENDIF
+
+ENDROUTINE
+
+{*******************************************************************************
+*                               D E T A I L S
+*******************************************************************************}
+
+{******************************************************************************}
+
+ROUTINE action_print_option ( VALUE identity )
+
+{ Routine to call when printing the LTE.
+*
+* Parameters   : Identity - The Identity.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE field_details
+	ARRAY field_details ARRAY_SIZE ( 0 , 2 )
+
+	field_details [ 1, 1 ] = "MESSAGE"
+	field_details [ 1, 2 ] = "Message"
+
+	field_details [ 2, 1 ] = "REPORT_NAME"
+	field_details [ 2, 2 ] = "Library"
+
+	field_details [ 3, 1 ] = "ACTION_ROUTINE"
+	field_details [ 3, 2 ] = "Routine"
+
+	print_fields (  "INTERFACE_ACTION"         ,
+	                identity                   ,
+	                ""                         ,
+	                ""                         ,
+	                2                          ,
+	                28                         ,
+	                field_details              )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE generic_pre_insert_routine ( self        ,
+                                     grid        ,
+                                     cell_column ,
+                                     cell_row    ,
+                                     window      ,
+                                     column      ,
+                                     row         ,
+                                     cell_width  ,
+                                     cell_height ,
+                                     new_value   )
+
+{ Routine to insert a row.
+*
+* Parameters   : Identity - The Identity.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE table, field, keys, count, found, auto_insert
+
+	found = FALSE
+	auto_insert = FALSE
+
+	table = STRIP ( self . table )
+	field = self . prompt_details [ 1, 4 ] 
+
+	GET_TABLE_DETAILS 'table', "KEY0_FIELD", keys
+
+	IF SIZEOFARRAY ( keys ) = 1 THEN
+		fatal_error ( "BADLINKTABLE" )
+	ENDIF
+
+	count = 1
+
+	WHILE ( count <= size_of_array ( keys )) AND ( NOT found ) DO
+		
+		found = ( keys [ count ] = field )
+		count = count + 1
+
+	ENDWHILE 
+
+	IF ( NOT found ) THEN
+	
+		IF ( keys [ size_of_array ( keys )] = self . order_field) THEN
+			auto_insert = TRUE
+		ELSE
+			fatal_error ( "NOTKEYFIELD" )
+		ENDIF
+
+	ENDIF
+
+	IF auto_insert THEN
+
+		new_value = PACKED_DECIMAL ( grid . cell_rows + 1 )
+		SET GLOBAL "LASTKEY" TO "CONTINUE"
+
+	ELSEIF ( self . prompt_details [ 1, 3 ] <> table ) THEN
+
+		fatal_error ( "CUSTOMFIELD" )
+
+	ELSEIF ( self . prompt_details [ 1, 2 ] <> "DISPLAY" ) THEN
+
+		fatal_error ( "DISPLAYONLY" )
+
+	ELSE
+
+		PROMPT FOR new_value
+		    ON LINE   row
+		    FROM      1
+		    IN WINDOW window 
+		    FORMAT 'table' . 'field'
+
+	ENDIF
+
+ENDROUTINE
+
+{*******************************************************************************
+*                       G E N E R A L   R O U T I N E S 
+*******************************************************************************}
+
+ROUTINE form_validation_routine ( form )
+
+{ Get Options Form Validation Routine
+*
+* Parameters   : Form - Form Object
+* Return Value : Boolean - True if all prompts are filled in.
+*
+*******************************************************************************}
+
+	DECLARE bad
+
+	bad = BLANK ( form . prompt_objects [ TABLE_PROMPT  ] . value ) OR
+	      BLANK ( form . prompt_objects [ INTER_PROMPT  ] . value ) OR
+	      BLANK ( form . prompt_objects [ OPTION_PROMPT ] . value )
+
+	RETURN ( NOT bad )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE form_menu_validation_routine ( form )
+
+{ Get Options Form Validation Routine
+*
+* Parameters   : Form - Form Object
+* Return Value : Boolean - True if all prompts are filled in.
+*
+*******************************************************************************}
+
+	DECLARE bad
+
+	bad = BLANK ( form . prompt_objects [ TABLE_PROMPT  ] . value ) OR
+	      BLANK ( form . prompt_objects [ INTER_PROMPT  ] . value )
+
+	RETURN ( NOT bad )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE prompt_menu_leave_table ( obj )
+
+{ Leave the Table Prompt Routin for the Menu Form
+*
+* Parameters   : Obj - Prompt Object
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE chooser, mandy_array, id_prom, icon_prom
+
+	IF ( obj . text <> obj . original_text ) AND
+	   ( NOT BLANK ( obj . text )          ) THEN
+
+		ARRAY mandy_array
+
+		id_prom   = obj . parent_prompt . prompt_objects [ INTER_PROMPT ]
+		icon_prom = obj . parent_prompt . prompt_objects [ ICON_PROMPT  ]
+
+		ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+		                   "TABLE_NAME", obj . value   )
+		ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+		                   "TYPE", "LTE" )
+
+		id_prom . set_text ( "" )
+		id_prom . mandatory_array = mandy_array
+
+		chooser = obj . parent_prompt . prompt_objects [ CHOICE_PROMPT ]
+
+		chooser . user_info . get_choices ( obj . text     ,
+		                                    chooser . data )
+
+		chooser . remove_all_items ( )
+		chooser . load_data        ( )
+
+		icon_prom . set_text ( chooser . user_info . table_icon )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE prompt_leave_table ( obj )
+
+{ Leave the Table Prompt Routine
+*
+* Parameters   : Obj - Prompt Object
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE mandy_array, id_prom, op_prom, options
+
+	IF ( obj . text <> obj . original_text ) AND
+	   ( NOT BLANK ( obj . text )          ) THEN
+
+		ARRAY mandy_array
+
+		id_prom = obj . parent_prompt . prompt_objects [ INTER_PROMPT  ]
+		op_prom = obj . parent_prompt . prompt_objects [ OPTION_PROMPT ]
+
+		ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+		                   "TABLE_NAME", obj . value   )
+		ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_AND, EMPTY, EMPTY )
+		ARRAY_SELECT_ADD ( mandy_array, ARRAY_SELECT_EQ, 
+		                   "TYPE", "LTE" )
+
+		id_prom . set_text ( "" )
+		id_prom . mandatory_array = mandy_array
+
+		options = obj . user_info . get_options ( obj . text, TRUE )
+		obj . user_info . options = options
+
+		op_prom . choose_array = options
+		
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

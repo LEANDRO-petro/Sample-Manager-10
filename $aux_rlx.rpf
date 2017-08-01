@@ -1,0 +1,477 @@
+{******************************************************************************
+*
+* Module Name   : $AUX_RLS.RPF
+*
+* Purpose       : Template created using $AUXSETUP.
+*                 Release sample from hold.
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification : 
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : 
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Checar data de amostragem no futuro e calculo do prazo em dias uteis.
+002   15/12/2014	Validar campos mandatórios para amostras cadastradas em segundo plano
+}
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $AUX_LIB
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+
+SET NAME "DISPLAY/"
+ENABLE WINDOWS
+SET NOTPROTECTED
+
+Array prompt_text
+Array table_names
+Array change_stat ARRAY_SIZE (3) = " "
+
+Array display_details ARRAY_SIZE ( 0 , 6 )
+Array prompt_details ARRAY_SIZE ( 0 , 6 )
+
+
+{***********************************************************************}
+{                   USER INPUT BEGINS HERE                              }
+{***********************************************************************}
+
+{SECTION A - SCREEN SETUP}
+{specify the header text for the command window}
+{ie header_txt =  "Change Sample Status"}
+
+    header_txt = GET_USER_MESSAGE("AUX_RLS_HEADER_TXT" ,1)
+
+{specify footer text for the command window }
+
+    footer_txt = GET_USER_MESSAGE("AUX_RLS_FOOTER_TXT" ,1)
+
+{specify the text string to be displayed upon        }
+{successful completion of the command                }
+{ie success_txt = "Sample Status Changed"            }
+
+  success_txt        = GET_USER_MESSAGE("AUX_RLS_SUCCESS_TXT" ,1)
+
+{specify the text string to be displayed upon        }
+{abortion from the command                           } 
+{ie abort_txt =   "Change Sample Status Aborted"     }
+
+  abort_txt          = GET_USER_MESSAGE("AUX_RLS_ABORT_TXT" ,1)
+
+{specify the sample statuses allowable within the    }
+{browse list for this command if sample identity     }
+{is prompted for.                                    }
+
+  samp_stat_allowed       =  "H"
+  job_stat_allowed        =  "AVCX"
+  test_stat_allowed        =  " "
+
+ 
+{SECTION B - INITIAL PROMPTS }
+
+
+{Specify the tables that the initial prompts browse  }
+{upon .                                              }
+
+   table_names [ 1 ]    = "SAMPLE"
+
+
+{  table_names [ 2 ]    = "TEST"}
+
+
+{Specify the initial prompt fields and the associated}
+{prompt text strings                                 }
+
+  prompt_text [ 1 ]    = GET_USER_MESSAGE("AUX_RLS_PROMPT_TXT" ,1)
+
+ {prompt_text [ 2 ]    = "Enter Test Name"}
+
+
+{SECTION C - DISPLAY INFORMATION}
+
+{The user may require a header for the display area }
+{Any descriptive text may be used here              }
+
+    mess_area_one = ""
+
+
+{Specify the fields which require displaying with the}
+{appropriate descriptive text string                 }
+
+{Display fields from prompt_table[1] : }
+
+  display_details [ 1, MESSAGE_POSITION    ]   = GET_USER_MESSAGE("AUX_RLS_DISPLAY_TXT" ,1)
+  display_details [ 1, TYPE_POSITION       ]   = "DISPLAY"
+  display_details [ 1, TABLE_NAME_POSITION ]   = "SAMPLE"
+  display_details [ 1, FIELD_NAME_POSITION ]   = "ID_TEXT"
+{  
+  display_details [ 2, MESSAGE_POSITION    ]   = ""
+  display_details [ 2, TYPE_POSITION       ]   = ""
+  display_details [ 2, TABLE_NAME_POSITION ]   = ""
+  display_details [ 2, FIELD_NAME_POSITION ]   = ""
+  
+  display_details [ 3, MESSAGE_POSITION    ]   = ""
+  display_details [ 3, TYPE_POSITION       ]   = ""
+  display_details [ 3, TABLE_NAME_POSITION ]   = ""
+  display_details [ 3, FIELD_NAME_POSITION ]   = ""}
+  
+ 
+{Display fields from prompt_table[2] : }
+
+ {display_details [ 1, MESSAGE_POSITION    ]   = ""
+  display_details [ 1, TYPE_POSITION       ]   = ""
+  display_details [ 1, TABLE_NAME_POSITION ]   = ""
+  display_details [ 1, FIELD_NAME_POSITION ]   = ""
+  
+  display_details [ 2, MESSAGE_POSITION    ]   = ""
+  display_details [ 2, TYPE_POSITION       ]   = ""
+  display_details [ 2, TABLE_NAME_POSITION ]   = ""
+  display_details [ 2, FIELD_NAME_POSITION ]   = ""
+  
+  display_details [ 3, MESSAGE_POSITION    ]   = ""
+  display_details [ 3, TYPE_POSITION       ]   = ""
+  display_details [ 3, TABLE_NAME_POSITION ]   = ""
+  display_details [ 3, FIELD_NAME_POSITION ]   = ""}
+                                                         
+
+  {SECTION D - FIELD ASSIGNMENT                }
+
+{  This section is divided into three areas; }
+{                                            }
+{         (1) Interactive Update             }
+{         (2) Non-interactive Update         }
+{         (3) Status Change Update           }
+
+{----------------------------------------------------}
+{  1.   I N T E R A C T I V E   U P D A T E          }
+{----------------------------------------------------}
+
+{Specify the fields which require Updating and also  }
+{require a user input.Define the text string         }
+{associated with the input along with the browse type}                    
+
+
+  {Update fields associated with prompt_table[1]}
+  {Interactive_browse may be filled with either }
+  {the browse table_name.field or a number to   }
+  {define the size of the prompted field ie "10"}
+  {or if no browse required " ".                }
+
+{The user may require a header for the prompt area. }
+{ Any descriptive text may be used here.            }
+
+mess_area_two = ""
+
+
+{ prompt_details [ 1 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 1 , TYPE_POSITION       ]  = ""
+  prompt_details [ 1 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 1 , FIELD_NAME_POSITION ]  = ""
+
+  prompt_details [ 2 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 2 , TYPE_POSITION       ]  = ""
+  prompt_details [ 2 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 2 , FIELD_NAME_POSITION ]  = ""
+                                                           
+ }
+  {Update fields associated with prompt_table[2]}
+{
+  prompt_details [ 1 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 1 , TYPE_POSITION       ]  = ""
+  prompt_details [ 1 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 1 , FIELD_NAME_POSITION ]  = ""
+  
+  prompt_details [ 2 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 2 , TYPE_POSITION       ]  = ""
+  prompt_details [ 2 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 2 , FIELD_NAME_POSITION ]  = ""
+ }
+
+{-----------------------------------------------------}
+{   2.   S T A T U S    C H A N G E   U P D A T E     }
+{-----------------------------------------------------}
+
+
+{  editado de V->UAMJR 17/04/2015			     }
+{  Non interactive update of the status field        }
+{  is defined within the array change_stat[n]        }
+{  where n = the array element that defines the      }
+{  table associated with the status in the array     }
+{  prompt_table[n].                                  }
+{  To update sample.status to "U" the user would     }
+{  define change_stat[1] = "U" where prompt_table[1] } 
+{   = "SAMPLE"                                       }
+{  If the status change should be back to the old    }
+{  status change_stat[n] = "OLD_STATUS".             }
+
+  change_stat[1] = "U"
+  { change_stat[2] = " "
+}
+
+{*************************************************}
+{             END  OF  USER  INPUT                }
+{*************************************************}
+
+aux_generator (  header_txt ,
+		 footer_txt ,
+	       	 mess_area_one ,
+		 mess_area_two  ,
+                 samp_stat_allowed ,
+                 job_stat_allowed ,
+                 test_stat_allowed ,
+		 prompt_text       ,
+		 table_names       ,
+                 change_stat                  ,
+                 global ( "current_library" ) ,
+                 Success_txt ,
+		 Abort_txt   ,
+		 TRUE      ,
+		 display_details ,
+		 prompt_details  ,
+		 "Read Transaction"  ,
+		 "Write Transaction")  
+{**************************************************************************}
+{                            Action Routine                                }
+{**************************************************************************}
+		
+ROUTINE action(VALUE first_id,VALUE second_id)
+{ 001	\/}
+DECLARE data_amostragem, data_rec1
+
+
+data_amostragem = SELECT sample . sampled_date 
+
+IF(STRIP((data_amostragem) <> "")) THEN
+	IF(data_amostragem > NOW) THEN
+		flash_message("Ação não realizada - data de amostragem incorreta (no futuro). Favor corrigir data de amostragem.", TRUE)
+		RETURN ( FALSE )
+	ENDIF
+ENDIF
+
+
+	declare Prazo,MLP, final, id, CALENDARIO, ATENDIMENTO, data_rec
+	data_rec = SELECT sample . data_recebimento_laboratorio 
+	MLP = SELECT SAMPLE.PRODUCT 
+	ATENDIMENTO = SELECT SAMPLE.DATERESREQ
+	IF (ATENDIMENTO = EMPTY) OR (LENGTH(STRIP(ATENDIMENTO))<=0) THEN
+		CALENDARIO = SELECT SAMPLE . CALENDARIO 
+		PRAZO = SELECT MLP_HEADER.PRAZO WHERE MLP_HEADER.IDENTITY = MLP
+		if (PRAZO <> EMPTY) AND (PRAZO >0)THEN
+			IF (CALENDARIO <> EMPTY) THEN
+				ADD_DIA_UTIL(DATA_REC,PRAZO, CALENDARIO)
+				FINAL = DATA_REC
+				ID = SELECT SAMPLE.ID_NUMERIC 
+				ID = SELECT SAMPLE.ID_NUMERIC FOR UPDATE WHERE ID_NUMERIC = ID
+				ASSIGN SAMPLE.DATERESREQ = FINAL 
+			ELSE
+				FLASH_MESSAGE("NÃO EXISTE CALENDÁRIO ASSOCIADO À AMOSTRA.",TRUE)
+				RETURN 
+			ENDIF
+		ELSE
+			FLASH_MESSAGE("NÃO EXISTE UM PRAZO DE ATENDIMENTO PARA O OBJETIVO ASSOCIADO À AMOSTRA.",TRUE)
+			RETURN
+		ENDIF
+	ENDIF
+
+{ 001	/\}
+
+RESTORE DATE FORMAT
+
+RETURN(TRUE)
+ENDROUTINE {action}
+
+{**************************************************************************}
+{                            Select Routine                                }
+{**************************************************************************}
+
+ROUTINE select_key ( VALUE line     , display_id      ,
+                     VALUE first_id , VALUE second_id )
+
+{menuprocs ...etc}
+
+ENDROUTINE
+
+{**************************************************************************}
+{                           Validation Routine                             }
+{**************************************************************************}
+
+ROUTINE validation ( display_id )
+
+{ 002 \/}
+	DECLARE temp_id, field_name, alias, count, chk_alias, real_name
+	DECLARE is_blank, msg
+
+	ARRAY field_array ARRAYSIZE ( 0 )
+	
+	temp_id    = SELECT sample . template_id
+	field_name = SELECT template_fields . field_name WHERE
+			        table_name     = "SAMPLE" AND
+			        template_id    = temp_id  AND
+			        mandatory_flag = TRUE
+
+	{* populando array com os campos manadatórios...  *}
+	count = 0
+	WHILE ( field_name <> EMPTY )
+		count = count + 1
+		field_array [ count ] = field_name
+
+		NEXT template_fields
+		field_name = SELECT template_fields . field_name
+
+	ENDWHILE
+
+	{* verificando se o nome do campo no template é um alias... *}
+	count     = 1
+	alias     = field_array [ count ]
+	is_blank  = FALSE
+	to_relief = FALSE
+
+	WHILE alias <> EMPTY
+		chk_alias = get_real_field_name ( "SAMPLE", alias, real_name )
+		
+		{* pesquisa campos mandatórios e checa se possui valor... *}
+		IF ( chk_alias ) THEN
+			field_value = STRIP ( SELECT sample . 'alias' )
+			IF ( BLANK ( field_value ) OR ( field_value = EMPTY )) THEN
+				is_blank = TRUE
+			ENDIF
+		ELSE
+			RETURN ( FALSE )
+		ENDIF	
+		
+		count = count + 1
+		alias = field_array [ count ]
+	ENDWHILE
+			
+	IF ( is_blank ) THEN
+	
+		{* msg = GET_USER_MESSAGE("AUX_RLS_DISPLAY_MANDATORY" ,1) *}
+		msg = "Para liberar a amostra da espera é necessário preencher campos mandatórios"
+		flash_message ( msg, TRUE )
+
+		RETURN ( FALSE )
+	ELSE
+		RETURN ( TRUE )
+	ENDIF
+{ 002 /\}
+
+RETURN ( NOT ( is_blank ))
+
+ENDROUTINE
+
+{**************************************************************************}
+{ Explorer Aux Report Field Action Routine -                               }
+{**************************************************************************}
+{ 001	\/}
+ROUTINE aux_rls_explorer_user_action ( self , data )
+	
+	DECLARE data_amostragem
+	data_amostragem = SELECT sample . sampled_date IN OBJECT data
+
+	IF(STRIP(data_amostragem) <> "") THEN
+		IF(data_amostragem > NOW) THEN
+			flash_message("Ação não realizada - data de amostragem incorreta (no futuro). Favor corrigir data de amostragem.", TRUE)
+			RETURN ( FALSE )
+		ENDIF
+	ENDIF
+	
+	declare Prazo,MLP, final, id, CALENDARIO, ATENDIMENTO, data_rec
+	data_rec = SELECT sample . data_recebimento_laboratorio in object data
+	{IF ( data_rec = EMPTY ) THEN
+		flash_message(data_rec, TRUE)
+		data_rec = NOW 
+	flash_message(data_rec, TRUE)
+	ENDIF}
+	
+	MLP = SELECT SAMPLE.PRODUCT in object data
+	ATENDIMENTO = SELECT SAMPLE.DATERESREQ in object data
+	IF (MLP <> EMPTY) OR (LENGTH(STRIP(MLP))>0) THEN
+		IF (ATENDIMENTO = EMPTY) OR (LENGTH(STRIP(ATENDIMENTO))<=0) THEN
+			CALENDARIO = SELECT SAMPLE . CALENDARIO in object data
+			PRAZO = SELECT MLP_HEADER.PRAZO WHERE MLP_HEADER.IDENTITY = MLP
+			NUMERODIAS = NUMERIC(LEFTSTRING(PRAZO,4))
+			IF (PRAZO <> EMPTY) AND (NUMERODIAS >0)THEN
+				IF (CALENDARIO <> EMPTY) THEN
+					ADD_DIA_UTIL(DATA_REC,PRAZO, CALENDARIO)
+					FINAL = DATA_REC
+					ID = SELECT SAMPLE.ID_NUMERIC in object data
+					ID = SELECT SAMPLE.ID_NUMERIC FOR UPDATE WHERE ID_NUMERIC = ID
+					ASSIGN SAMPLE.DATERESREQ = FINAL 
+				ELSE
+					FLASH_MESSAGE("NÃO EXISTE CALENDÁRIO ASSOCIADO À AMOSTRA.",TRUE)
+					RETURN 
+				ENDIF
+			ELSEIF (PRAZO <> EMPTY) THEN
+				FINAL = DATA_REC + PRAZO
+				ID = SELECT SAMPLE.ID_NUMERIC in object data
+				ID = SELECT SAMPLE.ID_NUMERIC FOR UPDATE WHERE ID_NUMERIC = ID
+				ASSIGN SAMPLE.DATERESREQ = FINAL 
+			ELSE
+				FLASH_MESSAGE("NÃO EXISTE UM PRAZO DE ATENDIMENTO PARA O OBJETIVO ASSOCIADO À AMOSTRA.",TRUE)
+				RETURN
+			ENDIF
+		ENDIF
+		ELSE
+			flash_message("Ação não realizada - Objetivo da Amostra não informado.", TRUE)
+	ENDIF
+
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+
+
+
+
+ROUTINE ADD_DIA_UTIL(DATAINICIAL, VALUE NUMERODIAS, VALUE CALENDARIO)
+	
+	NUMERODIAS = NUMERIC(LEFTSTRING(NUMERODIAS,4))
+	DECLARE CAL, INICIO, FIM, START_DATE, DIA1, DIA2
+
+	IF (DAYNUMBER(DATAINICIAL) = 6) OR (DAYNUMBER(DATAINICIAL) = 7) THEN
+		NUMERODIAS = NUMERODIAS - 1
+	ENDIF
+	CONTADOR = 1
+	WHILE (NUMERODIAS <> CONTADOR) DO
+		TMP = DAYNUMBER(DATAINICIAL)
+		IF (TMP = 1) THEN
+			DATAINICIAL = DATAINICIAL + INTERVAL(2)
+		ELSEIF (TMP = 6) THEN
+			DATAINICIAL = DATAINICIAL + INTERVAL(3)	
+		ELSE
+			DATAINICIAL = DATAINICIAL + INTERVAL(1)
+		ENDIF
+		{checar se a datainicial esta em algum feriado}
+		{SELECT NAME FROM SCHEDULE_CALENDAR_PERIOD WHERE TO_DATE('23-APR-13','DD-MON-YY')>=START_DATE AND TO_DATE('23-APR-13','DD-MON-YY') <= END_DATE;}
+		CAL = SELECT SCHEDULE_CALENDAR_PERIOD.NAME WHERE START_DATE>=DATAINICIAL AND END_DATE<=(DATAINICIAL + INTERVAL(1))
+		WHILE CAL <> EMPTY DO
+			INICIO = SELECT SCHEDULE_CALENDAR_PERIOD . START_DATE
+			FIM = SELECT SCHEDULE_CALENDAR_PERIOD . END_DATE
+			SET DATE FORMAT "DD-MM-YYYY"
+			start_date = string ( INICIO )			
+			DIA1 = NUMERIC ( SUBSTRING ( start_date , 0 , 2 ))
+			start_date = string ( FIM )
+			DIA2 = NUMERIC ( SUBSTRING ( start_date , 0 , 2 ))
+			DATAINICIAL = DATAINICIAL  + (DIA2 - DIA1)
+			NEXT SCHEDULE_CALENDAR_PERIOD
+			CAL = SELECT SCHEDULE_CALENDAR_PERIOD.NAME
+		ENDWHILE
+		CONTADOR = CONTADOR + 1
+	ENDWHILE
+	DATAINICIAL = DATAINICIAL + INTERVAL(1)
+	TMP = DAYNUMBER(DATAINICIAL)
+	
+	IF (TMP = 6) THEN
+		DATAINICIAL = DATAINICIAL + INTERVAL(2)
+	ELSEIF (TMP = 7) THEN
+		DATAINICIAL = DATAINICIAL + INTERVAL(1)
+	ENDIF
+
+ENDROUTINE
+{ 001	/\}
+

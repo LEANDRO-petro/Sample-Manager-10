@@ -1,0 +1,2119 @@
+{*******************************************************************************
+*
+* Module Name   	: $CERTIFICATE
+*
+* Purpose       	: Generation of Certificate Data Section Entries
+*
+* Document Ref. 	: CH002850 Implement CoA functionality
+*
+* (c) Copyright 1984-2004 Thermo Electron Corporation. All rights reserved.
+********************************************************************************}
+
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Adicionando correção para criação do Certificado de Analises de forma automática
+}
+
+SET NOTPROTECTED
+SET NAME "DEFER/"
+ENABLE WINDOWS
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_DB
+JOIN LIBRARY $PROMPT_IMPRINT
+JOIN LIBRARY $PROMPT_WINDOW
+JOIN LIBRARY $CERTIFICATE_LIB
+JOIN LIBRARY $CERT_TEMPLATE
+
+{**Local Constants ************************************************************} 
+
+
+{** Global Constants **********************************************************} 
+GLOBAL CONSTANT COA_CLASS    			= "COA"
+GLOBAL CONSTANT COA_SYNTAX    			= "COA"
+GLOBAL CONSTANT COA_DATA    			= "COA_DATA"
+GLOBAL CONSTANT COA_RECORD    			= "COA_RECORD"
+
+GLOBAL CONSTANT COA_PROMPT_TEMPLATEDESC		= "1"
+GLOBAL CONSTANT COA_PROMPT_TYPEID  		= "2"
+GLOBAL CONSTANT COA_PROMPT_REPORT  		= "3"
+GLOBAL CONSTANT COA_PROMPT_GRID  		= "4"
+
+GLOBAL CONSTANT COA_DISPLAY  			= "DISPLAY"
+GLOBAL CONSTANT COA_CREATE  			= "CREATE"
+GLOBAL CONSTANT COA_RMB  			= "RMB"
+
+GLOBAL CONSTANT ECSMLP_SAMPLE			= "145"
+GLOBAL CONSTANT ECSMLP_JOB			= "327"
+GLOBAL CONSTANT ECSMLP_LOT			= "886"
+
+{** Global Variables **********************************************************} 
+
+{** Main Code *****************************************************************} 
+
+create_print_certificate("")
+
+{* Start Of Routines **********************************************************} 
+
+{******************************************************************************}
+
+{*******************************************************************************
+*                             M A I N   C O D E
+*******************************************************************************}
+
+{*******************************************************************************
+*                        G L O B A L   R O U T I N E S
+*******************************************************************************}
+
+GLOBAL ROUTINE create_print_certificate ( VALUE option )
+
+{ Create certificate menu option
+*
+* Parameters   : Option, [Integer]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+{001 \/}
+	DECLARE template_id,
+	        identity,
+	        version,
+	        certificate_obj,
+	        select_array,
+	        type,
+	        type_id
+
+	ARRAY select_array		
+	
+	IF LENGTH(OPTION) > 0 THEN
+		template_id = option 
+	ELSE
+		template_id = certificate_lib_template_browse ( select_array )
+	ENDIF                   
+	
+	IF NOT BLANK ( template_id ) THEN
+		identity = LEFTSTRING ( template_id, 10 )
+		version = RIGHTSTRING ( template_id, 10)
+		type = SUBSTRING ( template_id, 11, 10)
+		type_id = SUBSTRING (template_id,21,20)
+
+		coa_class_define()
+		CREATE OBJECT COA_CLASS, certificate_obj
+		certificate_obj . operation = COA_CREATE
+		IF LENGTH(OPTION) > 0 THEN
+			certificate_obj . role_print = FALSE
+			certificate_obj . type_id = type_id
+			certificate_obj . automatic = TRUE
+		ELSE
+			certificate_obj . role_print = TRUE
+		ENDIF
+		certificate_obj . create( identity , version, type )
+	ENDIF
+{001 /\}
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL ROUTINE create_preview_certificate ( VALUE option )
+
+{ Create certificate menu option
+*
+* Parameters   : Option, [Integer]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE template_id,
+	        identity,
+	        version,
+	        certificate_obj,
+	        select_array,
+	        type
+
+	ARRAY select_array		
+
+	template_id = certificate_lib_template_browse ( select_array )
+	                   
+	IF NOT BLANK ( template_id ) THEN
+		identity = LEFTSTRING ( template_id, 10 )
+		version = RIGHTSTRING ( template_id, 10)
+		type = SUBSTRING ( template_id, 11, 10)
+
+		coa_class_define()
+		CREATE OBJECT COA_CLASS, certificate_obj
+		certificate_obj . operation = COA_CREATE
+		certificate_obj . role_print = FALSE
+		certificate_obj . create( identity , version, type )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL ROUTINE create_certificate_rmb( rmb_object , object , data )
+
+{ Create sample certificate 
+*
+* Parameters   : None
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE template_id,
+	        template_type,
+	        criteria_array,
+	        data_array,
+	        template,
+	        version,
+	        type,
+	        certificate_obj,
+	        current_identity,
+	        key_field,
+	        id_count
+
+	ARRAY criteria_array
+	ARRAY data_array
+
+	{ Build up the criteria for selecting the template }
+
+	IF ( data . table = "JOB_HEADER" ) THEN
+		template_type = "JOB"
+	ELSEIF ( data . table = "LOT_DETAILS" ) THEN
+		template_type = "LOT"	
+	ELSEIF ( data . table = "SAMPLE" ) THEN
+		template_type = "SAMPLE"	
+	ENDIF
+
+	array_select_add ( criteria_array  , 
+			   ARRAY_SELECT_EQ , 
+			   "type"          , 
+			   template_type   )
+
+	{ Build an array of the records for which a certificate is required }
+
+	data . set_first()
+	key_field = get_type_key_field_from_table ( data . table )
+	current_identity = ""
+	id_count = 0
+		
+	WHILE ( data . current <> EMPTY ) DO
+		
+		id_count = id_count + 1
+
+		data_array [ id_count ] = SELECT 'data . table' . 'key_field' 
+		                                 IN OBJECT data . current
+		current_identity = current_identity : data_array [ id_count ]
+		
+		data . set_next()
+		
+		IF data . current <> EMPTY THEN
+			current_identity = current_identity : ", "
+	        ENDIF
+
+	ENDWHILE
+
+	{ Select and process }
+
+	template_id = certificate_lib_template_browse_check ( criteria_array ,
+	                                                      data_array     )
+				        
+	IF (( template_id <> EMPTY ) AND  NOT BLANK ( template_id )) THEN
+
+		template = LEFTSTRING ( template_id, 10 )
+		version  = RIGHTSTRING ( template_id, 10 )
+		type     = SUBSTRING ( template_id, 11, 10 )
+
+		data . set_first()
+		key_field = get_type_key_field_from_table ( data . table )
+		current_identity = ""
+		
+		WHILE ( data . current <> EMPTY ) DO
+		
+			current_identity = current_identity :
+			                   SELECT 'data . table' . 'key_field' 
+			                          IN OBJECT data . current
+		
+			data . set_next()
+		
+			IF data . current <> EMPTY THEN
+				current_identity = current_identity : ", "
+		        ENDIF
+
+		ENDWHILE
+
+		coa_class_define ( )
+
+		CREATE OBJECT COA_CLASS, certificate_obj
+
+		certificate_obj . operation = COA_RMB
+		certificate_obj . type_obdb = data
+		certificate_obj . type_id   = current_identity
+		certificate_obj . create ( template , version, type ) 
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL ROUTINE preview_certificate_rmb( rmb_object , object , data )
+
+{ Preview sample certificate 
+*
+* Parameters   : None
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_obj,
+	        certificate_id,
+	        id_count,
+	        template_error
+
+	{ Only one at a time please }
+
+	data . set_first()
+	certificate_id = ""
+	id_count = 0
+		
+	WHILE ( data . current <> EMPTY ) DO
+		
+		id_count = id_count + 1
+
+		certificate_id = SELECT sample . certificate
+		                 IN OBJECT data . current
+
+		data . set_next()
+		
+	ENDWHILE
+
+	{ If we've got a valid certificate then display it }
+
+	IF ( NOT BLANK ( certificate_id ) AND ( id_count = 1 )) THEN
+
+		coa_class_define()
+
+		CREATE OBJECT COA_CLASS, certificate_obj
+
+		IF ( certificate_obj . load ( certificate_id )) THEN
+
+			template_error = certificate_obj . template . validate()
+
+			IF ( template_error = EMPTY ) THEN
+
+				certificate_obj . template . load()
+				certificate_obj . report_used = certificate_obj . template . get_def_destination()
+				certificate_obj . set_preview_flag ()
+
+				certificate_obj . imprint(FALSE)
+
+			ELSE
+
+				flash_message( template_error , TRUE)
+
+			ENDIF	
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL ROUTINE display_certificate ( VALUE option )
+
+{ Display certificate menu option
+*
+* Parameters   : Option, [Integer]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE certificate_id, template_id, version, certificate_obj, type
+
+	prompt_in_window ( "CERTIFICATE", 
+	                   "id_numeric", 
+	                   "Certificate", 
+	                   EMPTY , 
+	                   certificate_id )
+
+	IF NOT BLANK ( certificate_id ) THEN
+			template_id = SELECT certificate . template
+			version = SELECT certificate . template_version
+			type = SELECT certificate . type
+			coa_class_define()
+			CREATE OBJECT COA_CLASS, certificate_obj
+			certificate_obj . operation = COA_DISPLAY
+			certificate_obj . display( template_id    ,  
+                                                   type           ,
+                                                   version        , 
+                                                   certificate_id )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL ROUTINE create_coa_increment
+
+{ Create certificate increment
+*
+* Parameters   : None
+*
+* Return Value : [Integer]Padded Certificate Id Numeric
+*
+*******************************************************************************}
+	DECLARE numeric_id
+	numeric_id = INCREMENT( "CERTIFICATE", "ID_NUMERIC" )
+	RETURN( JUSTIFY( PAD( numeric_id, " ", 10 ), "RIGHT" ) )
+ENDROUTINE
+
+
+
+{******************************************************************************}
+{*                     C E R T I F I C A T E   C L A S S                      *}
+{******************************************************************************}
+
+GLOBAL ROUTINE coa_class_define
+
+{ Define certificate class
+*
+* Parameters   : None
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+    DEFINE CLASS COA_CLASS
+
+    INITIALISATION
+
+    PROPERTIES
+    	"ID_NUMERIC"        , { Numeric Identity of Certificate              }	
+    	"ID_TEXT"           , { Text Identity of Certificate                 }
+    	"TEMPLATE"          , { Template object from COA Template Class      }
+    	"REPORT"            , { Reference to report object                   }
+    	"TYPE_ID"           , { Lot, Job or Sample identity                  }
+    	"TYPE_OBDB"         , { Lot, Job or Sample object database           }
+    	"DATA"              , { Object database of type id                   }
+    	"DESCRIPTION"       , { Certificate description                      }
+    	"MODIFIED_ON"       , { Operator                                     }
+    	"MODIFIED_BY"       , { Date Time Modified                           }
+    	"GROUP_ID"          , { Group Certificate belongs, from Template     }
+    	"APPROVAL_REQD"     , { Approval flag                                }
+    	"STATUS"            , { Certificate status                           }
+    	"INSPECTION_PLAN"   , { Inspection Plan for certificate              }
+    	"PROMPTS"           , { Boolean set when prompts have been added     }
+    	"REPORT_USED"       , { Report used to display/print the certificate }
+    	"REPORT_PREVIEW"    , { Flag for allowing preview                    }
+	"ROLE_PRINT"        , { Flag for allowing printing                   }
+    	"OPERATION"         , { Current certificate opertaion CREATE/DISPLAY - 001}
+    	"AUTOMATIC"	      { Check if the certificate will be generated automatically - 001}
+    ACTIONS
+    	"CREATE"            , { Create certificate from passed template      }
+    	"RESET"             , { Reset values on the certificate object       }
+    	"DISPLAY"           , { Display certificate from id and template     }
+    	"SAVE"              , { Save certificate header to certificate table }
+    	"PREVIEW_UPDATE"    , { Update the preview fields on the certificate }
+    	"LOAD"              , { Load certificate header to certificate table }
+    	"GENERATE"          , { Create certificate and certificate entries   }
+    	"DATA_INITIALISE"   , { Initialize the data element to the type      }
+    	"DATA_BUILD_BY_ID"  , { Build the data property by a single identity }
+    	"DATA_BUILD_BY_OBDB", { Build the data property by entries from an   }
+    	                      { object database.                             }
+    	"DATA_ASSIGN_CERT"  , { Update entity records with the numeric       }
+    	                      { certificate identity                         }
+    	"SET_ID_TEXT"       , { Set text id from syntax                      }
+    	"GET_ID_TEXT"       , { Get text value                               }
+    	"SET_ID_NUMERIC"    , { Set numeric id, by creating a new increment  }
+    	"GET_ID_NUMERIC"    , { Get numeric value                            }
+	"SET_PREVIEW_FLAG"  , { Set the preview flag from infomaker report   }
+    	"GET_TYPE_ID"       , { Get the type id from the first record in     }
+    	                      { TYPE_OBDB or from type_id property           }
+    	"GET_PRODUCT"       , { Get the Product id from 1st result section   }
+    	"SET_DATA"          , { Set the data property to the type id         }
+    	"GET_TYPE_KEY_FIELD", { Return key field from the coa data table     }
+    	"BUILD_DATA"        , { Build data tree                              }
+    	"BUILD_FORM"        , { Build the generation screen                  }
+    	"ADD_SELECT_PROMPTS", { Add identity prompt to generation screen     }
+    	"ADD_PROMPTS"       , { Add section list to generation screen        }
+    	"ADD_REPORTS"       , { Add report browse                            }
+    	"ADD_BUTTONS"       , { Add buttons to generation screen             }
+    	"BUILD_PROMPTS"     , { Build prompts for the generation screen      }
+    	"INSERT_PROMPTS"    , { Insert prompts for the generation screen     }
+    	"UPDATE_PROMPTS"    , { Update prompts with entity info              }
+    	"IMPRINT"           , { Create and fire imprint object               }
+    	"APPLY_TYPE"
+    END CLASS
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE coa_class_initialisation ( self )
+
+{ Initialise Certificate
+*
+* Parameters   : Self, [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	coa_record_class_define ( )
+
+	self . prompts = FALSE
+	self . id_numeric = ""
+	self . id_text = ""
+	self . type_id = ""
+	self . type_obdb = EMPTY
+	self . operation = ""
+	self . report_used = ""
+	self . role_print  = FALSE
+	self . template = EMPTY
+{001 \/}
+	self . automatic = false
+{001 /\}
+	CREATE OBJECT "STD_OBJECT_DATABASE", self . data
+	self . data . class_to_use = "COA_RECORD"
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_create (       self     ,
+			    VALUE template ,
+			    VALUE version  ,
+			    VALUE type     )
+
+{ Create certificate
+*
+* Parameters   : Self     , [COA_CLASS]
+*                Template , [IDENTITY] Template identity
+*                Version  , [PACKED DECIMAL] Version
+*                Type     , [TEXT] Certificate type
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE template_error
+	coa_template_class_define()
+	CREATE OBJECT COA_TEMPLATE, self . template
+	self . template . template = template
+	self . template . version = version
+	self . template . type = type
+
+	template_error = self . template . validate()
+{001 \/}
+	IF ( template_error = EMPTY ) THEN
+		IF self . automatic = FALSE
+			self . template . load()
+			self . report_used = self . template . get_def_destination()
+			self . set_preview_flag ()
+			self . build_form ()
+		ELSE
+			self . report_used = self . template . get_def_destination()
+			self . generate ()
+		ENDIF
+	ELSE
+		flash_message( template_error, TRUE )
+	ENDIF	
+{001 /\}
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_reset ( self )
+
+{ Reset values on the certificate object.
+*
+* Parameters   : Self     , [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+	
+	self . id_numeric = ""
+	self . id_text = ""
+	CREATE OBJECT "STD_OBJECT_DATABASE", self . data
+	self . data . class_to_use = "COA_RECORD"
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_display (       self        ,
+			     VALUE template    , 
+			     VALUE type        ,
+			     VALUE version     ,
+ 			     VALUE certificate )
+
+{ Display certificate
+*
+* Parameters   : Self        , [COA_CLASS]
+*                Template    , [IDENTITY] Template identity
+*                Type        , [TEXT] Certificate type
+*                Version     , [PACKED DECIMAL] Version
+*                Certificate , [IDENTITY] Numeric Identity
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE template_error
+	coa_template_class_define()
+
+	CREATE OBJECT COA_TEMPLATE, self . template
+	self . template . template = template
+	self . template . version = version
+	self . template . type = type
+
+	template_error = self . template . validate()
+	IF ( template_error = EMPTY ) THEN
+		self . template . load()
+		self . report_used = self . template . get_def_destination()
+		self . set_preview_flag ()
+		self . load( certificate )
+		self . build_form ()
+	ELSE
+		flash_message( template_error , TRUE)
+	ENDIF	
+
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_save ( self )
+
+{ Save certificate header to certificate table 
+*
+* Parameters   : Self, [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_id
+{001 \/}
+	{START READ TRANSACTION "Read Certificate"}
+{001 /\}
+	certificate_id = SELECT certificate . id_numeric FOR UPDATE
+						WHERE id_numeric = self . id_numeric
+						
+	IF certificate_id = EMPTY THEN
+		RESERVE ENTRY certificate, self . id_numeric
+	ENDIF
+
+	ASSIGN certificate .  id_text 		= self . id_text
+	ASSIGN certificate .  template		= self . template . template
+	ASSIGN certificate .  template_version	= self . template . version
+	ASSIGN certificate .  type		= self . template . type
+	ASSIGN certificate .  type_identity     = self . type_id
+	ASSIGN certificate .  modified_on	= NOW 
+	ASSIGN certificate .  modified_by	= OPERATOR 
+	ASSIGN certificate .  modifiable	= FALSE
+	ASSIGN certificate .  group_id		= self  . template . group_id
+	ASSIGN certificate .  approval_reqd 	= FALSE
+	ASSIGN certificate .  status   		= "A"
+	ASSIGN certificate .  report_used       = self . report_used 
+			
+	IF NOT transaction_is_write ( ) THEN
+		START WRITE TRANSACTION "New Certificate"
+	ENDIF
+
+	UPDATE certificate
+{001 \/}
+	{COMMIT}
+{001 /\}
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_preview_update ( self )
+
+{ Update the preview fields.
+*
+* Parameters   : Self, [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_id
+
+	START READ TRANSACTION "Read Certificate"
+
+	certificate_id = SELECT certificate . id_numeric FOR UPDATE
+	                 WHERE id_numeric = self . id_numeric
+						
+	IF ( certificate_id = self . id_numeric ) THEN
+
+		ASSIGN certificate .  preview_on  = NOW
+		ASSIGN certificate .  preview_by  = OPERATOR
+				
+		IF NOT transaction_is_write ( ) THEN
+			START WRITE TRANSACTION "Preview Certificate"
+		ENDIF
+
+		UPDATE certificate
+		COMMIT
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_load ( self , VALUE certificate_id )
+
+{ Load certificate header to certificate table
+*
+* Parameters   : Self           , [COA_CLASS]
+*                Certificate_id , [IDENTITY] Numeric Identity
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE record_found
+
+	record_found = ( certificate_id = SELECT certificate . id_numeric
+	                                   WHERE id_numeric = certificate_id )
+
+	IF ( record_found )THEN
+
+		self . id_numeric          = SELECT certificate .  id_numeric
+		self . id_text		   = SELECT certificate .  id_text
+
+		IF self . template = EMPTY THEN
+			coa_template_class_define()
+			CREATE OBJECT COA_TEMPLATE, self . template
+		ENDIF
+
+		self . template . template = SELECT certificate .  template
+		self . template . version  = SELECT certificate .  template_version
+		self . template . type	   = SELECT certificate .  type
+		self . type_id		   = SELECT certificate .  type_identity
+		self . description	   = SELECT certificate .  description
+		self . modified_on	   = SELECT certificate .  modified_on
+		self . modified_by	   = SELECT certificate .  modified_by
+		self . group_id		   = SELECT certificate .  group_id
+		self . approval_reqd	   = SELECT certificate .  approval_reqd
+		self . status		   = SELECT certificate .  status
+		self . inspection_plan	   = SELECT certificate .  inspection_plan
+		self . report_used         = SELECT certificate .  report_used
+
+	ENDIF
+
+	RETURN ( record_found )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE coa_action_generate( self )
+
+{ Create certificate and certificate entries 
+*
+* Parameters   : Self, [COA_CLASS]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE generate_cert
+	        
+	self . set_id_numeric()
+	self . set_id_text( self . template . syntax )
+	self . data_initialise()
+	
+	IF self . type_obdb = EMPTY THEN
+		self . data_build_by_id()
+	ELSE
+		self . data_build_by_obdb()
+	ENDIF
+			
+	self . template . apply_custom_filters_to_odb ( self . data )
+	 
+	generate_cert = self . data_assign_cert()
+	
+	IF generate_cert THEN	
+		self . save()
+		self . template . write_entries ( self . data, self . id_numeric )
+	ENDIF
+	
+	RETURN (generate_cert)
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_data_initialise( self )
+
+{ Initialize the data element to the template type
+*
+* Parameters   : Self, [COA_CLASS]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE coa_table
+	coa_table = self . template . get_type_table()
+	self . data . initialise ( STRIP(coa_table) )
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_data_build_by_obdb( self )
+
+{ Build the data property by entries from an object database. Each time a new 
+* id is added, AND any criteria linked to that table.
+*
+* Parameters   : Self, [COA_CLASS]
+*                Obdb, [STD_OBJECT_DATABASE] Collection of Lot,Job or Samples.
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE new_select,
+	        criteria,
+	        key_field,
+	        current_identity
+	
+	ARRAY new_select
+	criteria = self . template . get_criteria_by_table (self . data . table)
+	
+	self . type_obdb . set_first()
+	key_field = self . get_type_key_field()
+		
+	WHILE ( self . type_obdb . current <> EMPTY ) DO
+		
+		current_identity = SELECT 'self . data . table' . 'key_field' 
+			                   IN OBJECT self . type_obdb . current
+		
+		array_select_add ( new_select ,
+				   ARRAY_SELECT_PUSH ,
+				   EMPTY ,
+	                           EMPTY )	                   
+		array_select_add ( new_select ,
+			           ARRAY_SELECT_EQ ,
+			           key_field ,
+	                           current_identity )
+		
+		array_select_concat( new_select , criteria )
+		
+		array_select_add ( new_select ,
+				   ARRAY_SELECT_POP ,
+				   EMPTY ,
+	                           EMPTY )
+		self . type_obdb . set_next()
+		
+		IF self . type_obdb . current <> EMPTY THEN
+			array_select_add ( new_select ,
+				   	ARRAY_SELECT_OR ,
+				   	EMPTY ,
+	                           	EMPTY )
+	        ENDIF
+		
+		
+	ENDWHILE
+
+	self . data . select_for_update ( new_select )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_data_build_by_id( self )
+
+{ Build the data property by a single identity
+*
+* Parameters   : Self, [COA_CLASS]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE key0_array, new_select, criteria
+
+	key0_array = lib_db_padded_to_array( self . data . table , self . type_id )
+	new_select = lib_db_build_select_array( self . data . table, key0_array )
+	criteria = self . template . get_criteria_by_table (self . data . table)
+	array_select_concat( new_select , criteria )
+	self . data . select_for_update ( new_select )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_data_assign_cert( self )
+
+{ Update entity records with the numeric certificate identity
+*
+* Parameters   : Self, [COA_CLASS]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE cert_id, cert_create, cert_found { message_txt, link_message}
+	
+	cert_create = TRUE
+	cert_found = FALSE
+	cert_id = EMPTY
+ 	
+	self . data . set_first()
+	
+	WHILE self . data . current <> EMPTY
+	
+		cert_id = SELECT 'self . data . table' . certificate 
+			    IN OBJECT self . data . current
+	
+		IF ( NOT BLANK ( cert_id ) ) AND
+                   ( cert_id <> 0          ) THEN
+			cert_found = TRUE
+		ENDIF
+	
+		ASSIGN 'self . data . table' . certificate 
+	       		IN OBJECT self . data . current =  self . id_numeric
+	       
+		self . data . set_next()
+	
+	ENDWHILE
+
+	{message_fetch ( "COA_GENERATE_ENITY_LINK" , link_message )
+	message_add_parameter ( link_message, STRIP( TOLOWER( self . template . type ) ) )
+	message_txt = message_get_text ( link_message , 1 )}
+	
+	IF cert_found THEN
+		cert_create = {confirm_with_text ( message_txt )} TRUE	
+	ENDIF
+	
+	IF cert_create THEN
+{001 \/}
+		IF TRANSACTION_IS_WRITE()  = FALSE THEN
+			START WRITE TRANSACTION "Update certificate identity"
+		ENDIF
+		self . data . invoke_all("UPDATE")
+		{COMMIT}
+	ENDIF
+{001 /\}
+	RETURN ( cert_create )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE get_type_key_field_from_table ( VALUE coa_table )
+
+{ Return key field for the coa_table
+*
+* Parameters   : coa_table, name of the table to process
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE  field
+	
+	field = ""
+	
+	IF coa_table = "LOT_DETAILS" THEN
+		field = "LOT_ID"
+	ELSEIF coa_table = "JOB_HEADER" THEN
+		field = "JOB_NAME"
+	ELSEIF coa_table = "SAMPLE" THEN
+		field = "ID_NUMERIC"
+	ENDIF
+	
+	RETURN ( field )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_get_type_key_field ( self )
+
+{ Return key field from the coa data table
+*
+* Parameters   : Self, [COA_CLASS]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE coa_table
+	
+	coa_table = self . template . get_type_table()
+	
+	RETURN ( get_type_key_field_from_table ( coa_table ))
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_set_id_text ( self , VALUE syntax_id )
+
+{ Set text id from syntax 
+
+* Parameters   : Self      , [COA_CLASS]
+*                Syntax_id , [IDENTITY] Syntax identity
+*
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE generated_name
+
+	IF ( syntax_id = EMPTY ) OR ( BLANK ( syntax_id ) ) THEN
+		generated_name = EMPTY
+	ELSE
+		generated_name = get syntax ( syntax_id )
+	ENDIF
+	IF ( generated_name = ERROR ) OR ( generated_name = EMPTY ) THEN
+		generated_name = get syntax ( COA_SYNTAX )	
+	ENDIF
+	self . id_text = generated_name
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_get_id_text ( self )
+
+{ Get text value
+*
+* Parameters   : Self, [COA_CLASS]
+* 
+* Return Value : None
+*
+*******************************************************************************}	
+	
+	RETURN( self . id_text )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_set_id_numeric ( self )
+
+{ Set numeric id, by creating a new increment
+*
+* Parameters   : Self, [COA_CLASS]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+	
+	self . id_numeric = create_coa_increment()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_get_id_numeric ( self )
+
+{ Get numeric value 
+*
+* Parameters   : Self, [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+	
+	RETURN( self . id_numeric )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_get_type_id ( self )
+
+{ Get numeric value 
+*
+* Parameters   : Self, [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE key_field, type_id
+	
+	type_id = ""
+		
+	IF ( self . type_obdb <> EMPTY ) THEN
+		self . type_obdb . set_first()	
+		IF ( self . type_obdb . current <> EMPTY ) THEN
+			key_field = self . get_type_key_field()
+			type_id = SELECT 'self . type_obdb . table' . 'key_field'
+		                  IN OBJECT self . type_obdb . current
+		ENDIF
+	ENDIF
+	
+	IF BLANK(type_id) THEN
+		type_id = self . type_id
+	ENDIF
+	
+	RETURN( type_id )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_get_product ( self )
+
+{ Get numeric value 
+*
+* Parameters   : Self, [COA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE product, template, data_odb, section_type
+	
+	product = ""
+	
+	template = self . template
+	
+	data_odb =  template . sections_odb
+	data_odb . set_first()
+	
+	WHILE data_odb . current <> EMPTY DO
+		template . sections . set_first()
+		WHILE( template . sections . current <> EMPTY ) DO
+			template . sections . current . rows .set_first()
+			section_type = template . sections . current . get_type ( )
+			IF section_type = "RESULT" THEN
+				product = template . sections . 
+				current . rows . current . get_product ()
+			ENDIF
+			template . sections . set_next()
+		ENDWHILE
+		data_odb . set_next()
+	ENDWHILE
+	
+	RETURN( product )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_build_form ( self )
+
+{ Build the generation screen
+*
+* Parameters   : Self, [COA_CLASS]
+*  
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE screen_width, screen_height, form
+
+	screen_width  = GLOBAL ( "GUI_WIDTH" )
+	screen_height = GLOBAL ( "GUI_HEIGHT" )
+
+	PROMPT OBJECT form CLASS "STD_FORM"
+	form . header           = ( GET_USER_MESSAGE ("COA_GENERATE_TITLE",1))
+	form . row              = find_max_number ( 1, ( screen_height - 12 ) / 2 )
+	form . column           = find_max_number ( 1, ( screen_width - 50 ) / 2 )
+	form . height 		= 1
+	form . width            = 50
+	form . vgl_library      = global ( "current_library" )
+	form . button_style     = FORM_BUTTON_NONE
+	form . return_behaviour = FORM_RETURN_STAY
+	form . user_info 	= self
+	
+	self . add_select_prompts ( form )
+	self . add_reports ( form )
+	IF ( self . operation <> COA_DISPLAY ) THEN
+		self . build_prompts ( form )
+	ELSE form . add_frame ( "", 0.1, form . height - 1.5, 0, 50 )   
+	ENDIF
+	self . add_buttons ( form )
+
+	form . start_prompt()
+	self . insert_prompts ( form )
+	form . wait_prompt()
+	form . end_prompt()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_add_select_prompts ( self , form )
+
+{ Add identity prompt to generation screen  
+*
+* Parameters   : Self, [COA_CLASS]
+*                Form, [STD_FORM] Generation form
+*
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE identity_prompt,
+	        description_prompt,
+	        certificate_type,
+	        criteria_array,
+	        browse_view,
+	        template_txt, 
+	        first_line,
+	        second_line,
+	        desc_length,
+	        no_of_lines,
+	        line
+
+	certificate_type = self . template . type
+	criteria_array = self . template . get_criteria ()
+
+	IF certificate_type  = "SAMPLE" THEN
+		
+		browse_view = "SAMPLE"
+	
+	ELSEIF certificate_type  = "JOB" THEN
+
+		browse_view = "JOB_HEADER"
+	
+	ELSEIF certificate_type  = "LOT" THEN
+
+		browse_view = "LOT_DETAILS"
+
+	ENDIF
+	
+	template_txt = STRIP ( self . template . template ) : " " :
+		       STRIP ( self . template . type ) : " " :
+		       STRIP ( self . template . version )
+	message_fetch ( "COA_GENERATE_FIRST_LINE_TEXT" , first_line)
+	message_add_parameter ( first_line, template_txt  )
+		       
+	second_line = STRIP ( self . template . description )	
+	desc_length = STRING_LENGTH ( second_line )
+	
+	IF NOT BLANK (second_line) THEN
+		no_of_lines = 1 + TRUNC (desc_length / (form . width - 2))
+		line = 1
+	ELSE no_of_lines = 0
+	     line = 0
+	ENDIF
+	
+	form . height = form . height + 4 + no_of_lines
+	
+	form . add_frame ( first_line, 0.1, 0, 0, form . width )  
+	
+	PROMPT OBJECT description_prompt 
+	FORMAT TEXT
+	description_prompt . value       = second_line
+	description_prompt . row         = line
+	description_prompt . column      = 1
+	description_prompt . height      = no_of_lines
+	description_prompt . width       = form . width - 2
+	description_prompt . raised      = FALSE
+	description_prompt . lowered     = FALSE
+	description_prompt . display_only = TRUE
+	description_prompt . set_enabled (FALSE)
+	
+	form . add_prompt ( description_prompt ) 
+	line = line + no_of_lines
+
+	form . add_display ( capitalise( STRIP (self . template . type )) , 1, line, PROMPT_RENDITION_NORMAL ) 
+	
+	PROMPT OBJECT identity_prompt 
+	BROWSE ON 'browse_view'
+	identity_prompt . value       = self . type_id
+	identity_prompt . row         = line
+	identity_prompt . column      = 22
+	identity_prompt . height      = 1
+	identity_prompt . width       = form . width / 2
+	identity_prompt . vgl_library = global ( "current_library" )
+	identity_prompt . leave_prompt_routine = "certificate_type_id_leave_prompt"
+
+	array_select_concat( identity_prompt . mandatory_array , criteria_array )
+ 	
+	IF (self . operation = COA_DISPLAY) OR 
+	   ( self . operation = COA_RMB ) THEN
+		identity_prompt . set_enabled (FALSE)
+	ENDIF
+	
+	form . add_prompt ( identity_prompt ) 
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_add_prompts ( self, form )
+
+{ Add section prompts to generation screen
+*
+* Parameters   : Self, [COA_CLASS]
+*                Form, [STD_FORM] Generation form
+*
+* Return Value : [STD_GRID_EDITOR],prompt_grid
+*
+*******************************************************************************}
+	
+	DECLARE grid
+
+	{form . height = form . height + 1}
+	
+	PROMPT OBJECT grid CLASS "STD_GRID_EDITOR"
+	grid . vgl_library 		= global ( "current_library" )
+	grid . full_screen 		= FALSE
+	grid . height			= 4
+	grid . width 			= form . width  - 0.5
+	grid . row 			= form . height
+	grid . column 			= 1
+	grid . cell_columns 		= 1
+	grid . cell_rows 		= 0
+	grid . column_size[ 1 ] 	= "40"
+    	grid . return_behaviour 	= GRID_RETURN_DOWN
+    	grid . title_size_top 		= 0
+   	grid . title_size_left 		= 20
+    	grid . display_cell_routine 	= "coa_display_section"
+	grid . prompt_cell_routine 	= "coa_prompt_section"
+	grid . enter_cell_routine 	= "coa_click_section"
+	
+	RETURN ( grid )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_add_reports ( self, form )
+
+{ Add section list to generation screen
+*
+* Parameters   : Self, [COA_CLASS]
+*                Form, [STD_FORM] Generation form
+*
+* Return Value : [STD_GRID_EDITOR],prompt_grid
+*
+*******************************************************************************}
+	
+	DECLARE destination_array,
+	        version_num,
+	        template_id,
+	        num_dest,
+	        report_prompt
+
+	template_id = self . template . template
+	version_num = self . template . version
+
+	num_dest = self . template . number_of_destinations()
+	
+	ARRAY destination_array
+	
+	array_select_add ( destination_array ,
+	                   ARRAY_SELECT_EQ ,
+	                   "template" ,
+	                   template_id )
+	
+	array_select_add ( destination_array ,
+	                   ARRAY_SELECT_AND ,
+	                   EMPTY ,
+	                   EMPTY )
+	
+	array_select_add ( destination_array ,
+	                   ARRAY_SELECT_EQ ,
+	                   "template_version" ,
+	                   version_num )
+	
+	form . add_display ( GET_USER_MESSAGE ("COA_GENERATE_REPORT_LABEL",1), 
+		1 , form . height - 3 , PROMPT_RENDITION_NORMAL ) 
+	
+	PROMPT OBJECT report_prompt 
+	BROWSE ON cert_destination . report
+	report_prompt . value       = self . report_used
+	report_prompt . row         = form . height - 3
+	report_prompt . column      = 22
+	report_prompt . height      = 1
+	report_prompt . width       = 20
+	report_prompt . vgl_library = global ( "current_library" )
+	IF ( num_dest < 2 ) OR ( self . operation = COA_DISPLAY )THEN
+		report_prompt . display_only = TRUE
+		report_prompt . lowered      = TRUE
+	ENDIF
+	
+	report_prompt . leave_prompt_routine = "destination_leave_prompt"
+	
+	array_select_concat( report_prompt . mandatory_array , destination_array )
+	
+	form . add_prompt ( report_prompt ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_build_prompts ( self, form )
+
+{ Build prompts for the generation screen
+*
+* Parameters   : Self, [COA_CLASS]
+*                Form, [STD_FORM] Generation form
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE sections, current_section, sect_count, grid, current_row, row_count,
+		prompt_object, prompt_count, prompt_label, section_type, prompt_format
+
+	sect_count = 1
+	prompt_count = 0
+	grid = self . add_prompts ( form )
+	sections = self . template . sections
+	prompt_object = EMPTY
+
+	ARRAY grid . user_info ARRAYSIZE (0, 3)
+	
+	sections . set_first ( )
+	current_section = sections . get_by_number ( sect_count )
+	
+	WHILE current_section <> EMPTY DO	
+		row_count = 1
+		section_type = current_section . get_type ()
+		IF section_type = "DATA" THEN
+			current_row = current_section . rows . get_by_number (row_count)
+			prompt_object = current_row . get_prompt ()
+						
+			IF prompt_object <> EMPTY THEN
+				prompt_label = current_row . get_prompt_label ( )
+				prompt_format = current_row . get_prompt_format ( )
+				prompt_count = prompt_count + 1
+
+				grid . user_info [ prompt_count, 1 ] = prompt_object
+				grid . user_info [ prompt_count, 2 ] = prompt_label
+				grid . user_info [ prompt_count, 3 ] = prompt_format
+			ENDIF
+		ELSE 
+			current_section . rows . set_first ()
+			current_row = current_section . rows . get_by_number (row_count)
+			
+			WHILE current_row <> EMPTY DO
+				prompt_object = current_row . get_prompt ()		
+				IF (prompt_object <> EMPTY ) AND
+			   	NOT (prompt_object . display_only ) THEN
+
+					prompt_label = current_row . get_prompt_label ( )
+					prompt_format = current_row . get_prompt_format ( )
+
+					prompt_count = prompt_count + 1
+
+					grid . user_info [ prompt_count, 1 ] = prompt_object
+					grid . user_info [ prompt_count, 2 ] = prompt_label
+					grid . user_info [ prompt_count, 3 ] = prompt_format
+				ENDIF
+				row_count = row_count + 1
+				current_row = current_section . rows . get_by_number (row_count)
+			ENDWHILE
+		ENDIF
+		sect_count = sect_count + 1
+		current_section = sections . get_by_number ( sect_count )
+	ENDWHILE
+
+	IF prompt_count > 0 THEN
+		form . add_frame ( GET_USER_MESSAGE ("COA_GENERATE_PROMPTS_LABEL",1), 0.1, 
+		                   form . height - 1, 0, 50 )   
+		form . height = form . height + ( grid . height + 1 )
+		form . add_prompt( grid )
+		self . prompts = TRUE
+		
+	ELSE form . add_frame ( "", 0.1, form . height - 1.5, 0, 50 )   
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_insert_prompts ( self, form )
+
+{ Insert prompts for the generation screen
+*
+* Parameters   : Self, [COA_CLASS]
+*                Form, [STD_FORM] Creation form
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE row, grid
+	
+	IF self . prompts THEN
+		row = 0
+		grid = form . prompt_objects[COA_PROMPT_GRID]
+		WHILE row < size_of_array ( grid . user_info ) DO
+			row = row + 1
+			grid . insert_row ( row , 1 , GRID_SEPARATOR_NONE )
+			grid . title_text_left [ row , 1 ] = grid . user_info[row, 2] 
+			grid . redisplay_title_left ( row )
+		ENDWHILE
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_update_prompts ( self, form )
+
+{ Update prompts on the certificate generation screen
+*
+* Parameters   : Self, [COA_CLASS]
+*                
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE row, grid, current_prompt, entity_default, table, field,
+		current_prompt_format, cert_table, type
+	
+	IF self . prompts THEN
+		row = 0
+		cert_table = self . template . get_type_table()
+		grid = form . prompt_objects[COA_PROMPT_GRID]
+		WHILE row < size_of_array ( grid . user_info ) DO
+			row = row + 1		
+			current_prompt =  grid . user_info[row, 1] 
+			current_prompt_format =  grid . user_info[row, 3] 
+
+			IF BLANK (current_prompt . value) AND 
+				 (current_prompt_format = "IDENTITY" )THEN
+				table = TOUPPER (STRIP (current_prompt . table))
+				field = TOUPPER (STRIP (current_prompt . field))
+				type = self .get_type_id ()
+				entity_default  = get_new_default_value 
+						  ( cert_table             ,
+						    type  ,
+						    table 		   ,
+						    field                  ) 
+				current_prompt . value = entity_default
+			ENDIF			
+		ENDWHILE
+	
+	grid . rebuild ()
+	ENDIF
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_imprint ( self , VALUE ok_to_print )
+
+{ Create and fire imprint object 
+*
+* Parameters   : Self    , [COA_CLASS]
+*                Preview , [BOOLEAN] Preview Imprint
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+    DECLARE count , imprint_id, section, num_of_sections, section_id
+
+	define_imprint_class ()
+    
+    	self . preview_update()
+	CREATE OBJECT IMPRINT , self . report
+	self . report . create_ole_object ()
+	self . report . reset_ole_object ()
+	self . report . preview = self . report_preview
+	imprint_id = self . report_used
+	
+	IF imprint_id <> EMPTY THEN
+		
+		self . report . set_lte ( imprint_id )
+
+		IF NOT (ok_to_print) THEN
+			self . report . enable_mailto		= FALSE
+ 			self . report . enable_print		= FALSE
+			self . report . enable_print_setup 	= FALSE
+			self . report . enable_save_as		= FALSE
+		ENDIF	
+		
+		self . report . datetime = FALSE
+		
+		self . report . add_parameter( self . id_numeric )
+		
+		num_of_sections = self . template . sections . size()
+		
+		count = 0
+		WHILE count < num_of_sections DO
+			count = count + 1
+			section = self . template . sections . get_by_number ( count )
+			section_id = section . get_section_id()						
+			self . report . add_parameter( section_id )
+		ENDWHILE
+
+		self . report . generate ()	
+	ENDIF
+
+	self . report . ole_object = EMPTY
+		
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_set_preview_flag ( self )
+
+{ Return the destination preview value from the report
+*
+* Parameters 	: Self , [COA_CLASS] 
+*		  
+* Return Value	: None
+*
+*******************************************************************************}
+
+	self . report_preview  = SELECT infomaker_link . preview
+		     	      WHERE infomaker_link . identity = self . report_used
+	
+ENDROUTINE
+
+{*******************************************************************************
+*                        C A L L B A C K   R O U T I N E S
+*******************************************************************************}
+
+ROUTINE coa_display_section ( 	    self        ,
+			      VALUE cell_column ,
+			      VALUE cell_row    ,
+			            window      ,
+			      VALUE column      ,
+			      VALUE row         ,
+			      VALUE cell_width  ,
+			      VALUE cell_height )
+
+{ Display Callback
+*
+* Parameters   : Standard display cell callback parameters
+* Return Value : None
+*
+*******************************************************************************}
+	DISPLAY self . user_info [cell_row, 1] . value
+		AT column , row
+		IN WINDOW window
+		TO column + cell_width - 1
+
+ENDROUTINE
+{******************************************************************************}
+ROUTINE coa_click_section ( 	    self        ,
+			      VALUE cell_column ,
+			      VALUE cell_row    )
+
+{ Click Callback
+*
+* Parameters   : Standard display cell callback parameters
+* Return Value : None
+*
+*******************************************************************************}
+	{flash_message ("Grid click", TRUE)}
+ENDROUTINE
+{******************************************************************************}
+
+ROUTINE coa_prompt_section (       self        ,
+	                     VALUE cell_column ,
+			     VALUE cell_row    ,
+			           window      ,
+			     VALUE column      ,
+			     VALUE row         ,
+			     VALUE cell_width  ,
+			     VALUE cell_height )
+
+{ Prompt Callback
+*
+* Parameters   : Standard display cell callback parameters
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE current_prompt
+	
+	current_prompt = self . user_info [cell_row, 1]
+
+	IF ( current_prompt <> EMPTY ) THEN
+
+		current_prompt . row    = row
+		current_prompt . column = column
+		current_prompt . window = window
+			
+		current_prompt . start_prompt ()
+		current_prompt . wait_prompt ()
+		current_prompt . end_prompt ()
+
+		current_prompt . set_globals ()
+
+		current_prompt . set_text ( current_prompt . text )
+
+	ELSE
+
+		PROMPT FOR current_prompt . value
+		       ON LINE   row
+		       FROM      column
+		       TO        column + cell_width - 1
+		       IN WINDOW window
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_action_add_buttons ( self, form )
+
+{ Add buttons to certificate generation screen.
+
+* Parameters   : Self, [COA_CLASS]
+*                Form, [STD_FORM] Creation form
+* Return Value : None
+*
+*******************************************************************************}
+	DECLARE compare_button,
+	        ok_button, 
+	        cancel_button,
+	        help_button
+
+	form . height = form . height + 1
+
+	PROMPT OBJECT ok_button CLASS "STD_PROMPT_BUTTON"
+	ok_button . caption             	= GET_USER_MESSAGE ("COA_GENERATE_BUTTONS",1)
+	ok_button . row                 	= form . height - 1
+	ok_button . column              	= 2
+	ok_button . height              	= 1
+	ok_button . width               	= 11
+	ok_button . vgl_library         	= global ( "current_library" )
+	ok_button . mouse_click_routine 	= "certificate_create_button"
+	
+	form . add_prompt ( ok_button ) 
+
+	PROMPT OBJECT compare_button CLASS "STD_PROMPT_BUTTON"
+	compare_button . caption             	= GET_USER_MESSAGE ("COA_GENERATE_BUTTONS",2)
+	compare_button . row                 	= form . height - 1
+	compare_button . column              	= 14
+	compare_button . height              	= 1
+	compare_button . width               	= 11
+	compare_button . vgl_library         	= global ( "current_library" )
+	compare_button . mouse_click_routine 	= "certificate_compare_button"
+
+	form . add_prompt ( compare_button ) 
+	
+	PROMPT OBJECT help_button CLASS "STD_PROMPT_BUTTON"
+	help_button . caption             	= GET_USER_MESSAGE ("COA_GENERATE_BUTTONS",3)
+	help_button . row                 	= form . height - 1
+	help_button . column              	= 26
+	help_button . height              	= 1
+	help_button . width               	= 11
+	help_button . vgl_library         	= global ( "current_library" )
+	help_button . send_lastkey 		= "HELP"
+
+	form . add_prompt ( help_button ) 
+
+	PROMPT OBJECT cancel_button CLASS "STD_PROMPT_BUTTON"
+	cancel_button . caption             	= GET_USER_MESSAGE ("COA_GENERATE_BUTTONS",4)
+	cancel_button . row                 	= form . height - 1
+	cancel_button . column              	= 38
+	cancel_button . height              	= 1
+	cancel_button . width              	= 11
+	cancel_button . vgl_library         	= global ( "current_library" )
+	cancel_button . send_lastkey 		= "EXIT"
+
+	form . add_prompt ( cancel_button ) 
+
+		
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE certificate_compare_button ( self )
+
+{ Button Callback
+*
+* Parameters   : Self, [STD_BUTTON]
+*
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE certificate_obj, coa_table, menu_num, product
+	
+	certificate_obj = self . parent_prompt . user_info
+	
+	coa_table = certificate_obj . template . get_type_table()
+	
+	IF NOT BLANK (certificate_obj . get_type_id() ) THEN
+	
+		IF coa_table  = "SAMPLE" THEN
+			
+			menu_num = ECSMLP_SAMPLE
+		
+		ELSEIF coa_table  = "JOB_HEADER" THEN
+	
+			menu_num = ECSMLP_JOB
+		
+		ELSEIF coa_table  = "LOT_DETAILS" THEN
+	
+			menu_num = ECSMLP_LOT
+	
+		ENDIF
+	
+		product = certificate_obj . get_product ( )
+	
+		MENUPROC menu_num USING certificate_obj . get_type_id() , TRUE, FALSE, product
+	
+	ELSE flash_message("Please select an entity", TRUE)
+	
+	ENDIF
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE certificate_create_button ( self )
+
+
+{ Button Callback
+*
+* Parameters   : Self, [STD_BUTTON]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_obj
+
+	certificate_obj = self . parent_prompt . user_info
+	
+	IF NOT BLANK( certificate_obj . id_numeric ) THEN
+
+		IF certificate_obj . role_print THEN
+			certificate_obj . imprint(TRUE)
+		ELSE 
+			certificate_obj . imprint(FALSE)
+		ENDIF
+
+	ELSE 
+		IF certificate_obj . generate () THEN
+
+			flash_message("Certificate created: " : certificate_obj . id_text, TRUE)
+
+			IF certificate_obj . id_numeric <> EMPTY THEN
+
+				IF certificate_obj . role_print THEN
+					certificate_obj . imprint(TRUE)
+				ELSE 
+					certificate_obj . imprint(FALSE)
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE certificate_help_button ( self )
+
+{ Button Callback
+*
+* Parameters   : Self, [STD_BUTTON]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE certificate_template_leave_prompt ( self )
+
+{ Leave prompt callback
+*
+* Parameters   : Self, [STD_PROMPT]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_obj, template_obj
+
+	certificate_obj = self . parent_prompt . user_info
+	template_obj = certificate_obj . template
+
+	IF NOT BLANK ( self . text ) THEN
+		template_obj . template = self . text
+		template_obj . version = SELECT certificate_template . certificate_version
+					        WHERE certificate_template . identity = self . text
+						ORDER ON certificate_version DESCENDING
+
+		template_obj . load()
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE destination_leave_prompt ( self )
+
+{ Leave prompt callback
+*
+* Parameters   : Self, [STD_PROMPT]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_obj
+
+	certificate_obj = self . parent_prompt . user_info
+	certificate_obj . report_used = self . text
+	certificate_obj . set_preview_flag ( )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE certificate_type_id_leave_prompt ( self )
+
+{ Leave prompt callback
+*
+* Parameters   : Self, [STD_PROMPT]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_obj, template_obj
+
+	certificate_obj = self . parent_prompt . user_info
+	template_obj = certificate_obj . template
+	certificate_obj . type_id = self . text
+	IF template_obj . validate_type_id( certificate_obj . type_id ) THEN
+	ENDIF
+
+	certificate_obj . update_prompts ( self . parent_prompt)
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE certificate_leave_prompt ( self )
+
+{ Leave prompt callback
+*
+* Parameters   : Self, [STD_PROMPT]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE certificate_obj
+
+	IF NOT BLANK ( self . value ) THEN
+		certificate_obj = self . parent_prompt . user_info
+		certificate_obj . load (  self . text )	
+	ENDIF
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE get_new_default_value ( VALUE type_table ,
+                                VALUE type_identity, 
+                                VALUE table, 
+                                VALUE field )
+
+{ Get a new prompt default value
+*
+* Parameters   : Type_table , [TEXT] Sample/Job/Lot
+*		 Type_id    , [TEXT] Sample/Job/Lot Identity
+*		 Table      , [TEXT] Table to prompt from
+*		 Field      , [TEXT] Field to prompt for
+*                
+* Return Value : type_value
+*
+*******************************************************************************}
+
+	DECLARE type_value, link_field_array, link_field, field_count, link
+
+	type_value = ""
+	
+	link_field_array = get_table_links ( type_table, table )
+
+	IF ( link_field_array <> EMPTY ) THEN
+		field_count = size_of_array (link_field_array )
+		WHILE (field_count <> 0) DO
+			link_field = link_field_array [ field_count ] 
+				IF link_field <> EMPTY THEN
+					link = SELECT 	'type_table' . 'link_field' 
+						WHERE 'type_table' . id_numeric = type_identity
+						
+						IF ( link <> EMPTY ) THEN	
+							type_value = link
+						ENDIF
+				ENDIF
+				field_count = field_count - 1
+		ENDWHILE
+	ENDIF		
+	RETURN (type_value)
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL ROUTINE coa_record_class_define
+
+{ Object records to store certificate data, such as lots, jobs, samples, tests
+* and results.
+*
+* Parameters : None
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    	DEFINE CLASS COA_RECORD
+
+	INHERIT "STD_OBJECT_RECORD"
+
+    	PROPERTIES
+	"child_data"	         { Child object database i.e test for sample      }
+
+	ACTIONS 
+	"get_key"              , { Get padded key from current table              }
+	"set_children"         , { Set the child of the current odb               }
+	"get_children"         , { Get child odb                                  } 
+	"get_child_table"      , { Get child odb                                  } 
+	"get_obj_id"             { Returns the padded identity of the currently   }
+	                         { selected record for the passed table.          }
+
+    END CLASS
+    
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_record_action_get_key ( self )
+
+{ Create a coa_data object based on a table and padded identity,
+*
+* Parameters   : Self, [COA_RECORD]
+*                Select_array, [ARRAY] Template identity
+* Return Value : None
+*
+*******************************************************************************}
+
+	RETURN ( self . get_obj_id ( self . table ) )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_record_action_set_children (       self          , 
+                                         VALUE child_table   ,
+                                         VALUE link_field    ,    
+                                               select_array )
+
+{ Add children to the current object, base on the parent identity and a select
+* array.
+*
+* Parameters   : Self        , [COA_RECORD]
+*                Child_table , [TEXT]
+*                Link_field  , [TEXT]
+*                Select_array, [ARRAY] Template identity
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE key, child_array
+	
+	{Need to add code to work out keys for next lvl }
+	ARRAY child_array
+	
+	CREATE OBJECT "STD_OBJECT_DATABASE", self . child_data
+        self . child_data . class_to_use = "COA_RECORD"
+	key = self . get_key ()
+	
+	array_select_add ( child_array     , 
+		           ARRAY_SELECT_EQ , 
+		           link_field      , 
+		           key             )
+	
+	IF size_of_array( select_array ) > 0 THEN
+		array_select_concat( child_array , select_array )
+	ENDIF
+		
+	self . child_data . initialise ( child_table )
+	self . child_data . select ( child_array )		
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_record_action_get_children ( self )
+
+{ Return child odb
+*
+* Parameters   : Self, [COA_RECORD]
+*                
+* Return Value : [STD_OBJECT_DATABASE]
+*
+*******************************************************************************}
+	
+	RETURN ( self . child_data )
+	
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE coa_record_action_get_obj_id (       self  , 
+                                       VALUE table )
+{ Returns the padded identity of the currently selected record for the passed 
+* table.
+*
+* Parameters   : Self  , [COA_RECORD]
+*                Table , [TEXT]
+*                
+* Return Value : [STD_OBJECT_DATABASE]
+*
+******************************************************************************}
+
+      DECLARE id, key_no, key0_field, field_size, key
+
+      ARRAY key0_field ARRAYSIZE (0)
+
+      GET_TABLE_DETAILS 'table', "KEY0_FIELD", key0_field
+
+      id = ""
+      key_no = 1
+      WHILE key_no <= size_of_array( key0_field ) DO
+            GET_FIELD_DETAILS 'table' . 'key0_field[key_no]', "FIELD_SIZE", field_size
+            key = SELECT 'table' . 'key0_field[key_no]' IN OBJECT self
+            FORMAT key FROM key
+                  USING 'table' . 'key0_field[key_no]'
+            id = id : PAD( key," ", field_size )
+            key_no = key_no + 1
+      ENDWHILE
+
+      RETURN ( id )
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}
+

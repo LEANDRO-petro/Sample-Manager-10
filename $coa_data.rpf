@@ -1,0 +1,2149 @@
+{******************************************************************************
+*
+* Module Name   : $COA_DATA
+*
+* Purpose       : Third page LTE for the DATA section type.
+*
+* Document Ref. : CH002850 Implement Data Section CoA functionality
+*
+* (c) Copyright 1984-2004 Thermo Electron Corporation. All rights reserved.
+********************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Corrigindo VGL
+}
+SET NOTPROTECTED
+SET NAME "DEFER/"
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_VGL
+JOIN STANDARD_LIBRARY STD_WINDOW
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_PROMPT
+
+JOIN LIBRARY $LABTABLIB
+JOIN LIBRARY $LIST_EDITOR
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $LIB_TEXT
+JOIN LIBRARY $LIB_COMP
+JOIN LIBRARY $PROMPT_TOOLBAR
+JOIN LIBRARY $LIB_DB
+JOIN LIBRARY $INFOMAKER_PARAMS
+JOIN LIBRARY $CRITERIA_CACHE
+
+JOIN LIBRARY $COA_CRITERIA
+JOIN LIBRARY $CERTIFICATE_LIB
+
+{**Local Constants ************************************************************} 
+
+{** Global Constants **********************************************************} 
+
+GLOBAL CONSTANT CERTIFICATE_DATA_CLASS = "CERT_DATA"
+GLOBAL CONSTANT CERTIFICATE_DATA_FORM_CLASS = "CERT_DATA_FORM"
+
+GLOBAL CONSTANT COA_DATA_TABLE        		= 1
+GLOBAL CONSTANT COA_DATA_COL_GRID     		= 2
+GLOBAL CONSTANT COA_DATA_ADD_BUTTON         	= 3
+GLOBAL CONSTANT COA_DATA_ADD_ALL_BUTTON     	= 4
+GLOBAL CONSTANT COA_DATA_REMOVE_BUTTON      	= 5
+GLOBAL CONSTANT COA_DATA_REMOVE_ALL_BUTTON  	= 6
+GLOBAL CONSTANT COA_DATA_COL_SEL_GRID 		= 7
+GLOBAL CONSTANT COA_DATA_UP_BUTTON  		= 8
+GLOBAL CONSTANT COA_DATA_DOWN_BUTTON  		= 9
+GLOBAL CONSTANT COA_DATA_GRID         		= 10
+GLOBAL CONSTANT COA_DATA_MODIFY        		= 11
+
+GLOBAL CONSTANT COA_DATA_FILTER_RADIO_ONE	= 12
+GLOBAL CONSTANT COA_DATA_FILTER_LIB		= 13
+GLOBAL CONSTANT COA_DATA_FILTER_ROUTINE		= 14
+GLOBAL CONSTANT COA_DATA_FILTER_RADIO_TWO	= 15
+GLOBAL CONSTANT COA_DATA_FILTER_CRIT		= 16
+GLOBAL CONSTANT COA_DATA_TABLE_TEXT  		= 17
+
+GLOBAL CONSTANT DATA_SEL_TEXT	    		= "1"
+GLOBAL CONSTANT DATA_SEL_FIELD 			= "2"
+
+GLOBAL CONSTANT DATA_SAMPLE			= "1"
+GLOBAL CONSTANT DATA_JOB			= "2"
+GLOBAL CONSTANT DATA_LOT			= "3"
+GLOBAL CONSTANT DATA_DYNAMIC			= "4"
+GLOBAL CONSTANT DATA_STATIC_LINKED		= "5"
+GLOBAL CONSTANT DATA_STATIC_NON_LINKED		= "6"
+
+{** Global Variables **********************************************************} 
+
+{** Main Code *****************************************************************} 
+
+{** Start Of Routines *********************************************************} 
+
+{******************************************************************************}
+
+{*******************************************************************************
+*                          M A I N   C O D E
+*******************************************************************************}
+
+{******************************************************************************
+*                        G L O B A L   R O U T I N E S
+*******************************************************************************}
+
+{******************************************************************************}
+{*   C E R T I F I C A T E    D A T A   S E C T I O N     C L A S S           *}
+{******************************************************************************}
+
+GLOBAL ROUTINE cert_data_class_define
+
+{ Define the coa template data section class
+*	
+* Parameters   : None
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DEFINE CLASS CERTIFICATE_DATA_CLASS
+
+	INHERIT "STD_COLLECTED"
+		
+	INITIALISATION
+
+	PROPERTIES 
+		
+	"TABLE_CHOSEN"	, { Table to use                  }	
+	"FIELD_CHOSEN"	, { Field to appear on CoA        }	
+	"LINK_KEY_ONE"	, { Identity                      }	
+	"CRITERIA"	, { Boolean for Edited Criteria	  }	
+	"PROMPT_FOR"    , { Prompt for, at CoA generation }	
+	"FILTER_LIB"    , { Data Filter Library		  }
+	"FILTER_ROUTINE"  { Data Filter Routine		  }
+	
+	ACTIONS
+		
+	"SAVE"		, { Save object to passed id      }
+	"VALID"         , { Check validity of section     }
+	"LOAD"		, { Load current row              }
+	"COPY"     	  { LTE Copy option               }
+			   
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_class_initialisation (  self	)
+					   
+{ Initialise the object 
+*	
+* Parameters   : Self  ,  [CERTIFICATE_DATA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+    	self . table_chosen 	= ""
+    	self . field_chosen 	= ""
+    	self . link_key_one 	= ""
+    	self . criteria		= FALSE
+    	self . prompt_for	= FALSE 
+    	self . filter_lib	= ""
+    	self . filter_routine	= ""
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_action_save ( self , key0 )
+					   
+{ Save current object to database 
+*	
+* Parameters   : Self  ,  [CERTIFICATE_DATA_CLASS]
+*		 Key0  ,  [TEXT] Padded identity
+*
+* Return Value : None
+*
+*******************************************************************************}
+	
+	RESERVE ENTRY cert_section_data, key0
+
+	ASSIGN cert_section_data . link_table 	  = self . table_chosen 
+	ASSIGN cert_section_data . link_field 	  = self . field_chosen 
+{001 \/}
+	ASSIGN cert_section_data . link_key1 	  = "" {self . link_key_one }
+{001 /\}
+	ASSIGN cert_section_data . criteria 	  = self . criteria 	
+	ASSIGN cert_section_data . prompt_for 	  = self . prompt_for 
+	ASSIGN cert_section_data . filter_library = self . filter_lib
+	ASSIGN cert_section_data . filter_routine = self . filter_routine
+
+	IF NOT transaction_is_write ( ) THEN
+		START WRITE TRANSACTION "New data section"
+	ENDIF
+
+	UPDATE cert_section_data
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_action_valid ( self )
+					   
+{ Check if current object is valid to save to the database 
+*	
+* Parameters   : Self  , [CERTIFICATE_DATA_CLASS]
+*				 
+* Return Value : [BOOLEAN], stored True if ok to save
+*
+*******************************************************************************}
+	
+	DECLARE stored
+	
+	stored = FALSE
+
+	IF NOT BLANK ( self . field_chosen ) THEN
+		stored = TRUE
+
+	ELSEIF ( self . criteria ) THEN
+	   	stored = TRUE
+	   
+	ELSEIF (     NOT BLANK ( self . filter_lib ) 
+		 AND NOT BLANK ( self . filter_routine )) THEN
+		stored = TRUE
+	ENDIF
+
+	RETURN ( stored )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_action_load ( self )
+					   
+{ Load current selected record 
+*	
+* Parameters   : Self  , [CERTIFICATE_DATA_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	self . table_chosen 	= SELECT cert_section_data . link_table
+    	self . field_chosen 	= SELECT cert_section_data . link_field
+    	self . link_key_one 	= SELECT cert_section_data . link_key1
+    	self . criteria 	= SELECT cert_section_data . criteria
+	self . prompt_for 	= SELECT cert_section_data . prompt_for
+	self . filter_lib	= SELECT cert_section_data . filter_library
+	self . filter_routine	= SELECT cert_section_data . filter_routine 	 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_action_copy (       self 		, 
+                                VALUE copy_template	, 
+                                VALUE copy_template_type, 
+                                VALUE copy_version	,
+                                VALUE section 		)
+					   
+{ LTE copy option.
+*	
+* Parameters   : Self	      ,  [CERTIFICATE_DATA_CLASS]
+*		 copy_template,  [IDENTITY] Padded old identity
+*		 copy_version ,  [TEXT] old version number
+*		 Section      ,  [IDENTITY] Padded identity
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE order_num, old_obj, count
+	
+	count = 1
+
+	order_num = SELECT cert_section_data . order_number
+			WHERE template = copy_template AND
+			template_type = copy_template_type AND
+			template_version = copy_version AND
+			identity = section AND
+			order_number = count
+			
+	WHILE ( order_num <> EMPTY ) DO
+	
+		{**************************************************************}
+		{* Load current row into data object                          *}
+		{**************************************************************}
+		CREATE OBJECT CERTIFICATE_DATA_CLASS, old_obj
+		old_obj . load()
+		
+		count = count + 1
+		order_num = SELECT cert_section_data . order_number
+					WHERE template = copy_template AND
+					template_type = copy_template_type AND
+					template_version = copy_version AND
+					identity = section AND
+					order_number = count
+		 
+	ENDWHILE
+	
+ENDROUTINE
+
+{******************************************************************************}
+{*          C E R T I F I C A T E    D A T A    F O R M      C L A S S        *}
+{******************************************************************************}
+
+GLOBAL ROUTINE cert_data_form_class_define
+
+{ Define the template data form class
+*	
+* Parameters   : None
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DEFINE CLASS CERTIFICATE_DATA_FORM_CLASS
+
+	INHERIT "STD_FORM"
+		
+	INITIALISATION
+
+	PROPERTIES 
+			
+	"TEMPLATE"		, { Template identity                 }
+	"TEMPLATE_TYPE"		, { Template Type		      }
+        "VERSION"		, { Template version                  }
+       	"COPIED_TEMPLATE"	, { Copied Template identity          }
+       	"COPIED_TEMPLATE_TYPE"  , { Copied Template Type 	      }
+        "COPIED_VERSION"	, { Copied Template version           }
+        "OPERATION"		, { Parent LTE Operation              }
+        "SECTION"		, { Section Identity                  }
+	"FIELD_LIST"		, { List of Fields		      }
+	"NEW_DATA"		, { Flag for a new data 	      }	
+	"TABLE_CHOSEN"		, { Table chosen		      }
+	"MODIFY"		, { Modify			      }
+	"DEFAULT"		, { Default			      }
+	"SUB_TYPE"		  { Data section sub type	      }		    
+
+	ACTIONS
+	
+	"ADD_TABLE_PROMPT"		, { Data Section table prompt            }
+	"ADD_PROMPTS"			, { Add field selection to form          }
+	"BUILD"				, { Start Data Section form and Load     }
+	"LOAD"				, { Load data grid		         }
+	"LOAD_DATA"			, { Load object data to form	         }
+	"LOAD_COLUMNS"			, { Load field data to left grid         }
+	"LOAD_SELECTED_COLUMNS" 	, { Load selected fields to rightgrid    }
+	"LOAD_CURRENT_STORED_DATA" 	, { Load local data object to form       }
+	"SAVE_OBJECT"			, { Update the ODB data 	         }
+	"SAVE"				, { Save the ODB data 	  	         }
+	"VALIDATE_EDIT_CRITERIA"	, { Check the edit criteria exists       }
+	"VALIDATE_ROUTINE_CRITERIA"	, { Check the criteria routine exists    }
+	"VALIDATE_NON_LINKED_SECTION"	, { Check the criteria routine exists    }
+	"SET_OPERATION"			, { Set operation from LTE	         }
+	"SET_COPY_ID"			, { Set the copied Identity	         }
+	"SET_SECTION_ID"		, { Set the section identity	         } 
+	"SET_SUB_TYPE"		  	, { Set the section sub type	         } 
+	"SET_DEFAULT_TABLE"		, { Set the section sub type	         } 
+	"ENABLE_CRITERIA_PROMPTS"	, { Enable prompts according to criteria }
+	"ENABLE_SUB_TYPE_PROMPTS"	, { Enable prompts according to subtype  }
+	"ASSIGN_FIELD_DATA"	  	, { Assign Data objects with fields      }
+	"ASSIGN_FILTER_DATA"	  	  { Assign Data objects with filter      }
+			
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_class_initialisation ( self )
+					   
+{ Data form class initialisation
+*	
+* Parameters   : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	self . header           	= GET_USER_MESSAGE ("COA_DATA_HEADER",1)
+     	self . row              	= 1
+     	self . column           	= 1
+     	self . height           	= 16
+     	self . width            	= 80
+        self . vgl_library      	= global ( "current_library" )
+        self . button_style     	= FORM_BUTTON_NONE
+        self . return_behaviour 	= FORM_RETURN_STAY
+        self . new_data 		= TRUE
+	self . table_chosen 		= EMPTY
+	self . modify			= FALSE
+	self . default 			= ""
+	self . validation_routine 	= "validate_form" 
+	
+	lib_comp_initialise( )
+	
+	self . add_table_prompt( )
+	self . add_prompts ( )
+	        	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_add_table_prompt ( self )
+
+{ Add data selection prompts to form.
+*
+* Parameters : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return     : None
+*
+*******************************************************************************}
+
+	DECLARE tables, count, table_desc	
+	    	
+    	ARRAY tables ARRAYSIZE ( 0 , 2 )
+    	
+    	self . add_frame ( GET_USER_MESSAGE ("COA_DATA_FRAME_ONE",1), 2, 12, 2, 78 )       
+	self . add_frame ( GET_USER_MESSAGE ("COA_DATA_FRAME_TWO", 1), 2, 10, 1, 78 ) 	
+	self . add_frame ( GET_USER_MESSAGE ("COA_DATA_FRAME_THREE", 1), 2, 3, 6, 78 ) 
+	self . add_frame ( GET_USER_MESSAGE ("COA_DATA_FRAME_FOUR", 1), 2, 1, 1, 78 ) 
+	self . add_frame ( "", 23, 12, 2, 0 ) 
+	
+	PROMPT OBJECT table_desc
+        	WITH (  value       = "",
+			row         = 1,
+		        column      = 35,
+		        height      = 1,
+		        width       = 45,
+		        parent_prompt = self,
+		        vgl_library = global ( "current_library" ) )
+
+	self . add_display ( table_desc ) 
+	    		
+	count = 1
+	get_table_names ( tables )
+		
+	WHILE count <= SIZE_OF_ARRAY ( tables ) DO
+		
+		tables [ count,2 ] = tables [ count,1 ]
+		count = count + 1
+		
+	ENDWHILE
+	
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_TABLE ]
+	        CHOOSE OUTOF tables
+	        WITH (  value            = "",
+		        row              = 1,
+		        column           = 3,
+		        height           = 1,
+		        width            = 26,
+		        parent_prompt    = self,
+		        tag              = COA_DATA_TABLE,
+			vgl_library      = global ( "current_library" ),
+	        	selected_routine = "select_table_routine" )
+	
+	self . add_panel (74, 1, 1, 1, PANEL_H_ALIGN_RIGHT + PANEL_H_EXPAND_ON )
+    	self . add_panel (36, 12, 3, 1, PANEL_H_ALIGN_RIGHT + PANEL_H_EXPAND_ON )
+	self . add_panel (73, 13, 1, 1,  PANEL_H_ALIGN_RIGHT + PANEL_H_EXPAND_ON ) 
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_add_prompts ( self )
+
+{ Add column selection and other prompts to form
+*
+* Parameters : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return     : None
+*
+*******************************************************************************}
+	
+	DECLARE routine_array
+
+	{**************************************************************}
+	{* Create grid to show available chosen table fields          *}
+	{**************************************************************}  
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_COL_GRID ]
+	CLASS "STD_GRID_EDITOR"
+	WITH ( row			= 3,
+   	       column			= 3,
+   	       cell_columns     	= 1,
+   	       width            	= 25,
+	       height           	= 6, 	
+   	       display_cell_routine     = "coa_select_display",
+   	       prompt_cell_routine      = "coa_select_prompt",
+   	       vgl_library              = GLOBAL ( "CURRENT_LIBRARY" ), 
+   	       title_size_top 		= 0,
+   	       tag                      = COA_DATA_COL_GRID,
+	       parent_prompt            = self)
+	       
+	self . prompt_objects [ COA_DATA_COL_GRID ] . column_size [ 1 ] = 25
+   	   
+   	{**************************************************************}
+	{* Create buttons to add and remove fields                    *}
+	{**************************************************************}
+	
+   	PROMPT OBJECT self . prompt_objects [ COA_DATA_ADD_BUTTON ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( caption             	= "Add>",
+	       row                 	= 3,
+	       column              	= 30,
+	       width               	= 10,
+	       vgl_library         	= GLOBAL ( "CURRENT_LIBRARY" ), 
+	       mouse_click_routine 	= "coa_mouse_click_add_col",
+	       tag                 	= COA_DATA_ADD_BUTTON,
+	       parent_prompt       	= self)		   
+
+   	PROMPT OBJECT self . prompt_objects [ COA_DATA_ADD_ALL_BUTTON ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( caption             	= "Default>>",
+	       row                 	= 4.5,
+	       column              	= 30,
+	       width               	= 10,
+	       vgl_library         	= GLOBAL ( "CURRENT_LIBRARY" ), 
+	       mouse_click_routine 	= "coa_mouse_click_add_default",
+	       tag                      = COA_DATA_ADD_ALL_BUTTON ,
+	       parent_prompt       	= self)
+
+   	PROMPT OBJECT self . prompt_objects [ COA_DATA_REMOVE_BUTTON ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( caption             	= "<Remove",
+	       row 	                = 6.5,
+	       column              	= 30,
+	       width               	= 10,
+	       vgl_library         	= GLOBAL ( "CURRENT_LIBRARY" ) , 
+	       mouse_click_routine 	= "coa_mouse_click_remove_col", 
+	       tag                 	= COA_DATA_REMOVE_BUTTON,
+	       parent_prompt       	= self)		 
+
+   	PROMPT OBJECT self . prompt_objects [ COA_DATA_REMOVE_ALL_BUTTON ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( caption             = "<<Remove",
+	       row                 = 8,
+	       column              = 30,
+	       width               = 10,
+	       vgl_library         = GLOBAL ( "CURRENT_LIBRARY" ), 
+	       mouse_click_routine = "coa_mouse_click_remove_all",
+	       tag                 = COA_DATA_REMOVE_ALL_BUTTON,
+	       parent_prompt       = self)
+
+	{**************************************************************}
+	{* Create grid to show selected fields	                      *}
+	{**************************************************************}  
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+	CLASS "STD_GRID_EDITOR"	
+	WITH ( row    		   = 3,
+   	       column		   = 42,
+   	       cell_columns        = 2,
+   	       width               = 30,
+	       height              = 6, 	
+   	       display_cell_routine= "coa_selected_display",
+   	       prompt_cell_routine = "coa_selected_prompt",         
+   	       vgl_library         = GLOBAL ( "CURRENT_LIBRARY" ), 
+   	       title_size_top 	   = 0,
+   	       tag                 = COA_DATA_COL_SEL_GRID,
+	       parent_prompt       = self )
+
+	self . prompt_objects [ COA_DATA_COL_SEL_GRID ] . column_size [ DATA_SEL_TEXT   ] = 8
+	self . prompt_objects [ COA_DATA_COL_SEL_GRID ] . column_size [ DATA_SEL_FIELD  ] = 20
+
+	{**************************************************************}
+	{* Create buttons to promote / demote selected rows           *}
+	{**************************************************************}  
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_UP_BUTTON ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( row                 	= 3,
+	       column              	= 74,
+	       width               	= 5,
+	       vgl_library         	= GLOBAL ( "CURRENT_LIBRARY" ), 
+	       mouse_click_routine 	= "coa_mouse_click_up_row",
+	       tag                 	= COA_DATA_UP_BUTTON,
+	       parent_prompt       	= self)		   
+
+   	PROMPT OBJECT self . prompt_objects [ COA_DATA_DOWN_BUTTON ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( row                 	= 4.5,
+	       column              	= 74,
+	       width               	= 5,
+	       vgl_library         	= GLOBAL ( "CURRENT_LIBRARY" ), 
+	       mouse_click_routine 	= "coa_mouse_click_down_row",
+	       tag                      = COA_DATA_DOWN_BUTTON ,
+	       parent_prompt       	= self)
+
+	self . prompt_objects [ COA_DATA_UP_BUTTON ] . use_images 
+		(EMPTY , 16 , client_icon_id_to_number ( "INT_ARROW_UP" ))
+	self . prompt_objects [ COA_DATA_DOWN_BUTTON ] . use_images 
+		(EMPTY , 16 , client_icon_id_to_number ( "INT_ARROW_DOWN" ))
+
+	{**************************************************************}
+	{* Create grid for default value		              *}
+	{**************************************************************}  
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_GRID ]
+	CLASS "STD_GRID_EDITOR"
+	WITH ( row          = 10, 
+               column       = 42,
+	       cell_columns = 1, 
+	       cell_rows    = 1, 
+	       width        = 30,
+               height       = 1,  
+	       display_only = TRUE,
+	       display_cell_routine     = "coa_data_grid_display_cell",
+               prompt_cell_routine      = "coa_data_grid_prompt_cell",
+	       vgl_library = global ( "current_library" ),
+	       title_size_top = 0,
+   	       title_size_left = 14,
+	       tag = COA_DATA_GRID, 
+               parent_prompt = self ) 
+
+	self . prompt_objects [ COA_DATA_GRID ] . column_size [1] = 20
+	
+	IF GLOBAL ( "COAOVERRIDE" ) = FALSE  THEN
+		self . prompt_objects [ COA_DATA_GRID ] . title_text_left [ 1 , 1 ] 
+			    = GET_USER_MESSAGE ("COA_DATA_DEFAULT",1)
+	ELSE
+		self . prompt_objects [ COA_DATA_GRID ] . title_text_left [ 1 , 1 ] 
+			    = GET_USER_MESSAGE ("COA_DATA_DEFAULT",2)
+	ENDIF   
+
+		
+	ARRAY self . prompt_objects [ COA_DATA_GRID ] . user_info ARRAYSIZE (0)	
+	
+	{**************************************************************}
+	{* Create check box for modifiable 		              *}
+	{**************************************************************} 
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_MODIFY ]
+	CLASS "STD_PROMPT_TEXT_BOOLEAN"
+	WITH ( is_check        = TRUE ,
+	       row             = 10,
+	       column          = 4,
+	       caption 	       = GET_USER_MESSAGE ("COA_DATA_MODIFY", 1),
+	       vgl_library     = global ( "current_library" ),
+	       parent_prompt   = self )
+
+        {**************************************************************}
+	{* Create filter prompts      			              *}
+	{**************************************************************} 
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ]
+	CLASS "STD_PROMPT_TEXT_BOOLEAN"
+	WITH ( is_radio        = TRUE ,
+	       value 	       = TRUE ,
+	       row             = 12,
+	       column          = 3,
+	       caption 	       = GET_USER_MESSAGE ("COA_DATA_FILTER_RADIO_ONE", 1),
+	       tag 	       = COA_DATA_FILTER_RADIO_ONE ,
+	       vgl_library     = global ( "current_library" ),
+	       toggled_routine = "toggle_routine" ,
+	       parent_prompt   = self )
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_FILTER_CRIT ]
+	CLASS "STD_PROMPT_BUTTON"
+	WITH ( row                 	= 13,
+	       column              	= 5,
+	       width               	= 15,
+	       caption			= GET_USER_MESSAGE ("COA_DATA_FILTER_CRIT", 1),
+	       vgl_library         	= GLOBAL ( "CURRENT_LIBRARY" ), 
+	       mouse_click_routine 	= "coa_mouse_click_filter_crit",
+	       tag                      = COA_DATA_FILTER_CRIT ,
+	       parent_prompt       	= self)
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ]
+	CLASS "STD_PROMPT_TEXT_BOOLEAN"
+	WITH ( is_radio        = TRUE ,
+	       value 	       = FALSE ,
+	       row             = 12,
+	       column          = 24,
+	       caption 	       = GET_USER_MESSAGE ("COA_DATA_FILTER_RADIO_TWO", 1),
+	       tag 	       = COA_DATA_FILTER_RADIO_TWO ,
+	       vgl_library     = global ( "current_library" ),
+	       toggled_routine = "toggle_routine" ,
+	       parent_prompt   = self )
+  
+  	self . add_display ( GET_USER_MESSAGE ("COA_DATA_FILTER_LIB",1)
+	                        , 24, 13, PROMPT_RENDITION_NORMAL ) 
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_FILTER_LIB ]
+	BROWSE ON report . identity
+	WITH ( value       = ""  ,
+	       row         = 13 ,
+	       column      = 35 ,
+	       height      = 1 ,
+	       width       = 14 ,
+	       enabled	    = FALSE ,
+	       parent_prompt = self ,
+	       tag = COA_DATA_FILTER_LIB ,
+	       vgl_library = global ( "current_library" ) ,
+	       leave_prompt_routine = "leave_library_routine" )
+	
+	self . add_display ( GET_USER_MESSAGE ("COA_DATA_FILTER_ROUTINE",1)
+	                        , 52, 13, PROMPT_RENDITION_NORMAL ) 
+
+	routine_array = browse_array_library ( "" )
+
+	PROMPT OBJECT self . prompt_objects [ COA_DATA_FILTER_ROUTINE ]
+	CHOOSE OUTOF routine_array
+	WITH ( value       = "" ,
+	       row         = 13 ,
+	       column      = 59 ,
+	       height      = 1 ,
+	       width       = 13 ,
+	       enabled	    = FALSE ,
+	       parent_prompt = self ,
+	       tag = COA_DATA_FILTER_ROUTINE ,
+	       vgl_library = global ( "current_library" ) )
+   		
+ENDROUTINE  
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_build ( self )	
+
+{ Start the data section form and load
+*	
+* Parameters   : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	IF self . operation = "DISPLAY" THEN
+		
+		self . display_only = TRUE
+		self . prompt_objects [ COA_DATA_TABLE ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_ADD_BUTTON ] . set_enabled ( FALSE ) 
+		self . prompt_objects [ COA_DATA_ADD_ALL_BUTTON ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_REMOVE_BUTTON ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_REMOVE_ALL_BUTTON ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_UP_BUTTON ] . set_enabled ( FALSE )	
+		self . prompt_objects [ COA_DATA_DOWN_BUTTON ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_enabled ( FALSE )	
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_MODIFY] . set_enabled (FALSE)
+
+    	ENDIF
+	
+	add_buttons ( self )
+			
+	self . start_prompt ()
+	self . load ()	
+	self . wait_prompt ()
+
+	IF ( self . operation <> "DISPLAY" )   AND
+	   ( self . get_last_key() <> "EXIT" ) THEN
+		
+		self . save_object ()
+	ENDIF
+
+	self . end_prompt ()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_load ( self )	
+
+{ Load form
+*	
+* Parameters   : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE data_obj, count, sel_col_grid, last_col, size_of_rows
+	
+	self . load_selected_columns()
+
+	self . load_data()
+	
+	self . load_columns()
+	
+	self . prompt_objects [ COA_DATA_GRID] . set_enabled (FALSE)
+	self . prompt_objects [ COA_DATA_MODIFY] . set_enabled (FALSE)
+	self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_enabled ( FALSE )
+	self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_enabled ( FALSE )
+	self . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( FALSE )
+	self . prompt_objects [ COA_DATA_FILTER_LIB ] . set_enabled ( FALSE )
+	self . prompt_objects [ COA_DATA_FILTER_ROUTINE] . set_enabled ( FALSE )
+	
+	self . display_objects [1] .set_text 
+	(GET_USER_MESSAGE ("COA_DATA_TABLE_TEXT", self . sub_type ))
+
+	self . enable_sub_type_prompts ( )
+	
+	count  = 0
+	sel_col_grid = self . prompt_objects [COA_DATA_COL_SEL_GRID]
+	last_col = size_of_array (sel_col_grid . user_info )
+	
+	size_of_rows = self . user_info  . size() 
+	
+	WHILE count <= size_of_rows DO
+		count = count + 1
+		data_obj = self . user_info  . get_by_number ( count )
+		IF ( data_obj <> EMPTY ) AND
+		   NOT BLANK (data_obj . table_chosen) THEN
+			last_col = last_col + 1
+			sel_col_grid . user_info [ last_col ] = data_obj . field_chosen
+			sel_col_grid . insert_row ( last_col, 1 , GRID_SEPARATOR_NONE )
+			
+			self . enable_criteria_prompts ( data_obj )
+		ENDIF
+	ENDWHILE
+	
+	IF self . new_data THEN
+	
+		self . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_text ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_text ( FALSE )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_load_data ( self )
+
+{ Load Data sections.
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value 	: None
+*
+*******************************************************************************}
+
+	DECLARE data_obj, order_num, count
+
+	count  = 0
+
+	self . user_info  . set_first ( )
+		
+	IF self . user_info  . current . valid( ) THEN
+		self . load_current_stored_data ()
+			
+ 	ELSE  order_num = SELECT cert_section_data . order_number
+			  WHERE template = self . template AND
+			  template_type = self . template_type AND
+			  template_version = self . version AND
+			  identity = self . section
+			  ORDER ON order_number	
+					  
+		IF order_num <> EMPTY THEN
+			WHILE order_num <> EMPTY DO
+				CREATE OBJECT CERTIFICATE_DATA_CLASS, data_obj
+				data_obj . load ()
+				self . table_chosen = data_obj . table_chosen
+				self . default = data_obj . link_key_one
+				self . modify = data_obj . prompt_for
+				count = count + 1
+				self . user_info . insert ( data_obj , count )
+				self . new_data = FALSE
+				NEXT cert_section_data
+				order_num = SELECT cert_section_data . order_number
+			ENDWHILE
+		ELSE 
+			self . set_default_table ()	
+		
+		ENDIF
+		
+	ENDIF
+	
+	self . set_sub_type ( )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_set_default_table ( self )
+
+{ Set the default table
+*
+* Parameters   	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value 	: None
+*
+*******************************************************************************}
+
+	IF self . template_type = "LOT" THEN
+		self . prompt_objects [ COA_DATA_TABLE ] . 
+					set_text ( "LOT_DETAILS" )
+		self . table_chosen = "LOT_DETAILS"
+	ELSEIF self . template_type = "JOB" THEN
+		self . prompt_objects [ COA_DATA_TABLE ] . 
+					set_text ( "JOB_HEADER" )
+		self . table_chosen = "JOB_HEADER"
+	ELSE
+		self . prompt_objects [ COA_DATA_TABLE ] . 
+					set_text ( "SAMPLE" )
+		self . table_chosen = "SAMPLE"
+	ENDIF
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_load_current_stored_data ( self )
+
+{ Load stored Data section
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE data_obj, routines
+
+	data_obj = self . user_info . current
+		
+	self . prompt_objects [ COA_DATA_MODIFY ] . value = data_obj . prompt_for 
+	self . prompt_objects [ COA_DATA_MODIFY] . set_text ( data_obj . prompt_for )
+	self . prompt_objects [ COA_DATA_GRID ] . user_info [1] = STRIP("")
+		
+	routines = browse_array_library ( data_obj . filter_lib  )
+	
+	self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . choose_array = routines
+	self . prompt_objects [ COA_DATA_FILTER_LIB ] . set_text ( data_obj . filter_lib )
+	self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . set_text ( data_obj . filter_routine )
+		
+	self . new_data = FALSE
+	self . table_chosen = data_obj . table_chosen
+
+	IF NOT BLANK ( data_obj . table_chosen ) THEN
+		self . prompt_objects [ COA_DATA_TABLE ] . set_text ( data_obj . table_chosen )
+		IF NOT BLANK ( data_obj . link_key_one ) THEN
+			self . prompt_objects [ COA_DATA_GRID ] . user_info [1] 
+				 = data_obj . link_key_one 
+			self . prompt_objects [ COA_DATA_GRID] . re_display_contents()			
+		ENDIF
+	ENDIF
+		
+	self . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( data_obj. criteria )
+	self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_text ( data_obj. criteria )
+	self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_text ( NOT data_obj. criteria )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_load_columns ( self )
+
+{ Load the fields from the selected table
+*
+* Parameters   	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value 	: None
+*
+*******************************************************************************}
+
+	DECLARE grid, data_fields, fields, row
+	
+        ARRAY data_fields
+	row = 0
+	
+	get_field_names (self . prompt_objects 
+			[ COA_DATA_TABLE ] . text, data_fields )
+
+	grid = self . prompt_objects [ COA_DATA_COL_GRID ]
+	
+	grid . user_info = data_fields
+	
+	fields = size_of_array ( grid . user_info )
+	 
+	WHILE row < fields DO
+		row = row + 1
+		grid . insert_row ( row , 1 , GRID_SEPARATOR_NONE )
+	ENDWHILE
+
+	
+ENDROUTINE
+	
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_load_selected_columns ( self )
+
+{ Set the selected columns
+*
+* Parameters   : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE grid, data_fields
+	
+	ARRAY data_fields
+		
+	grid = self . prompt_objects [COA_DATA_COL_SEL_GRID]
+	grid . user_info = data_fields
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_save_object ( self )
+					  	
+{ Update the Object record data 
+*	
+* Parameters   : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE data_obj, count, field_count, user_size, grid
+
+	grid = self . prompt_objects [COA_DATA_COL_SEL_GRID]
+	
+	field_count = size_of_array ( grid . user_info )
+	count = 1
+	
+	user_size = self . user_info . size ()
+	self . user_info . set_first ()
+	WHILE ( user_size > 0 ) DO
+
+		self . user_info . remove_by_number ( user_size )
+		user_size = user_size  - 1
+
+	ENDWHILE
+
+	self . user_info . set_first ()
+
+	IF ((field_count = 1) AND BLANK ( grid . user_info [ field_count])) OR 
+	   (field_count = 0)  THEN
+	
+		self . assign_filter_data ()
+	ELSE
+		WHILE count <= field_count DO	
+		
+			self . assign_field_data ( count)
+			count = count + 1
+		ENDWHILE
+	ENDIF
+
+	self . user_info . set_first ()
+	data_obj = self . user_info . current
+	
+	IF self . new_data THEN
+
+		self . new_data = FALSE
+
+		IF data_obj <> EMPTY THEN
+			self . table_chosen = data_obj . table_chosen
+			self . default = data_obj . link_key_one
+			self . modify = data_obj . prompt_for  
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_assign_field_data ( self      ,
+						  field_count)
+
+{ To save a data section object with fields
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE data_obj, grid, valid_edit
+
+	valid_edit = self . validate_edit_criteria()
+	
+	grid = self . prompt_objects [COA_DATA_COL_SEL_GRID]
+	
+	IF NOT BLANK (grid . user_info [ field_count] )THEN
+	
+		CREATE OBJECT CERTIFICATE_DATA_CLASS, data_obj
+		data_obj . table_chosen = self . prompt_objects 
+					[ COA_DATA_TABLE ] . value
+		data_obj . link_key_one = self . prompt_objects 
+					[ COA_DATA_GRID ] . user_info [1]
+		data_obj . prompt_for    = self . prompt_objects 
+					[ COA_DATA_MODIFY ] . value 
+		data_obj . filter_lib	 = self . prompt_objects 
+					[ COA_DATA_FILTER_LIB ] . value 
+		data_obj . filter_routine= self . prompt_objects 
+					[ COA_DATA_FILTER_ROUTINE ] . value 
+		data_obj . field_chosen = grid . user_info [ field_count]
+
+		IF valid_edit THEN
+			data_obj . criteria = TRUE
+		ENDIF
+		
+ 		self . user_info . insert ( data_obj, field_count )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_assign_filter_data ( self )
+
+{ To save a data section object without fields, but with a filter
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE valid_edit, valid_routine, count, data_obj	
+	
+	count = 1
+	
+	valid_edit = self . validate_edit_criteria()
+	valid_routine = self . validate_routine_criteria()
+			
+	IF valid_edit OR valid_routine THEN
+			
+		CREATE OBJECT CERTIFICATE_DATA_CLASS, data_obj
+		data_obj . table_chosen  = self . prompt_objects [ COA_DATA_TABLE ] . value
+		data_obj . link_key_one  = self . prompt_objects [ COA_DATA_GRID ] 
+										. user_info [1]
+		data_obj . prompt_for    = self . prompt_objects [ COA_DATA_MODIFY ] 
+										. value 
+		data_obj . filter_lib	 = self . prompt_objects [ COA_DATA_FILTER_LIB ] 
+										. value 
+		data_obj . filter_routine= self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] 
+										. value 
+		data_obj . field_chosen  = STRIP ("")
+		IF valid_edit THEN
+			data_obj . criteria = TRUE
+		ENDIF
+	 	self . user_info . insert ( data_obj, count )		
+	ENDIF			
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_save ( self )
+
+{ Save data section.
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE data_obj, count, key0, order_num
+	
+	count = 1
+	order_num = 1
+
+	WHILE count <= self . user_info . size ()
+		data_obj = self . user_info . get_by_number ( count )		
+		IF NOT BLANK ( data_obj . field_chosen ) THEN
+			key0 = self . template : 
+			       self . template_type :
+			       self . version :
+			       self . section :
+			       STRING(count)
+		
+			data_obj . save ( key0 )
+			
+			order_num = order_num + 1
+		ENDIF	
+		count = count + 1	
+	ENDWHILE
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_validate_edit_criteria ( self )
+
+{ Check whether a criteria exists as a select array
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value	: [BOOLEAN], valid True if criteria exists
+*
+*******************************************************************************}
+	
+	DECLARE select_array, valid, select_size
+	
+	ARRAY select_array
+	
+	valid = FALSE
+		
+	coa_data_criteria_read ( self . template : 
+				 self . template_type : 
+				 self . version ,
+				 self . section , 
+				 self . table_chosen,
+				 select_array )
+
+	select_size = size_of_array (select_array)
+				 
+	IF (select_size > 0) THEN
+		valid = TRUE
+	ENDIF
+				 
+	RETURN ( valid )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_validate_routine_criteria ( self )
+
+{ Check whether a criteria exists as a select library / routine combination
+*
+* Parameters 	: Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*
+* Return Value	: [BOOLEAN], valid True if Library & Routine set
+*
+*******************************************************************************}
+	
+	DECLARE valid
+	
+	valid = FALSE
+	
+	IF NOT BLANK ( self . prompt_objects [ COA_DATA_FILTER_LIB ] . value ) AND
+	   NOT BLANK ( self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . value ) 
+	
+		valid = TRUE
+	ENDIF
+				 
+	RETURN ( valid )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE validate_form ( self )
+
+{ Validate form.
+*
+* Parameters 	: Self  , [CERTIFICATE_PROMPT_FORM_CLASS]
+*
+* Return Value	: [BOOLEAN], stored True if ok to save
+*
+*******************************************************************************}
+    
+    	DECLARE valid_form
+
+	IF ( self . sub_type  = DATA_STATIC_NON_LINKED ) THEN
+	   
+	   	IF NOT BLANK ( self . prompt_objects [ COA_DATA_GRID ] . user_info [1] ) OR
+	   	( self . prompt_objects [ COA_DATA_MODIFY ] . value <> FALSE ) 
+	
+    		valid_form = TRUE
+    		
+    		ELSE 
+    			valid_form = FALSE
+    			flash_message ( GET_USER_MESSAGE 
+				      ( "COA_ERROR_NON_LINKED_DATA" , 1 ), TRUE )
+    		ENDIF
+
+	ELSE 	
+		valid_form = TRUE
+	ENDIF
+    	
+    	RETURN ( valid_form )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_set_operation ( self , VALUE operation )
+
+{ Set operation from LTE
+*
+* Parameters   : Self       , [CERTIFICATE_DATA_FORM_CLASS]
+*                Operation  , [TEXT] 
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	self . operation = operation
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_set_copy_id ( self , VALUE identity )
+
+{ Set the copied identity
+*
+* Parameters   : Self     , [CERTIFICATE_DATA_FORM_CLASS]
+*                Template , [TEXT] 
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE key0_fields
+		
+	IF ( identity <> EMPTY ) THEN	
+		
+		GET_TABLE_DETAILS cert_section_data , "KEY0_FIELD", key0_fields
+	
+		self . copied_template 		= key0_fields [1]
+		self . copied_template_type 	= key0_fields [2]
+		self . copied_version  		= key0_fields [3]
+	ELSE 	
+		self . copied_template 		= ""
+		self . copied_template_type 	= ""
+		self . copied_version  		= ""
+	ENDIF
+			
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_set_section_id ( self ,
+					       VALUE identity ,
+					       VALUE template_type,
+					       VALUE version ,
+					       VALUE section )
+{ Set the section Id 
+*
+* Parameters   : Self     , [CERTIFICATE_DATA_FORM_CLASS]
+*                Identity , [TEXT] 
+*                Version  , [TEXT]
+*                Section  , [TEXT] 
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	self . template = identity
+	self . template_type  = template_type
+	self . version = version
+	self . section = section
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_set_sub_type ( self )
+
+{ Set the Data Section Sub Type
+*
+* Parameters   : Self , [CERTIFICATE_DATA_FORM_CLASS]
+*               
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE table
+
+	table = STRIP ( self . prompt_objects [ COA_DATA_TABLE ] . text )
+
+	IF table  = "JOB_HEADER" THEN
+		table = "JOB"
+	ELSEIF table = "LOT_DETAILS" THEN
+		table = "LOT"
+	ENDIF
+	
+	IF table = self . template_type THEN
+
+		IF self . template_type = "SAMPLE" THEN
+			self . sub_type = DATA_SAMPLE
+
+		ELSEIF  self . template_type = "JOB" THEN
+			self . sub_type = DATA_JOB
+		
+		ELSEIF  self . template_type = "LOT" THEN
+			self . sub_type = DATA_LOT
+
+		ENDIF
+
+	ELSEIF ( table = "JOB" ) OR ( table = "SAMPLE" ) THEN
+
+		IF (( table = "SAMPLE" ) AND ( self . template_type = "JOB" )) OR
+		   (( table = "SAMPLE" ) AND ( self . template_type = "LOT" )) OR
+		   (( table = "JOB") 	 AND ( self . template_type = "LOT" )) THEN		   
+
+			self . sub_type = DATA_DYNAMIC
+		ENDIF
+
+	ELSEIF is_linked_section ( table, self . template_type ) THEN
+			
+		self . sub_type = DATA_STATIC_LINKED
+	
+	ELSE self . sub_type = DATA_STATIC_NON_LINKED
+			
+	ENDIF
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_enable_sub_type_prompts ( self )
+
+{ Enable the correct prompts by section Sub Type
+*
+* Parameters   : Self  , [CERTIFICATE_DATA_FORM_CLASS]
+*               
+* Return Value : None
+*
+*******************************************************************************}
+
+	IF ( self . sub_type = DATA_SAMPLE ) OR
+   	   ( self . sub_type = DATA_JOB    ) OR
+   	   ( self . sub_type = DATA_LOT    ) THEN
+			
+		self . prompt_objects [ COA_DATA_GRID] . set_enabled (FALSE)
+		self . prompt_objects [ COA_DATA_MODIFY] . set_enabled (FALSE)
+			
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_enabled ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_enabled ( TRUE )
+        
+	ELSEIF ( self . sub_type = DATA_DYNAMIC ) THEN
+			
+		self . prompt_objects [ COA_DATA_GRID] . set_enabled (FALSE)
+		self . prompt_objects [ COA_DATA_MODIFY] . set_enabled (TRUE)	
+			
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_enabled ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_enabled ( TRUE )      
+						       
+        			
+	ELSEIF ( self . sub_type = DATA_STATIC_LINKED )     OR 
+	       ( self . sub_type = DATA_STATIC_NON_LINKED ) THEN
+
+		self . prompt_objects [ COA_DATA_GRID ] . set_enabled (TRUE)
+		self . prompt_objects [ COA_DATA_MODIFY] . set_enabled (TRUE)	
+
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_enabled ( FALSE )
+
+		self . prompt_objects [ COA_DATA_FILTER_LIB ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( FALSE )
+	ENDIF
+	
+ENDROUTINE	
+
+{******************************************************************************}
+
+ROUTINE cert_data_form_action_enable_criteria_prompts ( self ,
+						        data_obj )
+
+{ Enable the correct criteria prompts by section criteria type
+*
+* Parameters   : Self , [CERTIFICATE_DATA_FORM_CLASS]
+*               
+* Return Value : None
+*
+*******************************************************************************}
+
+	IF data_obj . criteria THEN
+				
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_text ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_text ( FALSE )
+					
+		self . prompt_objects [ COA_DATA_FILTER_LIB ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . set_enabled ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( TRUE )
+						
+						
+	ELSEIF  (NOT BLANK (data_obj . filter_lib) AND
+		 NOT BLANK (data_obj . filter_routine)) THEN
+						
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_text ( FALSE )
+		self . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_text ( TRUE )
+								
+		self . prompt_objects [ COA_DATA_FILTER_LIB ] . set_enabled ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . set_enabled ( TRUE )
+		self . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( FALSE )
+	ENDIF
+	
+ENDROUTINE
+
+{******************************************************************************}
+{*               F O R M        S U P P O R T       R O U T I N E S           *}
+{******************************************************************************}
+
+ROUTINE add_buttons ( the_form )
+					   
+{ Add data section buttons.
+*
+* Parameters   : The_form , [CERTIFICATE_DATA_FORM_CLASS]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE button_object
+	
+	PROMPT OBJECT button_object
+	    CLASS "STD_PROMPT_BUTTON"
+	    WITH ( row          = the_form . height - 0.5 ,
+	           column       = the_form . width - 33 ,
+	           caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_OK" , 1 ) ,
+	           width        = 10 ,
+	           send_lastkey = "DO" )
+
+	the_form . add_prompt ( button_object )
+
+	PROMPT OBJECT button_object
+	    CLASS "STD_PROMPT_BUTTON"
+	    WITH ( row          = the_form . height - 0.5 ,
+	           column       = the_form . width - 21 ,
+	           caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_HELP" , 1 ) ,
+	           width        = 10 ,
+	           send_lastkey = "HELP" )
+
+	the_form . add_prompt ( button_object )
+
+	PROMPT OBJECT button_object
+	    CLASS "STD_PROMPT_BUTTON"
+	    WITH ( row          = the_form . height - 0.5 ,
+	           column       = the_form . width - 9 ,
+	           caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_CANCEL" , 1 ) ,
+	           width        = 10 ,
+	           send_lastkey = "EXIT" )
+
+	the_form . add_prompt ( button_object )
+
+	the_form . add_panel( 17, 16, 2, 21, PANEL_H_ALIGN_RIGHT + PANEL_H_EXPAND_ON )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE select_table_routine ( self )
+
+{ Leave prompt routine, modifys prompts based on data selected.
+*
+* Parameters 	: Self  , [STD_PROMPT]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE parent, grid, fields, routine_array, old_table
+
+	parent = self . parent_prompt
+	old_table = parent . table_chosen
+
+	IF parent . table_chosen <> 
+	   parent . prompt_objects [ COA_DATA_TABLE ] . text THEN
+
+		parent . set_sub_type ( )
+		parent . table_chosen = parent . prompt_objects [ COA_DATA_TABLE ] . text
+		parent . new_data = FALSE
+		parent . prompt_objects [COA_DATA_GRID] . user_info [1] = STRIP("")
+		parent . prompt_objects [COA_DATA_GRID] . re_display_contents()
+		parent . display_objects [1] .set_text ( GET_USER_MESSAGE 
+		("COA_DATA_TABLE_TEXT", parent . sub_type ))
+
+		{**************************************************************}
+		{* Enable/Disable Default,Modifiable & Filter prompts         *}
+		{**************************************************************} 
+			
+		parent . enable_sub_type_prompts ( )
+
+		{**************************************************************}
+		{* Clear old Fields in select column Grid,repopulate with new *}
+		{**************************************************************} 
+
+		grid = parent . prompt_objects [ COA_DATA_COL_GRID ]
+		fields = size_of_array (grid . user_info )
+		WHILE fields > 0 DO
+			grid . remove_row ( fields)
+			array_remove_slice (grid . user_info  , 1 , fields )
+			fields = fields - 1
+		ENDWHILE
+		parent . load_columns()
+		{**************************************************************}
+		{* Clear old Fields in selected column                        *}
+		{**************************************************************} 			
+		coa_mouse_click_remove_all ( parent . prompt_objects 
+			[COA_DATA_REMOVE_ALL_BUTTON] )
+
+		{**************************************************************}
+		{* Clear old Criteria 			                      *}
+		{**************************************************************} 			
+		parent . prompt_objects [ COA_DATA_FILTER_LIB ] . set_text ("")              
+    		routine_array = browse_array_library ( parent . prompt_objects 
+    			[ COA_DATA_FILTER_LIB ] . text )
+        	parent . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . choose_array = routine_array
+		parent . prompt_objects [ COA_DATA_FILTER_ROUTINE ] .set_text ("")
+
+		IF parent . validate_edit_criteria () THEN
+
+			coa_data_criteria_delete ( parent . template : 
+				   	   	   parent . template_type : 
+				   	    	   parent . version ,
+				   	   	   parent . section ,
+				   	   	   old_table    )
+		ENDIF
+
+	ENDIF
+   
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE leave_library_routine ( self )
+
+{ Leave library prompt routine, modifys prompts based on data selected.
+*
+* Parameters 	: Self  , [STD_PROMPT]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+    	DECLARE form, routine_array
+    
+    	ARRAY routine_array
+
+    	form = self . parent_prompt
+                        
+    	routine_array = browse_array_library ( form . prompt_objects
+    			[ COA_DATA_FILTER_LIB ] . text )
+        
+    	form . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . choose_array = routine_array
+   
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE toggle_routine ( self )
+
+{ Main toggle routine for filter radio buttons.
+*
+* Parameters 	: Self , [STD_PROMPT_TEXT_BOOLEAN]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+    	DECLARE form, routine_array
+
+    	ARRAY routine_array
+
+    	form = self . parent_prompt
+    
+    	IF ( form . sub_type = DATA_SAMPLE ) OR
+       	   ( form . sub_type = DATA_JOB    ) OR
+           ( form . sub_type = DATA_LOT    ) OR
+           ( form . sub_type = DATA_DYNAMIC ) THEN
+
+    		IF self . tag = COA_DATA_FILTER_RADIO_ONE  THEN
+    
+    	   		form . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_text ( TRUE )
+			form . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_text ( FALSE )
+
+			form . prompt_objects [ COA_DATA_FILTER_LIB ] . set_text ("")              
+    			routine_array = browse_array_library 
+    				( form . prompt_objects [ COA_DATA_FILTER_LIB ] . text )
+        		form . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . choose_array = routine_array
+			form . prompt_objects [ COA_DATA_FILTER_ROUTINE ] .set_text ("")
+			       
+			form . prompt_objects [ COA_DATA_FILTER_LIB ] . set_enabled ( FALSE )
+			form . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . set_enabled ( FALSE )
+        		form . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( TRUE )
+	            
+    		ELSEIF self . tag = COA_DATA_FILTER_RADIO_TWO THEN
+           
+        		form . prompt_objects [ COA_DATA_FILTER_RADIO_ONE ] . set_text ( FALSE )
+        		form . prompt_objects [ COA_DATA_FILTER_RADIO_TWO ] . set_text ( TRUE )
+       
+        		form . prompt_objects [ COA_DATA_FILTER_LIB ] . set_enabled ( TRUE )
+        		form . prompt_objects [ COA_DATA_FILTER_ROUTINE ] . set_enabled ( TRUE )
+        		form . prompt_objects [ COA_DATA_FILTER_CRIT ] . set_enabled ( FALSE )
+        	
+        		IF form . validate_edit_criteria () THEN
+
+				coa_data_criteria_delete ( form . template : 
+				   	   	   	   form . template_type : 
+				   	    	   	   form . version ,
+				   	   	   	   form . section ,
+				   	   	   	   form . table_chosen    )
+			ENDIF
+       		ENDIF
+    	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_filter_crit ( self )
+
+{ Mouse click call back to edit criteria
+*
+* Parameters   : Self  , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE form
+
+	form = self . parent_prompt
+
+	coa_data_criteria_edit ( form . template : 
+				 form . template_type : 
+				 form . version ,
+				 form . copied_template :
+				 form . copied_template_type : 
+				 form . copied_version ,
+				 form . operation       ,
+				 form . section		,
+				 form . table_chosen    )
+				 
+ENDROUTINE
+
+{******************************************************************************}
+{*    D E F A U L T    G R I D     C A L L B A C K       R O U T I N E S      *}
+{******************************************************************************}
+
+ROUTINE coa_data_grid_display_cell (          self        , 
+                                  	VALUE cell_column , 
+                                  	VALUE cell_row 	  , 
+                                              window      , 
+                                  	VALUE column      , 
+                                  	VALUE row         , 
+                                  	VALUE cell_width  , 
+                                  	VALUE cell_height ) 
+
+{ Default value grid prompt display
+*
+* Parameters : Self		, [STD_GRID]The Grid 
+*	       Cell_Column	, [INTEGER]Integer representing current cell column
+*	       Cell_Row		, [INTEGER]Integer representing current cell row
+*	       Window		, [SPECIAL]The current window
+*	       Column		, [INTEGER]Integer representing window column
+*	       Row		, [INTEGER]Integer representing window row
+*	       Cell_width	, [INTEGER]Integer representing cell width
+*	       Cell_height	, [INTEGER]Integer representing cell height
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+DECLARE form
+
+	form = self . parent_prompt
+
+	IF NOT form . new_data THEN
+
+		DISPLAY self . user_info [1]
+			ON LINE   row
+			FROM      column
+			TO        column + cell_width - 1
+			IN WINDOW window
+	ENDIF
+    
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_data_grid_prompt_cell  (   	   self        , 
+                                     VALUE cell_column , 
+                                     VALUE cell_row    , 
+                                           window      , 
+                                     VALUE column      , 
+                                     VALUE row         , 
+                                     VALUE cell_width  , 
+                                     VALUE cell_height ) 
+
+{ Default value grid prompt 
+*
+* Parameters : Self		, [STD_GRID]The Grid 
+*	       Cell_Column	, [INTEGER]Integer representing current cell column
+*	       Cell_Row		, [INTEGER]Integer representing current cell row
+*	       Window		, [SPECIAL]The current window
+*	       Column		, [INTEGER]Integer representing window column
+*	       Row		, [INTEGER]Integer representing window row
+*	       Cell_width	, [INTEGER]Integer representing cell width
+*	       Cell_height	, [INTEGER]Integer representing cell height
+*
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE form
+
+	form = self . parent_prompt
+
+	PROMPT FOR self . user_info [1]
+		ON LINE   row
+		FROM      column
+		TO        column + cell_width - 1
+		IN WINDOW window
+		BROWSE ON 'form . table_chosen'
+		WITH( display_only = form . display_only )
+ENDROUTINE
+
+{******************************************************************************}
+{*    F I E L D   S E L E C T I O N   C A L L B A C K      R O U T I N E S    *}
+{******************************************************************************}
+
+ROUTINE coa_select_display ( 	      grid        ,
+                         	VALUE cell_column ,
+		                VALUE cell_row    ,
+			              screen      ,
+		                VALUE column      ,
+		                VALUE row         ,
+			        VALUE cell_width  ,
+			       	VALUE cell_height )
+{ Display fields Callback
+*
+* Parameters   : Grid		, [STD_GRID]The Grid 
+*		 Cell_Column    , [INTEGER]Integer representing current cell column
+*		 Cell_Row	, [INTEGER]Integer representing current cell row
+*		 Screen		, [SPECIAL]The current window
+*		 Column		, [INTEGER]Integer representing window column
+*		 Row		, [INTEGER]Integer representing window row
+*		 Cell_width	, [INTEGER]Integer representing cell width
+*		 Cell_height    , [INTEGER]Integer representing cell height
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE display_value
+	
+	display_value = capitalise( grid . user_info[cell_row,1] )
+	
+	DISPLAY display_value
+		ON LINE   row
+		FROM      column
+		TO        column + ( cell_width - 5 )
+	IN WINDOW screen
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_select_prompt (       grid        ,
+                            VALUE cell_column ,
+		            VALUE cell_row    ,
+			          screen      ,
+		            VALUE column      ,
+		            VALUE row         ,
+			    VALUE cell_width  ,
+			    VALUE cell_height )
+{ Prompt select fields Callback
+*
+* Parameters   : Grid		, [STD_GRID]The Grid 
+*		 Cell_Column	, [INTEGER]Integer representing current cell column
+*		 Cell_Row	, [INTEGER]Integer representing current cell row
+*		 Screen		, [SPECIAL]The current window
+*		 Column		, [INTEGER]Integer representing window column
+*		 Row		, [INTEGER]Integer representing window row
+*		 Cell_width	, [INTEGER]Integer representing cell width
+*		 Cell_height    , [INTEGER]Integer representing cell height
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE display_value
+
+	display_value = capitalise ( grid . user_info[cell_row,1] )
+
+	PROMPT FOR display_value
+		ON LINE   row
+		FROM      column
+		TO        column + ( cell_width - 5 )
+		IN WINDOW screen
+		WITH( display_only = TRUE )
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_add_col ( self )
+
+{ Mouse click call back to add a column
+*
+* Parameters   : Self , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+	
+	DECLARE source_grid, dest_grid, row, form
+	
+	form = self . parent_prompt
+	source_grid = form . prompt_objects [ COA_DATA_COL_GRID ]
+	dest_grid = form . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+	
+	row = source_grid . current_row
+	IF ( row > 0 ) THEN
+	
+		dest_grid . user_info [dest_grid . cell_rows + 1] = source_grid . user_info[row,1]
+		dest_grid . insert_row ( dest_grid . cell_rows + 1, 1 , GRID_SEPARATOR_NONE )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_add_default ( self )
+
+{ Mouse click call back to add all default columns
+*
+* Parameters   : Self , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE default_fields, dest_grid, row, form, fields, table,
+		field, titles, widths, key0_fields
+
+	ARRAY default_fields
+	ARRAY titles
+	ARRAY widths
+	
+	form = self . parent_prompt
+	table = form . prompt_objects [ COA_DATA_TABLE ] . value
+
+	GET_TABLE_DETAILS ' table ' , "KEY0_FIELD" , key0_fields
+	field = key0_fields[1] 
+
+	criteria_cache_browse_field_details ( table, field, 0, default_fields, titles, widths )
+	
+	dest_grid = form . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+	
+	row = 1
+	fields = size_of_array ( default_fields )
+
+	WHILE row < fields DO
+		dest_grid . user_info [dest_grid . cell_rows + 1] = default_fields[row]
+		dest_grid . insert_row ( row , 1 , GRID_SEPARATOR_NONE )
+		row = row + 1
+	ENDWHILE
+
+	dest_grid . re_display_contents()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_remove_all ( self )
+
+{ Mouse click call back to remove all columns
+*
+* Parameters   : Self , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE dest_grid, form, fields
+
+	form = self . parent_prompt
+	dest_grid = form . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+	
+	fields = size_of_array ( dest_grid . user_info )
+
+	WHILE fields > 0 DO
+		dest_grid . remove_row ( fields)
+		array_remove_slice (dest_grid . user_info  , 1 , fields )
+		fields = fields - 1
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_remove_col ( self )
+
+{ Mouse click call back to remove a column
+*
+* Parameters   : Self , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE dest_grid, form, row
+
+	form = self . parent_prompt
+	dest_grid = form . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+	
+	row = dest_grid . current_row
+	IF ( row > 0 ) THEN
+		array_remove_slice (dest_grid . user_info  , 1 , row )
+		dest_grid . remove_row ( row )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_up_row ( self )
+
+{ Mouse click call back to move a field up the list one space
+*
+* Parameters   : Self , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE dest_grid, form, row, temp_row, row_above
+
+	form = self . parent_prompt
+	dest_grid = form . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+
+	row = dest_grid . current_row
+	IF ( row > 1 )THEN
+		row_above = row - 1
+	
+		temp_row = dest_grid . user_info [ row_above ] 
+		dest_grid . user_info [row_above] = dest_grid . user_info [ row ]
+		dest_grid . user_info [ row ] = temp_row
+
+		dest_grid . current_row = row_above
+		dest_grid . re_display_contents()
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_mouse_click_down_row ( self )
+
+{ Mouse click call back to move a field down the list one space
+*
+* Parameters   : Self , [STD_PROMPT_BUTTON]
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE dest_grid, form, row, temp_row, row_below, size
+
+	form = self . parent_prompt
+	dest_grid = form . prompt_objects [ COA_DATA_COL_SEL_GRID ]
+	size = size_of_array (dest_grid . user_info)
+
+	row = dest_grid . current_row
+	IF ( row > 0 )	  AND
+	   ( row < size ) THEN	
+		row_below = row + 1
+		temp_row = dest_grid . user_info [ row_below ] 
+		dest_grid . user_info [row_below] = dest_grid . user_info [ row ]
+		dest_grid . user_info [ row ] = temp_row
+		dest_grid . current_row = row_below
+		dest_grid . re_display_contents()
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_selected_display ( 	      grid     	  ,
+                         	VALUE cell_column ,
+		                VALUE cell_row    ,
+			              screen      ,
+		                VALUE column      ,
+		                VALUE row         ,
+			        VALUE cell_width  ,
+			       	VALUE cell_height )
+{ Display selected fields Callback
+*
+* Parameters   : Grid		, [STD_GRID]The Grid 
+*		 Cell_Column	, [INTEGER]Integer representing current cell column
+*		 Cell_Row	, [INTEGER]Integer representing current cell row
+*		 Screen		, [SPECIAL]The current window
+*		 Column		, [INTEGER]Integer representing window column
+*		 Row		, [INTEGER]Integer representing window row
+*		 Cell_width	, [INTEGER]Integer representing cell width
+*		 Cell_height	, [INTEGER]Integer representing cell height
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE display_value
+
+	IF BLANK (grid . user_info[cell_row]) AND ( cell_row = 1)THEN
+
+		IF cell_column = DATA_SEL_TEXT THEN
+			display_value = "No Fields - " 
+		ELSEIF cell_column = DATA_SEL_FIELD THEN
+			display_value = "This is a Filter Section" 
+		ENDIF
+	ELSE
+	
+		IF cell_column = DATA_SEL_TEXT THEN
+			display_value = "Text" : STRIP(STRING(cell_row))
+		ELSEIF cell_column = DATA_SEL_FIELD THEN
+			display_value = capitalise ( grid . user_info[cell_row] ) 
+		ENDIF
+	ENDIF
+	
+	DISPLAY display_value
+		ON LINE   row
+		FROM      column
+		TO        column + ( cell_width - 5 )
+	IN WINDOW screen
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE coa_selected_prompt (       grid      	,
+                              VALUE cell_column ,
+		              VALUE cell_row    ,
+			            screen     	,
+		              VALUE column      ,
+		              VALUE row         ,
+			      VALUE cell_width  ,
+			      VALUE cell_height )
+
+{ Prompt prompt selected fields Callback
+*
+* Parameters   : Grid		, [STD_GRID]The Grid 
+*		 Cell_Column	, [INTEGER]Integer representing current cell column
+*		 Cell_Row	, [INTEGER]Integer representing current cell row
+*		 Screen		, [SPECIAL]The current window
+*		 Column		, [INTEGER]Integer representing window column
+*		 Row		, [INTEGER]Integer representing window row
+*		 Cell_width	, [INTEGER]Integer representing cell width
+*		 Cell_height	, [INTEGER]Integer representing cell height
+* 
+* Return Value : None
+*
+*******************************************************************************}
+
+	DECLARE display_value
+
+	IF cell_column = DATA_SEL_TEXT THEN
+		display_value = "Text" : STRIP(STRING(cell_row))
+	ELSEIF cell_column = DATA_SEL_FIELD THEN
+		display_value = capitalise ( grid . user_info[cell_row]  )
+	ENDIF
+
+	PROMPT FOR display_value
+		ON LINE   row
+		FROM      column
+		TO        column + ( cell_width - 5 )
+		IN WINDOW screen
+		WITH( display_only = TRUE )
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}
+

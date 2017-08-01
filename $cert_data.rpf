@@ -1,0 +1,632 @@
+
+{*******************************************************************************
+*
+* Module Name   	: $CERT_DATA
+*
+* Purpose       	: Generation of Certificate Data Section Entries
+*
+* Document Ref. 	: CH002850 Implement Data Section CoA functionality
+*
+* (c) Copyright 1984-2004 Thermo Electron Corporation. All rights reserved.
+********************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Corrigindo VGL
+}
+ENABLE WINDOWS
+SET NOTPROTECTED
+SET NAME "DEFER/"
+
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_ARRAY
+
+JOIN LIBRARY $LIB_DB
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $COA_CRITERIA
+JOIN LIBRARY $CERTIFICATE_LIB 
+
+{**Local Constants ************************************************************} 
+
+{** Global Constants **********************************************************} 
+
+GLOBAL CONSTANT CERT_DATA_SECTION_CLASS     = "CERT_DATA_SECTION"
+GLOBAL CONSTANT CERT_DATA_SECTION_TABLE     = "CERT_SECTION_DATA"
+
+{** Global Variables **********************************************************} 
+
+{** Main Code *****************************************************************} 
+
+{** Start Of Routines *********************************************************} 
+
+{******************************************************************************}
+
+{******************************************************************************}
+{*                             M A I N   C O D E			      *}
+{******************************************************************************}
+
+{******************************************************************************}
+{*                        G L O B A L   R O U T I N E S		              *}
+{******************************************************************************}
+
+{******************************************************************************}
+{*                     D A T A  S E C T I O N  C L A S S                      *}
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE cert_data_section_class_define
+
+{ Data section class definition
+*
+* Parameters 	: None
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DEFINE CLASS CERT_DATA_SECTION_CLASS 
+
+	INHERIT "STD_COLLECTED"
+
+	INITIALISATION
+
+	PROPERTIES
+
+	"IDENTITY"             , { Section Id                                  }
+	"ORDER_NUMBER"         , { Section Order                               }
+	"VALUE"                , { Value returned                              }
+	"PROMPT"               , { The info required for prompt                }
+	"PROMPT_FOR"           , { Modifiable or not                           }
+	"SIMPLE"               , { If true Simple else Complex	               }
+	"ROW_OBJ_REC"          , { Row Object Record                           }
+	"PROMPT_LABEL"         , { Label for Prompt                            }
+	"PROMPT_FORMAT"          { Format for Prompt                           }
+
+	ACTIONS
+
+	"LOAD"                , { Build object.                                }
+	"IS_MODIFIABLE"       , { Test for Modifiable.                         }
+	"GET_SIMPLE_VALUE"    , { Get the easy Data.                           }
+	"GET_TYPE_VALUE"      , { Get the prompted Data.                       }
+	"SET_PROMPTED_VALUE"  , { Get the complex Data.                        }
+	"BUILD_PROMPT"        , { Build the Prompts.                           }
+	"IS_SIMPLE_SECTION"   , { Test for simple Data.                        }
+	"WRITE_ENTRY"         , { Save to entry table.                         }
+	"GET_PROMPT"          , { Get prompt.                                  }
+	"GET_PROMPT_LABEL"    , { Get prompt label.                            }
+	"GET_PROMPT_FORMAT"   , { Get prompt format.                           }
+	"GET_TABLE"           , { Get current table.                           }
+	"GET_FILTER_CRITERIA" , { Get criteria.                                }
+	"GET_FILTER_LIBRARY"  , { Get custom library.                          }
+	"GET_FILTER_ROUTINE"    { Get custom routine.                          }
+
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_class_initialisation ( self	)
+
+{ Data Section initialisation
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+	
+	self . identity  	= ""
+	self . order_number	= ""
+	self . value            = ""
+	self . prompt           = EMPTY
+	self . prompt_for       = FALSE
+	self . simple           = FALSE
+	self . row_obj_rec 	= ""
+	self . prompt_label 	= ""
+	self . prompt_format 	= "IDENTITY"
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_load ( self		,
+				       	row_obj_rec	)
+
+{ Load object with CoA Template Data section information 
+*
+* Parameters 	: Self        , [CERT_DATA_SECTION]
+*		  Row_obj_rec , [STD_OBJECT_RECORD] Containing data coa 
+*                                                   template record
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	self . row_obj_rec      = row_obj_rec
+
+    	self . identity		= SELECT cert_section_data . identity 
+				  IN OBJECT self . row_obj_rec
+	self . order_number	= SELECT cert_section_data . order_number 
+				  IN OBJECT self . row_obj_rec
+	self . prompt_for	= SELECT cert_section_data . prompt_for 
+				  IN OBJECT self . row_obj_rec
+			
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_is_modifiable ( self )
+
+{ Should this section be prompted for ?
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value 	: [BOOLEAN] True if section to be prompted 
+*
+*******************************************************************************}
+
+	RETURN ( self . prompt_for )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_prompt ( self )
+
+{ Return the prompt for this data section 
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value 	: [STD_PROMPT_FIELD_IDENTITY] The prompt object to use
+*
+*******************************************************************************}
+
+	RETURN ( self . prompt )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_prompt_label ( self )
+
+{ Return the prompt label for this data section 
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value 	: [TEXT] The label to display for the prompt 
+*
+*******************************************************************************}
+
+	RETURN ( self . prompt_label )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_prompt_format ( self )
+
+{ Return the prompt format for this data section 
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: [TEXT] The format of the prompt, IDENTITY
+*			 format for Data sections
+*
+*******************************************************************************}
+
+	RETURN ( self . prompt_format )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_build_prompt ( self )
+
+{ Build the prompt for a modifiable data section
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE table, default_value, data_prompt, field, desc1, desc2
+
+	IF ( self . prompt_for ) THEN
+    		table	        = SELECT cert_section_data . link_table 
+				  IN OBJECT self . row_obj_rec
+		field	        = SELECT cert_section_data . link_field 
+				  IN OBJECT self . row_obj_rec
+		IF NOT BLANK (self . value ) THEN
+
+			default_value  = self . value 
+
+		ELSE 
+
+    		default_value	= SELECT cert_section_data . link_key1 
+				  IN OBJECT self . row_obj_rec
+
+		ENDIF
+
+		PROMPT OBJECT data_prompt
+			BROWSE ON 'table'
+			WITH ( value = default_value )
+
+		desc1 = capitalise ( data_prompt . table )
+		desc2 = capitalise ( data_prompt . field )
+
+		self . prompt_label = desc1 : " " : desc2
+		self . prompt = data_prompt
+	ENDIF
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_is_simple_section (  self )
+
+{ Test for a simple or complex data section
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value 	: [BOOLEAN] True if this is a simple Data 
+*			    Section. Values are easy to retrieve
+*
+*******************************************************************************}
+
+	DECLARE link1
+
+        link1 = SELECT cert_section_data . link_key1 
+		IN OBJECT self . row_obj_rec
+	
+	IF NOT BLANK ( link1 ) THEN
+		self . simple = TRUE
+	ENDIF
+        RETURN ( self . simple )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_simple_value (  self )
+
+{ Fill in value for a simple section, uses the link field provided in the 
+* template to retrieve the value from the required table and field
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value  : None
+*
+*******************************************************************************}
+
+	DECLARE table, field, link1, out_val, key0, linked
+
+	IF ( self . simple ) THEN
+		table = SELECT cert_section_data . link_table 
+			IN OBJECT self . row_obj_rec
+    	
+		field = SELECT cert_section_data . link_field 
+			IN OBJECT self . row_obj_rec
+
+		link1 = SELECT cert_section_data . link_key1 
+			IN OBJECT self . row_obj_rec
+
+		GET_TABLE_DETAILS 'table', "BROWSE_FIELD", out_val
+{001 \/}
+		IF (out_val <> EMPTY) AND
+		   (link1 <> EMPTY ) THEN
+			self . value = SELECT 'table' . 'field' WHERE 
+					 'out_val' = strip(link1)
+		ENDIF
+{001 /\}
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_type_value (  self      ,
+						   type_odb  )
+
+{ Fill in value for a complex section, uses the Sample/Job/Lot id passed from 
+* the Certificate Generation Form to find the required value from the 
+* table and field
+*
+* Parameters 	: Self     , [CERT_DATA_SECTION]
+*		: Type_odb , [COA_RECORD] Collection containing the 
+*					Sample/Job/Lot records for this 
+*					Certificate Generation
+*
+* Return Value  : None
+*
+*******************************************************************************}
+
+	DECLARE table, field, odb_table, new_value, default_value
+
+	new_value = ""
+
+	IF type_odb <> EMPTY THEN
+
+		table = SELECT cert_section_data . link_table 
+		IN OBJECT self . row_obj_rec 	
+		field = SELECT cert_section_data . link_field 
+		IN OBJECT self . row_obj_rec
+		
+		default_value	= SELECT cert_section_data . link_key1 
+				  IN OBJECT self . row_obj_rec
+
+		IF NOT BLANK (table) AND NOT BLANK (field) THEN
+
+			odb_table = type_odb . table
+						
+			IF (odb_table <> table) THEN
+				
+				IF ( GLOBAL ( "COAOVERRIDE" ) = FALSE ) OR
+				   ( BLANK ( default_value)           ) THEN
+					new_value = select_data_value ( odb_table, table, type_odb)
+				ENDIF
+
+			ELSE new_value = SELECT 'table' . 'field' 
+				IN OBJECT type_odb
+			ENDIF
+			
+			IF (new_value <> EMPTY ) AND
+			NOT BLANK (new_value )   THEN		
+				self . value = new_value
+			ENDIF
+		
+		ENDIF
+	ENDIF
+		
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_set_prompted_value (  self  )
+
+{ Fill in the returned value for a prompted section
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+	DECLARE table, field, out_val
+
+    	table	        = SELECT cert_section_data . link_table 
+				  IN OBJECT self . row_obj_rec
+	field	        = SELECT cert_section_data . link_field 
+				  IN OBJECT self . row_obj_rec
+
+	GET_TABLE_DETAILS 'table', "BROWSE_FIELD", out_val
+	IF ( self . prompt . value <> EMPTY) THEN
+    		self . value = SELECT 'table' . 'field'
+			       WHERE 'out_val' = self . prompt . value
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_write_entry (        self	   ,
+					 	      cert_id      ,  
+					 	VALUE order_number )
+
+{ Write the values to the Certifcate Entry Table
+*
+* Parameters 	: Self    , [CERT_DATA_SECTION]
+*		  Cert_id , [TEXT] The id_numeric for the certificate
+*				   currently being generated
+*
+* Return Value	: None
+*
+*******************************************************************************}
+
+DECLARE certificate_id, key
+	
+	IF ( self . value = EMPTY  ) OR
+	   ( self . value = ERROR  ) OR
+	   ( self . value = LOCKED ) THEN
+
+		self . value = " "
+
+	ENDIF
+
+	certificate_id = SELECT certificate_entry . id_numeric FOR UPDATE
+			 WHERE id_numeric = cert_id AND
+			       section_id = self . identity AND
+			       order_number = order_number 						
+	
+	IF certificate_id = EMPTY THEN
+			
+		key = cert_id : self . identity : STRING ( order_number )
+		RESERVE ENTRY certificate_entry, key
+
+	ENDIF
+
+	IF self . order_number = 1 THEN
+		ASSIGN certificate_entry .  text1 = self . value
+	ELSEIF self . order_number = 2 THEN
+		ASSIGN certificate_entry .  text2 = self . value
+	ELSEIF self . order_number = 3 THEN
+		ASSIGN certificate_entry .  text3 = self . value
+	ELSEIF self . order_number = 4 THEN
+		ASSIGN certificate_entry .  text4 = self . value
+	ELSEIF self . order_number = 5 THEN
+		ASSIGN certificate_entry .  text5 = self . value
+	ELSEIF self . order_number = 6 THEN
+		ASSIGN certificate_entry .  text6 = self . value
+	ELSEIF self . order_number = 7 THEN
+		ASSIGN certificate_entry .  text7 = self . value
+	ENDIF
+		
+	IF NOT transaction_is_write ( ) THEN
+		START WRITE TRANSACTION "New Certificate Entry"
+	ENDIF
+
+	UPDATE certificate_entry
+		
+	COMMIT
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE select_data_value ( odb_table ,
+			    table     ,
+			    type_odb  )
+
+{ Select the returned value for a linked section
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: new_value
+*
+*******************************************************************************}
+
+	DECLARE link_field_array, field_count, link_field, new_value, out_val,
+	link1, version, version_field
+
+	new_value = ""
+	version = ""
+	
+	IF ( table = "MLP_HEADER" ) AND 
+	   ( odb_table = "SAMPLE" ) THEN
+	    	
+	    	version_field = "PRODUCT_VERSION"
+		version = SELECT 'odb_table' . 'version_field' 
+				IN OBJECT type_odb    		
+    	ENDIF	
+
+    	link_field_array = get_table_links( odb_table , table )
+	GET_TABLE_DETAILS 'table', "BROWSE_FIELD", out_val
+	
+	IF ( link_field_array <> EMPTY ) THEN
+	
+		field_count = size_of_array (link_field_array )
+			     		
+		WHILE (field_count <> 0) AND 
+		BLANK ( new_value ) DO
+			
+		link_field = link_field_array [ field_count ] 
+						
+			IF link_field <> EMPTY THEN
+				
+			link1 = SELECT 'odb_table' . 'link_field' 
+				IN OBJECT type_odb
+			
+				IF ( link1 <> EMPTY ) AND 
+				NOT BLANK (link1) THEN
+				
+					IF ( version <> EMPTY ) AND 
+					NOT BLANK (version) THEN
+				
+						new_value = SELECT 'table' . 'field' 
+						    	WHERE ('out_val' = link1 )
+					            	AND ( 'version_field' = version )
+					ELSE	
+						new_value = SELECT 'table' . 'field' 
+					            	WHERE 'out_val' = link1
+					ENDIF
+				ENDIF
+			ENDIF
+			field_count = field_count - 1
+		ENDWHILE
+	
+	ENDIF
+
+	RETURN ( new_value )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_table (  self  )
+
+{ Return the table the current data section specifies.
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: [TEXT]Table name
+*
+*******************************************************************************}
+
+    	RETURN(SELECT cert_section_data . link_table 
+				  IN OBJECT self . row_obj_rec)
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_filter_criteria (       self              , 
+                                                       VALUE template_identity )
+
+{ Return the criteria in the form of a select array
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: [ARRAY]Select Array
+*
+*******************************************************************************}
+	
+	DECLARE select_array, current_table
+	
+	ARRAY select_array
+	current_table = self . get_table()
+	
+	
+	
+	coa_data_criteria_read ( template_identity,
+				 self . identity,
+				 current_table,
+				 select_array )
+				 
+	RETURN ( select_array )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_filter_library (  self  )
+
+{ Return the filter library
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: [TEXT]Library
+*
+*******************************************************************************}
+
+    	RETURN(SELECT cert_section_data . filter_library 
+				  IN OBJECT self . row_obj_rec)
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE cert_data_section_action_get_filter_routine (  self  )
+
+{ Return the filter routine
+*
+* Parameters 	: Self , [CERT_DATA_SECTION]
+*
+* Return Value	: [TEXT]Routine name
+*
+*******************************************************************************}
+
+    	RETURN(SELECT cert_section_data . filter_routine 
+				  IN OBJECT self . row_obj_rec)
+	
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

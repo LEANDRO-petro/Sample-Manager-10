@@ -1,0 +1,719 @@
+{******************************************************************************
+*
+* Module Name   : $PIMS_TAG_EDIT
+*
+* Purpose       : Second Page LTE for PIMS Tag definition
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001  18/02/2014	THM   Integração com o PIMS para a Bacia de Campos
+002  18/03/2015   LLV   Inibir edição de campos com valores inválidos
+}
+
+ENABLE WINDOWS
+SET NAME "DISPLAY/"
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_VGL
+JOIN STANDARD_LIBRARY STD_WINDOW
+
+JOIN LIBRARY $LIB_LIST_CHOOSER
+JOIN LIBRARY $EXPLORER_UTILS
+JOIN LIBRARY $CRITERIA_CACHE
+JOIN LIBRARY $LIST_EDITOR
+JOIN LIBRARY $LABTABLIB
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $PIMS_TAG_FIELDS
+
+SET NOTPROTECTED
+
+DECLARE the_list_editor
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_edit ( VALUE identity        , 
+                        VALUE copied_identity ,
+                        VALUE operation       )
+
+{
+*
+*	The LTE Entry Tag for Aux Fields
+*
+*
+*******************************************************************************}
+
+	DECLARE answer
+
+	IF operation = "PRINT" THEN
+
+		print_details ( identity )
+
+	ELSE
+
+		answer = other_details ( identity, copied_identity, operation )
+		RETURN ( answer )
+
+	ENDIF
+
+ENDROUTINE { aux_fields }
+
+{******************************************************************************}
+
+ROUTINE print_details ( VALUE identity ) 
+
+{
+*
+*	Routine to call when printing the LTE.
+*
+*
+*******************************************************************************}
+
+	DECLARE field_details, field_count, header_line, status
+	ARRAY field_details ARRAY_SIZE ( 0 , 2 )
+	
+	field_count = 1
+
+	field_details [  field_count , 1 ] = "TAG"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_TAG", 1 )
+	
+	field_count = field_count + 1
+	
+	field_details [  field_count , 1 ] = "ACCESS_MODE"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_ACCESS", 1 )
+	
+	field_count = field_count + 1
+
+	field_details [  field_count , 1 ] = "PARAMETER"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_PARAMETER", 1 )
+	
+	field_count = field_count + 1
+	
+	field_details [  field_count , 1 ] = "STATUS"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_STATUS", 1 )
+	
+	field_count = field_count + 1
+	
+	field_details [  field_count , 1 ] = "ATTEMPTS"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_ATTEMPTS", 1 )
+	
+	field_count = field_count + 1
+	
+	field_details [  field_count , 1 ] = "TIME_TABLE"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_TIME_TABLE", 1 )
+	
+	field_count = field_count + 1
+	
+	field_details [  field_count , 1 ] = "TIME_FIELD"
+	field_details [  field_count , 2 ] = GET_USER_MESSAGE ( "PIMS_TAG_TIME_FIELD", 1 )
+	
+	status = pims_tag_fields_print_details ( field_count, field_details )
+	
+	IF ( status <> EMPTY ) THEN
+	
+		flash_message ( status, TRUE )
+		
+	ELSE
+	
+		header_line = GET_USER_MESSAGE ( "PIMS_LTE_TAG_LIST" , 1 ) 
+
+		print_fields (  "PIMS_TAG"           ,
+		                identity             ,
+		                header_line          ,
+		                ""                   ,
+		                2                    ,
+		                28                   ,
+		                field_details        )
+		                
+	ENDIF
+
+ENDROUTINE { print_option }
+
+{******************************************************************************}
+
+ROUTINE other_details ( VALUE identity        , 
+                        VALUE copied_identity ,
+                        VALUE operation       )
+{ 
+*
+*	Handle the Data.
+*
+*
+*******************************************************************************}
+    
+	DECLARE prompt_details, answer, heading
+
+	initialise ( prompt_details, heading )
+
+	list_editor_create_object ( the_list_editor )
+
+	the_list_editor . table         = "PIMS_TAG"
+	the_list_editor . header        = GET_USER_MESSAGE( "PIMS_LTE_TAG_TOP_LINE" ,1 )
+	the_list_editor . footer        = GET_USER_MESSAGE( "PIMS_LTE_TAG_BOT_LINE" ,1 )
+	the_list_editor . pre_insert    = "PRE_INSERT_ROUTINE"
+	the_list_editor . post_insert   = EMPTY
+	the_list_editor . delete        = EMPTY
+	the_list_editor . select        = EMPTY 
+	the_list_editor . library       = GLOBAL ( "CURRENT_LIBRARY" )
+	the_list_editor . compatability = PROMPT_DETAILS_310
+	the_list_editor . validation    = "CHECK_ALL"
+	the_list_editor . check_move    = "CHECK_MOVE"
+
+	the_list_editor . setup_prompt_details ( prompt_details,
+	                                         heading       )
+
+	answer = the_list_editor . operation ( identity       ,
+	                                       copied_identity,
+	                                       operation      )
+
+	RETURN ( answer ) 
+
+ENDROUTINE { other_option }
+
+{******************************************************************************}
+
+ROUTINE initialise ( prompt_details  ,
+                     heading         )
+
+{ Initialise the Field List.
+*
+* Parameters   : Prompt_Details - The Details Array
+*                Heading        - The Heading Line.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE head_count, col_head, count, status
+	ARRAY prompt_details ARRAY_SIZE ( 0 , 6 )
+
+	{***********************************************************************
+	* Set up the list of fields to be processed.
+	***********************************************************************}
+
+	count = 1
+	
+	prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "PIMS_TAG_TAG", 1 )
+	prompt_details [ count , 2 ] = "DISPLAY"
+	prompt_details [ count , 3 ] = "PIMS_TAG"
+	prompt_details [ count , 4 ] = "TAG"
+	prompt_details [ count , 5 ] = 0
+	prompt_details [ count , 6 ] = 30
+
+	count = count + 1
+
+	prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "PIMS_TAG_ACCESS", 1 )
+	prompt_details [ count , 2 ] = "FORMAT"
+	prompt_details [ count , 3 ] = "PIMS_TAG"
+	prompt_details [ count , 4 ] = "ACCESS_MODE"
+	prompt_details [ count , 5 ] = 0
+	prompt_details [ count , 6 ] = 10
+
+	count = count + 1
+
+	prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "PIMS_TAG_PARAMETER", 1 )
+	prompt_details [ count , 2 ] = "FORMAT"
+	prompt_details [ count , 3 ] = "PIMS_TAG"
+	prompt_details [ count , 4 ] = "PARAMETER"
+	prompt_details [ count , 5 ] = 0 
+	prompt_details [ count , 6 ] = 20
+
+	count = count + 1
+
+	prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "PIMS_TAG_TIME_TABLE", 1 )
+	prompt_details [ count , 2 ] = "ROUTINE"
+	prompt_details [ count , 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	prompt_details [ count , 4 ] = "pims_time_table_prompt"
+	prompt_details [ count , 5 ] = 0 
+	prompt_details [ count , 6 ] = 15
+
+	count = count + 1
+
+	prompt_details [ count , 1 ] = GET_USER_MESSAGE ( "PIMS_TAG_TIME_FIELD", 1 )
+	prompt_details [ count , 2 ] = "ROUTINE"
+	prompt_details [ count , 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	prompt_details [ count , 4 ] = "pims_time_field_prompt"
+	prompt_details [ count , 5 ] = 0 
+	prompt_details [ count , 6 ] = 15
+
+	{*** Complete the prompt details array by including the tag mapping fields ***}
+	
+	status = pims_tag_fields_prompt_details ( count, prompt_details )
+	
+	IF ( status <> EMPTY ) THEN
+	
+		flash_message ( status, TRUE )
+		
+	ELSE
+
+		{*** Build up the Heading Line from the field list ***}
+
+		head_count = 1
+		heading    = ""
+
+		WHILE head_count <= count DO
+
+			col_head = PAD ( prompt_details [ head_count, 1 ], " ",
+			           prompt_details [ head_count, 6 ]       )
+
+			heading    = heading : col_head : " "
+			head_count = head_count + 1 
+
+		ENDWHILE
+		
+	ENDIF
+
+ENDROUTINE { initialise }
+
+{******************************************************************************}
+
+ROUTINE pre_insert_routine ( self        ,
+                             grid        ,
+                             cell_column ,
+                             cell_row    ,
+                             window      ,
+                             column      ,
+                             row         ,
+                             cell_width  ,
+                             cell_height ,
+                             new_value   )
+
+{ 
+* 
+*	Routine to insert a row. 
+*
+*
+*******************************************************************************}
+
+	PROMPT FOR new_value
+	    ON LINE   row
+	    FROM      column
+	    TO        column + cell_width - 1
+	    IN WINDOW window 
+
+ENDROUTINE { pre_insert }
+
+{******************************************************************************}
+
+ROUTINE check_move (       the_list_editor ,
+                           grid            ,
+                     VALUE current_column  ,
+                     VALUE current_row     ,
+                           new_column      ,
+                           new_row         )
+
+{ 
+* 
+*	Check move routine!
+*
+*
+*******************************************************************************}
+
+	DECLARE obj, time_table
+
+	IF new_column = 6 THEN
+	
+		obj = the_list_editor . get_object ( new_row )
+	
+		time_table = SELECT pims_tag . time_table IN OBJECT obj
+		
+		IF ( BLANK ( time_table ) ) THEN
+		
+			new_column = current_column
+			new_row    = current_row
+		
+		ENDIF
+		
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE check_all ( self )
+
+{ 
+*
+*	List Editor validation routine
+* 
+*******************************************************************************}
+
+	DECLARE max, obj, count, valid
+	
+	max = self . grid . cell_rows - 1
+	
+	count = 1
+	
+	valid = TRUE
+	
+	WHILE ( count <= max ) 
+	AND   ( valid        ) DO
+	
+		obj = self . get_object ( count ) 
+		
+		IF ( obj <> EMPTY ) THEN
+		
+			valid = check_pims_tag ( obj ) 
+			
+		ENDIF
+		
+		count = count + 1
+	
+	ENDWHILE
+
+	RETURN ( valid )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE check_pims_tag ( obj )
+
+{ 
+*
+*	Validates a PIMS Tag
+* 
+*******************************************************************************}
+
+	DECLARE valid, pims_tag, access, comp_name
+	DECLARE time_table, time_field, message, natureza
+	DECLARE local, ponto, poco
+
+	valid = FALSE
+	
+	{*** Read values from tag object ***}
+	
+	pims_tag   = SELECT pims_tag . tag           IN OBJECT obj
+	access     = SELECT pims_tag . access_mode   IN OBJECT obj
+	comp_name  = SELECT pims_tag . parameter     IN OBJECT obj
+	time_table = SELECT pims_tag . time_table    IN OBJECT obj
+	time_field = SELECT pims_tag . time_field    IN OBJECT obj
+      {** LLV 18/02/2014 Begin                                       *}
+	{** natureza = SELECT pims_tag . natureza    IN OBJECT obj     *}
+	{** local = SELECT pims_tag . location_id    IN OBJECT obj     *}
+	{** ponto = SELECT pims_tag . sampling_point IN OBJECT obj     *}
+
+      natureza = SELECT pims_tag . family_name     IN OBJECT obj
+      local    = SELECT pims_tag . point_location  IN OBJECT obj
+	ponto    = SELECT pims_tag . sampling_point  IN OBJECT obj
+      poco     = SELECT pims_tag . poco            IN OBJECT obj 
+      {** LLV 18/02/2014 End                                         *}
+
+	{*** Check mandatory fields ***}
+
+	IF  ( BLANK ( access ) ) THEN
+	
+		message_fetch ( "PIMS_LTE_NO_ACCESS_MODE", message )
+			
+	ELSEIF  ( BLANK ( comp_name ) ) THEN
+	
+		message_fetch ( "PIMS_LTE_NO_PARAMETER" , message )
+
+	ELSEIF  ( BLANK ( natureza ) ) THEN
+	
+		message_fetch ( "PIMS_LTE_NO_NATUREZA", message )
+
+	ELSEIF  ( BLANK ( local ) ) THEN
+	
+		message_fetch ( "PIMS_LTE_NO_LOCAL", message )
+
+	ELSEIF  ( BLANK ( ponto ) ) THEN
+	
+		message_fetch ( "PIMS_LTE_NO_PONTO", message )
+      {** LLV 18/02/2014 Begin                                      *}
+
+      {** ELSEIF  ( BLANK ( poco ) ) THEN                           *}
+
+	{**	message_fetch ( "PIMS_LTE_NO_POCO", message )           *}
+
+      {** LLV 18/02/2014 End                                        *}
+	ELSE
+		valid = TRUE 
+	ENDIF
+	
+	poco = poco
+	{*** Check timestamp table and field both set or both empty ***}
+	
+	IF ( valid ) THEN
+	
+		valid = FALSE
+	
+		IF  ( NOT BLANK ( time_table ) ) 
+		AND (     BLANK ( time_field ) ) THEN
+		
+			message_fetch ( "PIMS_LTE_NO_TIME_FIELD" , message ) 
+		
+		ELSEIF (     BLANK ( time_table ) ) 
+		AND    ( NOT BLANK ( time_field ) ) THEN
+		
+			message_fetch ( "PIMS_LTE_NO_TIME_TABLE" , message )
+		
+		ELSE
+		
+			valid = TRUE 
+			
+		ENDIF
+	
+	ENDIF
+
+	IF ( NOT valid )
+	
+		message_add_parameter ( message , STRIP ( pims_tag ) )
+		message = message_get_text ( message , 1 )
+		flash_message ( message, 1 )
+		
+	ENDIF	
+	
+	RETURN ( valid ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_time_table_prompt (      self        ,
+                                      grid        ,
+                                VALUE cell_column ,
+                                VALUE cell_row    ,
+                                VALUE column      ,
+                                VALUE row         ,
+                                VALUE cell_width  ,
+                                      window      ,
+                                VALUE is_display   )
+ 
+{
+*
+*	Prompt for a table for timestamp value
+*
+*******************************************************************************}
+
+	DECLARE access_mode, choose_array, time_table, original_value
+
+	time_table = SELECT pims_tag . time_table IN OBJECT self
+	
+	IF is_display THEN
+	
+		DISPLAY time_table
+		    ON LINE   row
+		    FROM      column
+		    TO        column + cell_width - 1
+		    IN WINDOW window
+		    FORMAT    pims_tag . time_table
+	
+	ELSE
+	
+		ARRAY choose_array
+
+		original_value = time_table
+		
+		access_mode = SELECT pims_tag . access_mode IN OBJECT self
+
+		IF NOT access_mode THEN
+
+			choose_array [1,1] = ""
+			choose_array [1,2] = ""
+			choose_array [2,1] = "sample" 
+			choose_array [2,2] = "sample"
+			choose_array [3,1] = "test" 
+			choose_array [3,2] = "test"
+
+		ELSE
+
+			choose_array [1,1] = ""
+			choose_array [1,2] = ""
+			choose_array [2,1] = "sample" 
+			choose_array [2,2] = "sample"
+			choose_array [3,1] = "test" 
+			choose_array [3,2] = "test"
+			choose_array [4,1] = "result" 
+			choose_array [4,2] = "result"
+
+
+		ENDIF
+
+		PROMPT FOR time_table
+		    ON LINE      row
+		    FROM         column
+		    TO           column + cell_width - 1
+		    IN WINDOW    window 
+		    CHOOSE OUTOF choose_array
+
+		IF  ( LASTKEY    <> "EXIT"         )
+		AND ( time_table <> original_value ) THEN
+		
+			ASSIGN pims_tag . time_table IN OBJECT self = time_table 
+			ASSIGN pims_tag . time_field IN OBJECT self = ""
+
+			grid . re_display_cell ( cell_column + 1 , cell_row )
+		
+            	ENDIF
+
+	ENDIF
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_time_field_prompt (      self        ,
+                                      grid        ,
+                                VALUE cell_column ,
+                                VALUE cell_row    ,
+                                VALUE column      ,
+                                VALUE row         ,
+                                VALUE cell_width  ,
+                                      window      ,
+                                VALUE is_display   )
+ 
+{
+*
+*	Prompt for a table for timestamp value
+*
+*******************************************************************************}
+
+	DECLARE time_field, time_table, time_phrase
+	
+	time_field = SELECT pims_tag . time_field IN OBJECT self
+	
+	IF is_display THEN
+	
+		DISPLAY time_field
+		    ON LINE   row
+		    FROM      column
+		    TO        column + cell_width - 1
+		    IN WINDOW window
+		    FORMAT    pims_tag . time_table	
+
+	ELSE
+	
+		time_table = SELECT pims_tag . time_table IN OBJECT self
+		
+		IF time_table = "sample" THEN
+		
+			time_phrase = "PIMSSAMPTM"
+		
+		ELSEIF time_table = "test" THEN
+		
+			time_phrase = "PIMSTESTTM"
+		
+		ELSEIF time_table = "result" THEN
+		
+			time_phrase = "PIMSRESTM"
+		
+		ENDIF
+
+		PROMPT FOR time_field
+		    ON LINE      row
+		    FROM         column
+		    TO           column + cell_width - 1
+		    IN WINDOW    window 
+		    BROWSE ON    PHRASE . 'time_phrase'
+		    {* 002 LLV 18/03/2015   Begin  *} 
+                WITH         ( VALID_ONLY = true ,
+                               ALWAYS_VALIDATE = true )
+                {* 002 LLV 18/03/2015   End    *}
+ 
+		IF ( LASTKEY <> "EXIT" ) THEN
+		
+			ASSIGN pims_tag . time_field IN OBJECT self = time_field 
+		
+            	ENDIF
+	
+	ENDIF
+
+ENDROUTINE
+
+
+{******************************************************************************}
+{*                    PIMS   T A G   G E N E R A T I O N                      *}
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_edit_exp_generate ( rmb , row , odb )
+
+{
+*
+*	Explorer action routine. 
+*	Generates Excel spreadsheet with PIMS Tag data
+*
+********************************************************************************}
+
+	DECLARE pims_server, pims_tag, pims_tags, pims_lib 
+	DECLARE do_it, first_pims_server, count, status
+	
+	status = EMPTY
+
+	ARRAY pims_tags
+
+	odb . set_first ()
+	
+	IF ( odb . current <> EMPTY ) THEN
+	
+		do_it = TRUE
+		
+	ENDIF
+
+	count = 1
+	
+	first_pims_server = SELECT pims_tag . server IN OBJECT odb . current
+	
+	WHILE ( odb . current <> EMPTY )
+	AND   ( do_it                  ) DO
+
+		pims_server = SELECT pims_tag . server IN OBJECT odb . current
+		pims_tag    = SELECT pims_tag . tag    IN OBJECT odb . current
+		
+		IF ( pims_server <> first_pims_server ) THEN
+
+			flash_message ( GET_USER_MESSAGE ( "PIMS_ERR_EXP_MULTIPLE_SERVERS" , 1 ) , TRUE )
+		
+			do_it = FALSE
+			
+		ENDIF
+		
+		pims_tags [ count ] = pims_tag
+		
+		count = count + 1
+		
+		odb . set_next ()
+		
+	ENDWHILE
+	
+	IF ( first_pims_server <> EMPTY) AND
+	   ( do_it                     ) THEN 
+	
+		pims_lib    = SELECT pims_server . pims_type
+			      WHERE identity = first_pims_server
+			      
+		CALL_ROUTINE 	"pims_tag_edit_generate"
+		USING      	pims_server , pims_tags
+		RETURNING 	status
+		IN LIBRARY 	pims_lib
+	
+	ELSE
+	
+		message_fetch ( "PIMS_ERR_INVALID_SERVER", status )
+		message_add_parameter ( status, STRIP ( first_pims_server ) )
+		status = message_get_text ( status , 1 )
+		
+	ENDIF
+	
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}
+

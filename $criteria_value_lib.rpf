@@ -1,0 +1,93 @@
+{******************************************************************************
+*
+* Module Name   : $CRITERIA_VALUE_LIB
+*
+* Purpose       : Library of routines to determine criteria values
+*
+*******************************************************************************}
+
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+SET NAME "DEFER/"
+
+ENABLE WINDOWS
+
+
+{******************************************************************************}
+
+ROUTINE today_value
+{
+* Returns the current date
+*
+*******************************************************************************}
+
+	RETURN( TODAY )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE now_value
+{
+* Returns the current time
+*
+*******************************************************************************}
+
+	RETURN( NOW )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE operator_value
+{
+* Returns the current operator id
+*
+*******************************************************************************}
+
+	RETURN( OPERATOR )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE process_id_value
+{
+* Returns the current server process id
+*
+*******************************************************************************}
+
+	RETURN( GLOBAL( "PROCESS_ID" ) )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE null_value
+{
+* Returns null
+*
+*******************************************************************************}
+
+	RETURN( NULL )
+
+ENDROUTINE
+
+ROUTINE CURRENT_SAMPLE_VALUE
+{
+* Returns the current server process id
+*
+*******************************************************************************}
+	
+	DECLARE SAMPLE_ID
+	SAMPLE_ID = SELECT SAMPLE.ID_NUMERIC
+	
+	
+	IF SAMPLE_ID <> EMPTY THEN
+		RETURN (SAMPLE_ID)
+	ELSE
+		RETURN (NULL)
+		
+	ENDIF
+
+ENDROUTINE

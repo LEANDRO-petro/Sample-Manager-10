@@ -1,0 +1,352 @@
+JOIN LIBRARY $LIB_UTILS
+join STANDARD_LIBRARY STD_ARRAY
+join STANDARD_LIBRARY STD_GENERAL
+join STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_DDE
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_WINDOW
+JOIN LIBRARY $RESULT_SPREADSHEET
+JOIN LIBRARY $WKSBROWSE
+JOIN LIBRARY $LIB_RE_GLOBALS
+
+
+SET NAME "DEFER/"
+ENABLE WINDOWS
+SET NOTPROTECTED
+
+CONSTANT DEV  =  " http://dsv-eplab.petrobras.biz/BoletimManual/Index?Parametro=" 
+CONSTANT HMG  =  " http://hmg-eplab.petrobras.biz/BoletimManual/Index?Parametro=" 
+CONSTANT PROD =  " http://eplab.petrobras.biz/BoletimManual/Index?Parametro="  
+CONSTANT TREI =  " http://hmg-eplab.petrobras.biz/BoletimManual/Index?Parametro=" 
+
+CONSTANT BROWSER = "C:\Program Files (x86)\Mozilla Firefox\firefox.exe" 
+CONSTANT ADOBE   = "C:\Program Files (x86)\Adobe\Reader 11.0\Reader\AcroRd32.exe" 
+
+CONSTANT BANCO = "A"
+
+{******************************************************************************************************************************}
+
+GLOBAL ROUTINE link_rel_rmb (rmb_object , object , data)
+
+DECLARE status, machine_name, samp_id, string_cmd, local_id, UO, samp_stat, UO_IPL
+	
+	{ Only one at a time please }
+
+	data . set_first()
+
+		samp_id = ""
+		string_cmd = ""
+	
+		IF ( data . current <> EMPTY ) THEN
+
+			samp_id = SELECT SAMPLE . id_numeric
+				IN OBJECT data . current
+
+			local_id = SELECT SAMPLE . instalacao_id
+				IN OBJECT data . current
+
+			samp_stat = SELECT SAMPLE . status
+				IN OBJECT data . current
+
+
+		ENDIF
+		
+		IF ( samp_stat <> "X") THEN
+	       	UO  = SELECT vw_local_nivel1.UO WHERE IDENTITY = local_id 
+			CHAMADA_IPL (SAMP_ID, UO) 
+		ELSE
+			flash_message ( "Não é possível gerar boletim para amostra cancelada", TRUE )
+
+		ENDIF
+
+ENDROUTINE {link_rel_rmb}
+
+{******************************************************************************************************************************}
+
+ROUTINE CHAMADA_IPL (sample_id, UO)
+
+DECLARE machine_name,  string_cmd
+
+	machine_name = TOUPPER(SUBSTRING( GLOBAL ("PDAFILEPATH"),3,8 ))
+
+	IF     machine_name = "SBCAS217" THEN string_cmd = BROWSER : PROD : STRIP(STRING(samp_id)) : "$" : STRIP(local_id) : "$" : STRIP(BANCO)
+	ELSEIF machine_name = "SBCAS218" THEN string_cmd = BROWSER : TREI : STRIP(STRING(samp_id)) : "$" : STRIP(local_id) : "$" : STRIP(BANCO)
+	ELSEIF machine_name = "SBCAS215" THEN string_cmd = BROWSER : HMG : STRIP(STRING(samp_id))  : "$" : STRIP(local_id) : "$" : STRIP(BANCO)
+	ELSEIF machine_name = "SBCAS219" THEN string_cmd = BROWSER : DEV : STRIP(STRING(samp_id))  : "$" : STRIP(local_id) : "$" : STRIP(BANCO)
+	ENDIF
+	
+	dde_winexec ( string_cmd, "SW_SHOWMAXIMIZED", status )
+		
+	IF status <> EMPTY THEN
+		flash_message ( "Falha ao executar a URL. Código do erro = " : status : ".", TRUE )
+		ret = FALSE
+	ELSE
+		ret = TRUE	
+	ENDIF
+
+ENDROUTINE
+	
+{******************************************************************************************************************************}
+
+ROUTINE boletim_single_sample (VALUE mode)
+
+        DECLARE sample_id , sample_text , samp_numeric_string , tsr_header ,
+		tsr_footer , samp_text_string , window_width , prompt_form ,
+		title_width , samp_text_title , samp_id_title, samp_id, local_id, UO, string_cmd, samp_stat   
+
+
+        tsr_header = "Gerar Boletim por Amostra"
+	  tsr_footer = " "
+	  
+
+        message_fetch ( "RES_ENTRY_DISPLAY_1", samp_numeric_string )
+        message_fetch ( "RES_ENTRY_DISPLAY_2", samp_text_string )
+      
+        title_width = 12
+	  window_width = 50
+
+	create_prompt_form ( prompt_form  ,
+	                     window_width ,
+	                     2            ,
+	                     tsr_header   ,
+	                     tsr_footer   )
+
+	PROMPT OBJECT samp_id_title
+		FORMAT TEXT
+                ON LINE 1 FROM 1
+		WITH ( bold   = TRUE                ,
+		       width  = title_width         ,
+		       value  = samp_numeric_string )
+
+	prompt_form . add_display ( samp_id_title )
+
+	PROMPT OBJECT samp_text_title
+		FORMAT TEXT
+                ON LINE 2 FROM 1
+		WITH ( bold   = TRUE             ,
+		       width  = title_width      ,
+		       value  = samp_text_string )
+
+	prompt_form . add_display ( samp_text_title )
+
+	PROMPT OBJECT sample_id
+                BROWSE ON sample
+                THEN select
+                ON LINE 1 FROM title_width + 2
+
+	prompt_form . add_prompt ( sample_id )
+
+	PROMPT OBJECT sample_text
+                BROWSE ON sample . id_text
+                ON LINE 2 FROM title_width + 2
+		WITH ( lowered = TRUE )
+
+	prompt_form . add_display ( sample_text )
+
+        IF GLOBAL ( "TERMTYPE" ) = "GUI" THEN
+
+		samp_id_title . column = 1
+		samp_id_title . row = 1
+
+		sample_id . column = title_width + 2
+		sample_id . row = 1
+
+		samp_text_title . column = 1
+		samp_text_title . row = 2
+
+		sample_text . column = title_width + 2
+		sample_text . row = 2
+
+	ENDIF
+
+	prompt_form . start_prompt ()
+
+        { Now everythings setup do some prompting }
+
+	prompt_form . set_position( sample_id . tag )
+
+	prompt_form . wait_prompt ()
+
+	WHILE prompt_form . get_lastkey () <> "EXIT" DO
+
+		sample_text . set_text ( SELECT sample . id_text
+					       IN OBJECT sample_id )
+
+		prompt_form . set_enabled ( FALSE )
+		
+		window_set_status ( GET_USER_MESSAGE ( "RES_ENTRY_LOADING", 1 ))
+
+		prompt_form . unpaste ( )
+
+		SET GLOBAL "PARAM_ACTIVE" TO FALSE
+            {**************************************}
+	
+
+		samp_id = sample_id . value
+		local_id = SELECT SAMPLE . instalacao_id WHERE id_numeric = SAMP_ID
+		samp_stat = SELECT SAMPLE . status WHERE id_numeric = SAMP_ID		
+		
+		IF ( samp_stat <> "X") THEN
+	       	UO  = SELECT vw_local_nivel1.UO WHERE IDENTITY = local_id 
+ 			CHAMADA_IPL (SAMP_ID, UO) 
+		ELSE
+			flash_message ( "Não é possível gerar boletim para amostra cancelada", TRUE )
+
+		ENDIF
+		
+		
+            {**************************************}
+
+
+		SET GLOBAL "PARAM_ACTIVE" TO TRUE
+
+		prompt_form . repaste ( )
+
+		prompt_form . set_enabled ( TRUE )
+
+		prompt_form . set_position( sample_id . tag )
+
+		prompt_form . wait_prompt ()
+
+	ENDWHILE
+
+	prompt_form . end_prompt ()
+
+
+ENDROUTINE
+
+{******************************************************************************************************************************}
+
+ROUTINE create_prompt_form (       prompt_form     ,
+                             VALUE window_width    ,
+                             VALUE number_of_lines ,
+                                   window_header   ,
+                                   window_footer   )
+
+	DECLARE results_button, close_button
+
+	CREATE OBJECT PROMPT_CLASS_FORM , prompt_form
+
+	prompt_form . height = number_of_lines + 3
+	prompt_form . width  = window_width
+	prompt_form . row    = 11
+	prompt_form . column = ROUND ( ( GLOBAL ( "SCREEN_WIDTH" ) -
+					window_width  ) / 2 )
+	prompt_form . border = TRUE
+	prompt_form . header = window_header
+	prompt_form . footer = window_footer
+	prompt_form . proportional = TRUE
+	prompt_form . return_behaviour = FORM_RETURN_LEAVE
+	prompt_form . button_style = FORM_BUTTON_NONE
+	prompt_form . prompt_id    = "$RES_ENTRY_SELECT_" :
+	                             SUBSTITUTE( prompt_form . width : "_" : prompt_form . height, " ", "" )
+	                             
+	
+	PROMPT OBJECT results_button
+	    CLASS "STD_PROMPT_BUTTON"
+	        ON LINE prompt_form . height - 1
+	        FROM prompt_form . width - 40 TO prompt_form . width - 30
+	        WITH ( caption = "Gerar"							,
+	               send_last_key = "DO"                                      )
+	prompt_form . add_prompt ( results_button )
+
+	PROMPT OBJECT close_button
+	    CLASS "STD_PROMPT_BUTTON"
+	        ON LINE prompt_form . height - 1
+	        FROM prompt_form . width - 26 TO prompt_form . width - 18
+	        WITH ( caption = GET_USER_MESSAGE("SMP_PROMPT_BUTTON_CLOSE",1) ,
+	               send_last_key = "EXIT"                                   )
+	prompt_form . add_prompt ( close_button )
+
+ENDROUTINE
+
+{******************************************************************************************************************************}
+
+GLOBAL ROUTINE link_FISPQ(rmb_object , object , data)
+
+DECLARE string_cmd, fispq_arquivo, machine_name	
+
+	machine_name = TOUPPER(SUBSTRING( GLOBAL ("PDAFILEPATH"),3,8 ))	
+
+	{ Only one at a time please }
+
+	data . set_first()
+
+	fispq_arquivo = ""
+	
+	IF ( data . current <> EMPTY ) THEN
+		fispq_arquivo = SELECT SUBSTANCE . SDS
+				IN OBJECT data . current	
+	ENDIF
+
+	IF (NOT BLANK(fispq_arquivo))				
+		string_cmd = ADOBE : " " :ASCII(34) : "\\": machine_name: "\Thermo\SampleManager\Server\VGSM_PRD\Text\FISPQ\" : STRIP(fispq_arquivo)  : ASCII(34)
+		dde_winexec ( string_cmd, "SW_SHOWMAXIMIZED", status )	
+	
+	ELSE 
+		flash_message ( "Não existe FISPQ associada a substância! ", TRUE )	
+	ENDIF
+
+ENDROUTINE {link_FISPQ}
+
+{******************************************************************************************************************************}
+
+ROUTINE MONTAR_UO (sample_id, UO)
+
+DECLARE local_type,  UO_IPL, sonda_type, local_name
+	
+	local_type = SELECT LOCATION . location_type WHERE  LOCATION . IDENTITY = local_id 
+
+	local_name = SELECT LOCATION . name WHERE LOCATION . IDENTITY = local_id 
+	
+	local_parent_id  = SELECT LOCATION . parent_location WHERE LOCATION . IDENTITY = local_id 
+
+	local_parent_name = SELECT LOCATION . NAME WHERE LOCATION . IDENTITY = local_parent_id
+
+
+	IF ((local_id = "TABR")OR(local_id = "TRANSPETRO_SE")OR(local_id = "TABR")OR(local_id = "TASSE")OR              
+	   (local_id = "TERMINAL_CABIUNAS")OR(local_id = "TERMINAL_INTERMODAL")OR(local_id = "TQTRA")OR(local_id = "TRANS")OR(local_id = "TPETR"))              
+       	
+		UO_IPL = "TRANSPETRO_ATIVO_TERRESTRE"
+		RETURN (UO_IPL)
+	ENDIF
+
+	IF (local_type = "IM") THEN
+		UO_IPL = STRIP(UO) : "_ATIVO_PRODUCAO_MARITIMO"
+	ELSE
+		IF (local_type = "IT") THEN
+			UO_IPL = STRIP(UO) : "_ATIVO_PRODUCAO_TERRESTRE"
+		ELSE
+			IF (local_type = "PREDIO_ADM") THEN	
+		  		UO_IPL = SUBSTITUTE ( STRIP(local_parent_name), " ","%" ) 
+			ELSE
+				IF (local_type = "BASES_ADM") THEN
+					UO_IPL = SUBSTITUTE ( STRIP(local_name), " ","%" ) 
+				ELSE
+					IF (local_type = "SONDA") THEN
+						sonda_type = SELECT VW_INSTALACAO_PRODUCAO.TIPO_INSTALACAO WHERE VW_INSTALACAO_PRODUCAO.SIGLA_INSTALACAO = LOCAL_NAME
+						IF (sonda_type = "IM") THEN UO_IPL = "SONDAS_ATIVO_PRODUCAO_MARITIMO" ENDIF
+						IF (sonda_type = "IT") THEN UO_IPL = "SONDAS_ATIVO_PRODUCAO_TERRESTRE" ENDIF 
+
+					ELSE
+						flash_message ( "Não foi possível abrir o boletim - Favor contactar o administrador do sistema ", TRUE )	
+						RETURN (FALSE)
+					ENDIF
+				ENDIF					
+			ENDIF	
+		ENDIF
+	ENDIF
+	
+	RETURN (UO_IPL)
+
+ENDROUTINE
+	
+{******************************************************************************************************************************}
+
+
+
+
+
+

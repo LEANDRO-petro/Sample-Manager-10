@@ -1,0 +1,142 @@
+
+{******************************************************************************
+*
+* Nome do módulo: EP_PIMS_ENVIAR.RPF
+*
+* Objetivo      : Envio de resultados para o PIMS em batelada
+*
+* Autor         : MVS
+*
+* Data          : 04-10-2004
+*
+*
+******************************************************************************}
+{
+          Implementação  CYBERTECNICA - PETROBRAS - LI-SM-BR/UNBC/LF
+        ==============================================================
+  			HISTÓRICO DE MODIFICAÇÕES
+
+ >>> No		AUTOR	DATA		DESCRIÇÃO
+
+}
+
+{ **** Configurações Iniciais **** }
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+SET NOTPROTECTED
+SET NAME "DISPLAY/"
+
+{ **** Inclusão de Bibliotecas Padrão **** }
+JOIN STANDARD_LIBRARY STD_PROMPT
+
+{ **** Inclusão de Bibliotecas VGL **** }
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $PIMS_LIB
+
+{ **** Início da Programação **** }
+principal ( EMPTY )
+
+{=============================================================================
+
+ Rotina         : principal
+ Objetivo       : programa principal para chamar o envio de resultados ao PI
+ Input Params   : menu   ->  opção de menu
+ Output Params  : -
+ Observação     : somente resultados na base ATIVA são enviados, COMMITTED NÃO!
+
+==============================================================================}
+ROUTINE principal ( VALUE menu )
+
+DECLARE data_inicio, form
+
+{ * Buscar data de início }
+{ * Criar prompt para pedir data }
+CREATE OBJECT "STD_FORM", form
+
+form . row = 3
+form . column = 10
+form . height = 3
+form . width = 30
+form . border = TRUE
+form . header = "Envio de resultados para o PI"
+form . return_behaviour = FORM_RETURN_LEAVE
+form . add_display ( "Data Inicial:" , 1 , 1 , PROMPT_RENDITION_RAISED )
+
+{ * Criar o prompt para a entrada da data inicial }
+PROMPT OBJECT data_inicio ON LINE 1 FROM 12
+	BROWSE ON date
+form . add_prompt ( data_inicio )
+
+{ * Perguntar a data de início }
+form . start_prompt()
+form . wait_prompt()
+form . end_prompt()
+
+{ * Se não houver nenhuma data, cai fora }
+IF BLANK(data_inicio.value) THEN
+	EXIT
+ENDIF
+
+{ * Chamar a rotina de envio de resultados pela data }
+pi_enviar_resultados ( data_inicio.value )
+
+{ * Final da execução }
+flash_message ("Final do envio de resultados! Verifique no arquivo de log para mais detalhes!", TRUE)
+
+ENDROUTINE { Fim de principal }
+
+{=============================================================================
+
+ Rotina         : pi_enviar_resultados
+ Objetivo       : enfileirar resultados para serem enviados ao PI
+ Input Params   : data_inicial -> a data de início da consulta (date_authorised)
+ Output Params  : -
+ Observação     : -
+
+==============================================================================}
+ROUTINE pi_enviar_resultados ( data_inicial )
+
+DECLARE status, comp_name, test_number, data_final
+
+{ * Iniciar transação de escrita para que a rotina padrão não dê commited antes da hora }
+START WRITE TRANSACTION "Não commite agora"
+
+{ * Fazer a consulta }
+data_inicial = "09/03/2014"
+data_final   = "10/03/2014"
+
+data_inicial = DATE ( data_inicial )
+data_final   = DATE ( data_final   )
+
+{* test_number = SELECT result . test_number                                     *}
+{*			WHERE (status = "A") AND (date_authorised > data_inicial)      *}
+
+test_number = SELECT result . test_number
+			WHERE (status = "A") AND (date_authorised >= data_inicial)
+								AND (date_authorised < data_final )
+
+{ * Para cada linha, tentar enviar o resultado }
+WHILE (test_number <> EMPTY) DO
+
+	{ * Chama rotina padrão de envio }
+	comp_name = SELECT result . name
+	status = pims_lookup_and_send_result ( test_number , comp_name, "Add" )
+
+	IF ( status <> EMPTY ) THEN
+		flash_message ( status , TRUE ) 
+		flash_message ( GET_USER_MESSAGE ( "PI_ERR_AUTH_FAILED" , 1 ) , TRUE )
+	ENDIF
+
+	{ * Próximo resultado }
+	NEXT result
+	test_number = SELECT result.test_number
+
+ENDWHILE
+
+{ * Realizar o commit }
+COMMIT
+
+ENDROUTINE { Fim de pi_enviar_resultados }
+
+
+

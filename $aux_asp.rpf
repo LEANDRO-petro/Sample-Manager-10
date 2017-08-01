@@ -1,0 +1,434 @@
+{******************************************************************************
+*
+* Module Name   : $AUX_ASP
+*
+* Purpose       : Template created using $AUXSETUP.
+*                 Authorise Sample
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Checar data de amostragem no futuro
+002 08/01/2013  Remover campo Authorization Notes
+003 08/01/2013  Adicionado formulario para solicitar justificativa.
+004 09/11/2015  Critica para autorização menor que data de amostragem
+}
+
+SET NOTPROTECTED
+JOIN LIBRARY $AUX_LIB
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_JOB_VALIDATE
+JOIN STANDARD_LIBRARY STD_PROMPT
+
+JOIN STANDARD_LIBRARY STD_DATABASE
+
+join STANDARD_LIBRARY STD_ARRAY
+join STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_USER_GLOBAL
+
+
+SET NAME "DISPLAY/"
+ENABLE WINDOWS
+
+CONSTANT DISPLAY_RESULTS_MENUNUMBER = 249
+
+Array prompt_text
+Array table_names
+Array change_stat ARRAY_SIZE (3) = " "
+
+Array display_details ARRAY_SIZE ( 0 , 6 )
+Array prompt_details ARRAY_SIZE ( 0 , 6 )
+
+
+{***********************************************************************}
+{                   USER INPUT BEGINS HERE                              }
+{***********************************************************************}
+
+{SECTION A - SCREEN SETUP}
+{specify the header text for the command window}
+{ie header_txt =  "Change Sample Status"}
+
+    header_txt = GET_USER_MESSAGE("AUX_ASP_HEADER_TXT" ,1)
+
+{specify footer text for the command window }
+
+    footer_txt = GET_USER_MESSAGE("AUX_ASP_FOOTER_TXT" ,1)
+
+{specify the text string to be displayed upon        }
+{successful completion of the command                }
+{ie success_txt = "Sample Status Changed"            }
+
+  success_txt  = GET_USER_MESSAGE("AUX_ASP_SUCCESS_TXT" ,1)
+
+{specify the text string to be displayed upon        }
+{abortion from the command                           }
+{ie abort_txt =   "Change Sample Status Aborted"     }
+
+  abort_txt    = GET_USER_MESSAGE("AUX_ASP_ABORT_TXT" ,1)
+
+{specify the sample statuses allowable within the    }
+{browse list for this command if sample identity     }
+{is prompted for.                                    }
+
+  samp_stat_allowed  = "C"
+  job_stat_allowed   = "AVCX"
+  test_stat_allowed        =  ""
+
+{SECTION B - INITIAL PROMPTS }
+
+{Specify the tables that the initial prompts browse  }
+{upon .                                              }
+
+   table_names [ 1 ]    = "SAMPLE"
+{  table_names [ 2 ]    = "TEST"}
+
+
+{Specify the initial prompt fields and the associated}
+{prompt text strings                                 }
+
+  prompt_text [ 1 ]    = GET_USER_MESSAGE("AUX_ASP_PROMPT_TXT" ,1)
+ {prompt_text [ 2 ]    = "Enter Test Name"}
+
+{SECTION C - DISPLAY INFORMATION}
+
+{The user may require a header for the display area }
+{Any descriptive text may be used here              }
+
+    mess_area_one = ""
+
+{Specify the fields which require displaying with the}
+{appropriate descriptive text string                 }
+
+{Display fields from prompt_table[1] : }
+
+  display_details [ 1, MESSAGE_POSITION    ]   = GET_USER_MESSAGE("AUX_ASP_DISPLAY_1" ,1)
+  display_details [ 1, TYPE_POSITION       ]   = "DISPLAY"
+  display_details [ 1, TABLE_NAME_POSITION ]   = "SAMPLE"
+  display_details [ 1, FIELD_NAME_POSITION ]   = "ID_TEXT"
+
+  display_details [ 2, MESSAGE_POSITION    ]   = GET_USER_MESSAGE("AUX_ASP_DISPLAY_2" ,1)
+  display_details [ 2, TYPE_POSITION       ]   = "DISPLAY"
+  display_details [ 2, TABLE_NAME_POSITION ]   = "SAMPLE"
+  display_details [ 2, FIELD_NAME_POSITION ]   = "STATUS"
+
+{Display fields from prompt_table[2] : }
+
+ {display_details [ 1, MESSAGE_POSITION    ]   = ""
+  display_details [ 1, TYPE_POSITION       ]   = ""
+  display_details [ 1, TABLE_NAME_POSITION ]   = ""
+  display_details [ 1, FIELD_NAME_POSITION ]   = ""
+
+  display_details [ 2, MESSAGE_POSITION    ]   = ""
+  display_details [ 2, TYPE_POSITION       ]   = ""
+  display_details [ 2, TABLE_NAME_POSITION ]   = ""
+  display_details [ 2, FIELD_NAME_POSITION ]   = ""
+
+  display_details [ 3, MESSAGE_POSITION    ]   = ""
+  display_details [ 3, TYPE_POSITION       ]   = ""
+  display_details [ 3, TABLE_NAME_POSITION ]   = ""
+  display_details [ 3, FIELD_NAME_POSITION ]   = ""}
+
+
+  {SECTION D - FIELD ASSIGNMENT                }
+
+{  This section is divided into three areas; }
+{                                            }
+{         (1) Interactive Update             }
+{         (2) Non-interactive Update         }
+{         (3) Status Change Update           }
+
+{----------------------------------------------------}
+{  1.   I N T E R A C T I V E   U P D A T E          }
+{----------------------------------------------------}
+
+{Specify the fields which require Updating and also  }
+{require a user input.Define the text string         }
+{associated with the input along with the browse type}
+
+
+  {Update fields associated with prompt_table[1]}
+  {Interactive_browse may be filled with either }
+  {the browse table_name.field or a number to   }
+  {define the size of the prompted field ie "10"}
+  {or if no browse required " ".                }
+
+{The user may require a header for the prompt area. }
+{ Any descriptive text may be used here.            }
+
+  mess_area_two = ""
+
+{ 002	\/}
+
+{  prompt_details [ 1 , MESSAGE_POSITION    ]  = "Justificativa"   }
+{  prompt_details [ 1 , TYPE_POSITION       ]  = "FORMAT"          }
+{  prompt_details [ 1 , TABLE_NAME_POSITION ]  = "SAMPLE"          }
+{  prompt_details [ 1 , FIELD_NAME_POSITION ]  = "JUSTIFICATIVA"   }
+
+{  prompt_details [ 2 , MESSAGE_POSITION    ]  = "Comentários"     }
+{  prompt_details [ 2 , TYPE_POSITION       ]  = "FORMAT"          }
+{  prompt_details [ 2 , TABLE_NAME_POSITION ]  = "SAMPLE"          }
+{  prompt_details [ 2 , FIELD_NAME_POSITION ]  = "COMENTARIOS"     }
+
+{
+  prompt_details [ 1 , MESSAGE_POSITION    ]  = GET_USER_MESSAGE ( "AUX_ASP_DISPLAY_3", 1 )
+  prompt_details [ 1 , TYPE_POSITION       ]  = "FORMAT"
+  prompt_details [ 1 , TABLE_NAME_POSITION ]  = "SAMPLE"
+  prompt_details [ 1 , FIELD_NAME_POSITION ]  = "AUTHORISATION_NOTES"
+}
+{ 002	/\}
+
+{-----------------------------------------------------}
+{   2.   S T A T U S    C H A N G E   U P D A T E     }
+{-----------------------------------------------------}
+
+
+{  Non interactive update of the status field        }
+{  is defined within the array change_stat[n]        }
+{  where n = the array element that defines the      }
+{  table associated with the status in the array     }
+{  prompt_table[n].                                  }
+{  To update sample.status to "V" the user would     }
+{  define change_stat[1] = "V" where prompt_table[1] }
+{   = "SAMPLE"                                       }
+{  If the status change should be back to the old    }
+{  status change_stat[n] = "OLD_STATUS".             }
+
+   change_stat[1] = "A"
+
+
+{*************************************************}
+{             END  OF  USER  INPUT                }
+{*************************************************}
+
+aux_generator (  header_txt ,
+		 footer_txt ,
+	       	 mess_area_one ,
+		 mess_area_two  ,
+                 samp_stat_allowed ,
+                 job_stat_allowed ,
+                 test_stat_allowed ,
+		 prompt_text       ,
+		 table_names       ,
+                 change_stat                  ,
+                 global ( "current_library" ) ,
+	       	 Success_txt ,
+		 Abort_txt   ,
+		 TRUE      ,
+		 display_details ,
+		 prompt_details  ,
+		 "Read Transaction"  ,
+		 "Write Transaction" )
+
+
+{*************************************************}
+{             Action Routine                      }
+{*************************************************}
+
+ROUTINE action ( VALUE first_id, VALUE second_id )
+
+	SET GLOBAL "SAMPAUTHNOTE" TO ( SELECT sample . authorisation_notes )
+	
+	RETURN ( TRUE )
+
+ENDROUTINE {action}
+
+{*************************************************}
+{            Select Routine                       }
+{*************************************************}
+
+ROUTINE select_key_text
+
+	{ Return the text for the select button }
+
+	return ( GET_USER_MESSAGE ( "AUX_ASP_RESULTS", 1 ))
+	
+ENDROUTINE
+  
+ROUTINE select_key  ( VALUE line     , display_id      ,
+		      VALUE first_id , VALUE second_id )
+
+
+set format "999"
+
+MENUPROC DISPLAY_RESULTS_MENUNUMBER USING first_id , "$EXIT"
+
+ENDROUTINE
+
+{*************************************************}
+{            Validation Routine                   }
+{*************************************************}
+
+ROUTINE validation ( display_id )
+
+	DECLARE justif, chk_ok, phrase_text, samp_id, sampled_date
+	DECLARE just_prompt, form, justificativa, id
+
+	out_prazo  = FALSE
+	out_just   = FALSE
+	chk_ok     = TRUE
+
+	sampled_date = SELECT sample . sampled_date
+	justif  = SELECT sample . justificativa
+	prazo   = SELECT sample . dateresreq
+	samp_id = SELECT sample . id_numeric
+
+	{ 004 }
+
+	chk_ok = check_SUB_AMOSTRA (samp_id)
+
+	IF (( NOW < sampled_date ) AND ( chk_ok = TRUE ))
+	    flash_message("Data de Amostragem maior que Data de Autorização!",TRUE)
+	    chk_ok = FALSE	
+	ELSE			
+	{ 004 }
+	   IF (( prazo < NOW ) AND ( chk_ok = TRUE )) THEN
+
+		
+		CREATE OBJECT PROMPT_CLASS_FORM,form
+
+		form . height = 4
+		form . width = 70
+		form . row = 3
+		form . column = 5
+		form . border = TRUE
+		form . header = "Informar Justificativa para Amostra em Atraso"
+		form . footer = "Press <Exit> to quit"
+		PROMPT OBJECT just_prompt
+			FORMAT SAMPLE.JUSTIFICATIVA					
+			ON LINE 2 FROM 16 TO 69
+		form . add_prompt(just_prompt)
+		form . add_display("Justificativa: ", 2, 2, PROMPT_RENDITION_BOLD)
+		form . start_prompt()
+		form . wait_prompt()
+		form . end_prompt()
+
+		justificativa = STRIP ( JUST_PROMPT . TEXT )
+
+		phrase_text = SELECT phrase . phrase_text
+           	        	  WHERE phrase_type = "JUST_AMOS" AND
+                                phrase_text = justificativa
+
+		IF ( phrase_text = EMPTY )
+			flash_message("Necessário informar uma justificativa válida!", TRUE)
+			chk_ok = FALSE
+		ELSE
+			ID = SELECT SAMPLE.ID_NUMERIC FOR UPDATE WHERE ID_NUMERIC = samp_id
+			ASSIGN SAMPLE . JUSTIFICATIVA = justificativa
+		  	START WRITE TRANSACTION "Informar Justificativa"
+			UPDATE sample
+			COMMIT                                                                         
+		ENDIF
+	  ENDIF
+	ENDIF
+	
+	RETURN ( chk_ok )
+
+ENDROUTINE
+
+{**************************************************************************}
+{ Explorer Aux Report Field Action Routine -                               }
+{**************************************************************************}
+
+ROUTINE aux_asp_explorer_user_action ( self , data )
+        
+	DECLARE sample_id
+
+	sample_id = SELECT sample . id_numeric IN OBJECT data
+    
+	auto_validate_job ( sample_id )
+	
+	{ 001	\/}
+	DECLARE data_amostragem
+	data_amostragem = SELECT sample . sampled_date 
+
+	IF(STRIP(data_amostragem) <> "") THEN
+		IF(data_amostragem > NOW) THEN
+			flash_message("Favor corrigir data de amostragem.", TRUE)
+			RETURN ( FALSE )
+		ENDIF
+	ENDIF
+    { 001	/\}
+    { 003	\/}
+    DECLARE JUSTIFICATIVA
+			
+	PRAZO = SELECT SAMPLE . DATERESREQ FOR UPDATE
+
+	JUSTIFICATIVA = ""
+	IF PRAZO <> EMPTY THEN
+		IF(STRIP(PRAZO ) <> "") THEN
+			IF(PRAZO<NOW) THEN
+				DECLARE just_prompt, form
+
+				CREATE OBJECT PROMPT_CLASS_FORM,form
+				form . height = 4
+				form . width = 70
+				form . row = 3
+				form . column = 5
+				form . border = TRUE
+				form . header = "Justificativa para atraso na Autorização"
+				form . footer = "Press <Exit> to quit"
+				PROMPT OBJECT just_prompt
+					FORMAT SAMPLE.JUSTIFICATIVA					
+					ON LINE 2 FROM 16 TO 69
+				form . add_prompt(just_prompt)
+				form . add_display("Justificativa: ", 2, 2, PROMPT_RENDITION_BOLD)
+				form . start_prompt()
+				form . wait_prompt()
+				form . end_prompt()
+
+				JUSTIFICATIVA = JUST_PROMPT.TEXT
+
+				if LENGTH(STRIP(justificativa))<=0 THEN
+					flash_message("A justificativa é obrigatória!", TRUE)
+					RETURN ( FALSE )
+				ELSE
+					ID = SELECT SAMPLE.ID_NUMERIC FOR UPDATE WHERE ID_NUMERIC = sample_id
+					ASSIGN SAMPLE . JUSTIFICATIVA = justificativa	
+					UPDATE SAMPLE
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF 
+	{ 003	/\}
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+
+{**************************************************************************}
+
+ROUTINE check_SUB_AMOSTRA ( p1 ) 
+	DECLARE template_id, supertemplate,amostra_campo, status_amostra_campo, check 
+
+	check = TRUE
+
+	template_id = SELECT sample . template_id  WHERE id_numeric = p1 
+	supertemplate = SELECT phrase.phrase_text where ( phrase_type = "SUB_TEMP" and phrase_id = template_id)
+
+	IF (supertemplate <> EMPTY) 
+	   amostra_campo = SELECT sample.id_numeric where (original_sample = p1)
+	   status_amostra_campo  = SELECT sample.status where (id_numeric  = amostra_campo)
+	   IF  (status_amostra_campo <> "A") 
+            flash_message("A amostra ": amostra_campo :" com análises complementares de campo não está autorizada! Ação não realizada.",TRUE)
+		check = FALSE
+	   ENDIF 		
+      ENDIF
+
+	RETURN (check)
+ENDROUTINE   { check_SUB_AMOSTRA }
+{**************************************************************************}
+{**************************************************************************}

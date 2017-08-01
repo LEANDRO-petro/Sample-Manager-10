@@ -1,0 +1,1511 @@
+{******************************************************************************
+*
+* Module Name   : $PIMS_LIB
+*
+* Purpose       : PIMS Library
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+{ ************************ Histórico de Modificações **************************
+  >>> No	Quem	Quando		Modificação  
+  >>> 001   LLV	25-02-14    Multiplexação de TAGs
+} 
+
+SET NAME "DEFER/"
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+
+ENABLE WINDOWS
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_PROMPT
+
+JOIN LIBRARY $LIB_UNIT
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_LOG_VIEWER
+JOIN LIBRARY $LIB_RE_FORMULA
+JOIN LIBRARY $PIMS_TAG_FIELDS
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_lookup_and_send ( VALUE test_number ,
+                               VALUE action      )
+
+{
+*
+*	Routine which performs a lookup of relevent PIMS tags associated with a 
+*	test record and sends the result value to PIMS.
+*
+*******************************************************************************}
+
+	DECLARE select_sample, select_test, select_result, commit_it
+	DECLARE status, samp_id, test_num, comp_name, reslt_value, anal_id, anal_found
+	DECLARE select_pims_tag_analysis
+	
+	status = EMPTY
+	
+	{*** Don't lose any currently selected tables ***}
+
+	push_file_descriptor ( "SAMPLE"              , select_sample             ) 
+	push_file_descriptor ( "TEST"                , select_test               ) 
+	push_file_descriptor ( "RESULT"              , select_result             ) 
+      push_file_descriptor ( "PIMS_TAG_ANALYSIS"   , select_pims_tag_analysis  )
+      
+	{*** Validate the test_number argument ***}
+	
+	test_num = SELECT test . test_number
+	           WHERE test_number = test_number
+	      
+	IF ( test_num <> EMPTY ) THEN
+	
+		{*** Stop now if the analysis doesn't ***}
+		{*** appear in the pi_tag table       ***}
+	
+		anal_id    = SELECT test . analysis
+		{* >>> 001   LLV	25-02-14  Begin                    *}
+		{* anal_found = SELECT pims_tag . analysis           *}
+		{*             		WHERE analysis  = anal_id    *}
+		anal_found = SELECT pims_tag_analysis . analysis
+			          		WHERE analysis  = anal_id
+		{* >>> 002   LLV	25-02-14  End                      *} 
+		IF ( anal_found <> EMPTY ) THEN
+
+			{*** Select the sample record ***}
+			samp_id = SELECT test . sample
+			samp_id = SELECT sample . id_numeric
+				  		WHERE id_numeric = samp_id
+
+			IF ( samp_id <> EMPTY ) THEN
+
+				{*** Start a write transaction if not in one already ***}
+				IF NOT transaction_is_write () THEN
+				
+					START WRITE TRANSACTION GET_USER_MESSAGE ( "PIMS_TRANS_WRITE_TRANS_ADD", 1 )
+					commit_it = TRUE
+				ELSE
+					commit_it = FALSE
+				ENDIF
+
+				{*** Find all results and get the component names ***}
+
+				comp_name = SELECT result . component_name
+				            WHERE test_number = test_number
+
+				WHILE ( comp_name <> EMPTY )
+				AND   ( status = EMPTY     ) DO
+
+					{*** Get the result value ***}
+					reslt_value = SELECT result . text
+
+					{*** Perform the lookup ***}
+					status = pims_do_lookup_and_send ( test_number ,
+					                                   comp_name   ,
+					                                   reslt_value ,
+					                                   action      )
+
+					NEXT result			
+					comp_name = SELECT result . component_name
+
+				ENDWHILE
+				
+				{*** Commit if necessary ***}
+				
+				IF commit_it THEN
+					COMMIT
+				ENDIF
+
+			ELSE
+
+				{*** No sample record ***}
+
+				message_fetch ( "PIMS_ERR_NO_SAMPLE", status )
+				message_add_parameter ( status , STRIP ( test_number ) )
+				status = message_get_text ( status , 1 )
+
+			ENDIF
+		
+		ENDIF
+		
+	ELSE
+	
+		{*** Invalid test ***}
+
+		message_fetch ( "PIMS_ERR_INVALID_TEST", status )
+		message_add_parameter ( status, STRIP ( test_number ) )
+		status = message_get_text ( status , 1 )
+	
+	ENDIF
+	
+	{*** Restore any saved selects  ***}
+	pop_file_descriptor ( select_sample            ) 
+	pop_file_descriptor ( select_test              ) 
+	pop_file_descriptor ( select_result            ) 
+      pop_file_descriptor ( select_pims_tag_analysis )
+	
+	{*** Add a context to any error messages ***}
+	
+	IF ( status <> EMPTY ) THEN
+		status = GET_USER_MESSAGE ( "PIMS_ERR_CONTEXT_SEND" ,1 ) : status
+	ENDIF
+
+	RETURN ( status ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_lookup_and_send_result ( VALUE test_number ,
+                                      VALUE comp_name   ,
+                                      VALUE action      )
+
+{
+*
+*	Routine which performs a lookup of relevent PIMS tag associated with a 
+*	result record and sends the result value to PIMS.
+*
+*******************************************************************************}
+
+	DECLARE select_sample, select_test, select_pims_tag, commit_it
+	DECLARE status, samp_id, test_num, reslt_value, anal_id, anal_found
+	DECLARE select_pims_tag_analysis
+	
+	status = EMPTY
+	
+	{*** Don't lose any currently selected tables ***}
+
+	push_file_descriptor ( "SAMPLE"   , select_sample                     ) 
+	push_file_descriptor ( "TEST"     , select_test                       ) 
+	push_file_descriptor ( "PIMS_TAG" , select_pims_tag                   )
+      push_file_descriptor ( "PIMS_TAG_ANALYSIS" , select_pims_tag_analysis )
+      
+	{*** Validate the test_number argument ***}
+	
+	test_num = SELECT test . test_number
+	           WHERE test_number = test_number
+	              
+	IF ( test_num <> EMPTY ) THEN
+	
+		{*** Stop now if the analysis and component ***}
+		{*** don't appear in the pims_tag table     ***}
+		
+		anal_id    = SELECT test . analysis
+		{* >>> 001   LLV	25-02-14  Begin                                 *}
+		{* anal_found = SELECT pims_tag . analysis                        *}
+		{*             		WHERE analysis  = anal_id                 *}
+		{*             				AND   component = comp_name   *}
+
+		anal_found = SELECT pims_tag_analysis . analysis
+		             		WHERE analysis  = anal_id
+		             				AND   component = comp_name
+ 		{* >>> 001   LLV	25-02-14  End                                   *}
+		             
+		IF ( anal_found <> EMPTY ) THEN
+
+			samp_id = SELECT test . sample
+			samp_id = SELECT sample . id_numeric
+				  WHERE id_numeric = samp_id
+	
+			IF ( samp_id <> EMPTY ) THEN
+			
+				{*** Start a write transaction if not in one already ***}
+							
+				IF NOT transaction_is_write ( ) THEN
+							
+					START WRITE TRANSACTION GET_USER_MESSAGE ( "PIMS_TRANS_WRITE_TRANS_ADD", 1 )
+					commit_it = TRUE	
+				ELSE		
+					commit_it = FALSE			
+				ENDIF
+
+				{*** Get the result value ***}
+
+				reslt_value = SELECT result . text
+
+				IF ( reslt_value <> EMPTY ) THEN
+
+					status = pims_do_lookup_and_send ( test_number ,
+					                                   comp_name   ,
+					                                   reslt_value ,
+					                                   action      )
+				ENDIF
+				
+				{*** Commit if necessary ***}
+				IF commit_it THEN
+					COMMIT
+				ENDIF
+
+			ELSE
+				{*** No sample record ***}
+
+				message_fetch ( "PIMS_ERR_NO_SAMPLE", status )
+				message_add_parameter ( status , STRIP ( test_number ) )
+				status = message_get_text ( status , 1 )
+
+			ENDIF
+		ENDIF
+	ELSE
+	
+		{*** Invalid test ***}
+
+		message_fetch ( "PIMS_ERR_INVALID_TEST", status )
+		message_add_parameter ( status, STRIP ( test_number ) )
+		status = message_get_text ( status , 1 )
+	
+	ENDIF	
+	
+	{*** Restore any saved selects  ***}
+
+	pop_file_descriptor ( select_sample   ) 
+	pop_file_descriptor ( select_test     ) 
+	pop_file_descriptor ( select_pims_tag )
+      pop_file_descriptor ( select_pims_tag_analysis )
+        
+	{*** Add a context to any error messages ***}
+	
+	IF ( status <> EMPTY ) THEN
+	
+		status = GET_USER_MESSAGE ( "PIMS_ERR_CONTEXT_SEND" ,1 ) : status
+		
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_do_lookup_and_send ( VALUE test_number ,
+                                  VALUE comp_name   ,
+                                  VALUE reslt_value ,
+                                  VALUE action      )
+
+{
+*
+*	Internal routine used by lookup_and_send functions. Actually does the 
+*	lookup and send.
+*
+*******************************************************************************}
+
+	DECLARE select_array, status, anal_id
+	DECLARE pims_server, pims_tag, pims_time, pims_time_table, pims_time_field
+	DECLARE samp_id
+
+	status    = EMPTY
+	pims_tag  = EMPTY
+
+	ARRAY select_array
+
+	{*** Get sample_point, analysis and product for this test ***}
+
+	anal_id = SELECT test . analysis
+	samp_id = SELECT test . sample
+
+	{*** Look for values in pims_tag table for this component ***}
+
+	status = pims_lookup_send_build_select_array ( select_array, anal_id, comp_name )
+
+	IF ( status = EMPTY ) THEN
+
+		{*** Add configured mapping fields to the select array ***}
+
+		status = pims_tag_fields_select_array ( select_array, samp_id )
+
+	ENDIF
+	
+	IF ( status = EMPTY ) THEN
+
+		{*** Actually select the data ***}
+
+		array_select ( "PIMS_TAG_VIEW"   ,
+		               FALSE        ,
+		               select_array )
+
+		pims_tag = SELECT pims_tag_view . tag
+	
+		WHILE ( pims_tag <> EMPTY ) 
+		AND   ( status    = EMPTY ) DO
+
+			pims_server     = SELECT pims_tag_view . server
+			pims_time_table = SELECT pims_tag_view . time_table
+			pims_time_field = SELECT pims_tag_view . time_field
+
+			{*** Send the value ***}
+			pims_time = pims_get_time ( pims_time_table ,
+			                            pims_time_field ) 
+	
+			status = pims_queue_submit ( pims_server ,
+			                             pims_tag    ,
+			                             pims_time   ,
+			                             test_number ,
+			                             comp_name   ,
+			                             reslt_value ,
+			                             action      )
+
+			NEXT pims_tag_view
+
+			pims_tag = SELECT pims_tag_view . tag
+
+		ENDWHILE
+		
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_lookup_send_build_select_array ( select_array, anal_id, comp_name )
+
+{
+*
+*	Build a select array to select active, writeable tags
+*
+*******************************************************************************}
+
+	DECLARE status, pims_server
+
+	status = EMPTY
+
+	array_select_add ( select_array    ,
+	                   ARRAY_SELECT_EQ ,
+	                   "ACCESS_MODE"   ,
+	                   "TRUE"          )
+
+	array_select_add ( select_array     ,
+	                   ARRAY_SELECT_AND ,
+	                   EMPTY            ,
+	                   EMPTY            )
+
+	array_select_add ( select_array    ,
+	                   ARRAY_SELECT_EQ ,
+	                   "ANALYSIS"      ,
+	                   anal_id         )
+
+	array_select_add ( select_array     ,
+	                   ARRAY_SELECT_AND ,
+	                   EMPTY            ,
+	                   EMPTY            )
+
+	array_select_add ( select_array    ,
+	                   ARRAY_SELECT_EQ ,
+	                   "PARAMETER"     ,
+	                   comp_name       )	
+	pims_server = SELECT pims_server . identity
+		WHERE removeflag = FALSE
+
+	IF ( pims_server <> EMPTY ) THEN
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_AND ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+		array_select_add ( select_array      ,
+		                   ARRAY_SELECT_PUSH ,
+		                   EMPTY             ,
+		                   EMPTY             )
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_EQ  ,
+		                   "SERVER"         ,
+		                   pims_server      )
+
+		WHILE ( pims_server <> EMPTY )
+
+			array_select_add ( select_array    ,
+			                   ARRAY_SELECT_OR ,
+			                   EMPTY           ,
+			                   EMPTY           )
+
+			array_select_add ( select_array    ,
+			                   ARRAY_SELECT_EQ ,
+			                   "SERVER"        ,
+			                   pims_server     )
+
+			NEXT pims_server
+
+			pims_server = SELECT pims_server . identity
+
+		ENDWHILE
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_POP ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+	ELSE
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_AND ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_EQ  ,
+		                   "SERVER"         ,
+		                   ""               )
+
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_connect ( VALUE pims_server )
+
+{
+*
+*	Connect to the specified PIMS server
+*
+*******************************************************************************}
+
+	DECLARE hostname, username, password, pims_lib, status
+	
+	status = EMPTY
+
+	{*** Lookup the pims_server record ***}
+
+	hostname = SELECT pims_server . hostname
+	           WHERE identity = pims_server
+	          
+	IF ( hostname <> EMPTY ) THEN
+	
+		pims_lib = SELECT pims_server . pims_type
+		username = SELECT pims_server . username
+		password = SELECT pims_server . password
+		
+		CALL_ROUTINE 	"pims_connect"
+		USING      	hostname, username, password
+		RETURNING 	status
+		IN LIBRARY 	pims_lib
+		
+	ELSE
+
+		message_fetch ( "PIMS_ERR_INVALID_SERVER", status )
+		message_add_parameter ( status, STRIP ( pims_server ) )
+		status = message_get_text ( status , 1 )
+
+	ENDIF
+
+	IF ( BLANK ( status ) ) THEN
+
+		status = EMPTY
+
+	ENDIF
+	
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_disconnect ( VALUE pims_server )
+
+{
+*
+*	Connect to the specified PIMS server
+*
+*******************************************************************************}
+
+	DECLARE hostname, status, pims_lib
+	
+	status = EMPTY
+
+	{*** Lookup the pims_server record ***}
+
+	hostname = SELECT pims_server . hostname
+	           WHERE identity = pims_server
+	          
+	IF ( hostname <> EMPTY ) THEN
+	
+		pims_lib = SELECT pims_server . pims_type
+		
+		CALL_ROUTINE 	"pims_disconnect"
+		USING      	hostname
+		IN LIBRARY 	pims_lib
+
+	ELSE
+
+		message_fetch ( "PIMS_ERR_INVALID_SERVER", status )
+		message_add_parameter ( status, STRIP ( pims_server ) )
+		status = message_get_text ( status , 1 )
+
+	ENDIF
+
+	IF ( BLANK ( status ) ) THEN
+
+		status = EMPTY
+
+	ENDIF
+	
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_send_result ( VALUE pims_server ,
+                           VALUE pims_tag    ,
+                           VALUE pims_time   ,
+                                 reslt_value ,
+                                 lims_units  )
+
+{
+*
+*	Routine which sends the currently selected result value to PIMS.
+*
+*******************************************************************************}
+
+	DECLARE status, hostname, pims_lib
+	
+	status = EMPTY
+
+	{*** Strip trailing spaces from the result value ***}
+	
+	reslt_value = LEFTSTRING ( reslt_value, LENGTH ( reslt_value ) )
+
+	{*** Lookup the pims_server record ***}
+
+	hostname = SELECT pims_server . hostname
+	           WHERE identity = pims_server
+	          
+	IF ( hostname <> EMPTY ) THEN
+	
+		pims_lib = SELECT pims_server . pims_type
+		
+		CALL_ROUTINE "pims_send_result"
+		USING        hostname, pims_tag, pims_time, reslt_value, lims_units
+		RETURNING    status
+		IN LIBRARY   pims_lib
+		
+	ENDIF
+	
+	IF ( BLANK ( status ) ) THEN
+
+		status = EMPTY
+
+	ENDIF
+		
+	RETURN ( status )
+
+ENDROUTINE
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_delete_result ( VALUE pims_server ,
+                             VALUE pims_tag    ,
+                             VALUE pims_time   )
+
+{
+*
+*	Routine which Delete the currently selected result value to PIMS.
+*
+*******************************************************************************}
+
+	DECLARE status, hostname, pims_lib
+	
+	status = EMPTY
+
+	{*** Lookup the pims_server record ***}
+
+	hostname = SELECT pims_server . hostname
+	           WHERE identity = pims_server
+	          
+	IF ( hostname <> EMPTY ) THEN
+	
+		pims_lib = SELECT pims_server . pims_type
+		
+		CALL_ROUTINE "pims_delete_result"
+		USING        hostname, pims_tag, pims_time
+		RETURNING    status
+		IN LIBRARY   pims_lib
+
+	ENDIF
+
+	IF ( BLANK ( status ) ) THEN
+
+		status = EMPTY
+
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_lookup_and_get ( test_number    ,
+                              component_name ,
+                              reslt_value    )
+
+{
+*
+*	Routine which performs a lookup of relevent PIMS tags associated with a 
+*	test record and gets the result value from PIMS.
+*
+*	Returns the result value.
+*
+*******************************************************************************}
+
+	DECLARE select_sample, select_test, select_result, select_pims_tag
+	DECLARE anal_found, select_array, status
+	DECLARE samp_id, test_num, anal_id
+	DECLARE pims_server, pims_tag, pims_units, pims_time_table, pims_time_field, pims_time
+	DECLARE lims_units, unit_status
+
+	status      = EMPTY
+	reslt_value = EMPTY
+	pims_units  = ""
+
+	{*** Don't lose any currently selected tables ***}
+
+	push_file_descriptor ( "SAMPLE"   , select_sample   ) 
+	push_file_descriptor ( "TEST"     , select_test     ) 
+	push_file_descriptor ( "RESULT"   , select_result   ) 
+	push_file_descriptor ( "PIMS_TAG" , select_pims_tag ) 
+
+	{*** Get sample and analysis from test record ***}
+	
+	test_num = SELECT test . test_number
+	           WHERE test_number = test_number
+
+	IF test_num <> EMPTY THEN
+	
+		anal_id  = SELECT test . analysis
+
+		{*** Look for the analysis in the pims_tag table ***}
+
+		anal_found = SELECT pims_tag . parameter
+		             WHERE parameter = component_name
+
+		{*** Drop out if analysis not found in pims_tag table ***}
+
+		IF ( anal_found <> EMPTY ) THEN
+
+			{*** Select the sample record ***}
+
+			samp_id = SELECT test . sample
+
+			samp_id = SELECT sample . id_numeric
+				  WHERE id_numeric = samp_id
+
+			IF ( samp_id <> EMPTY ) THEN
+		
+				ARRAY select_array
+
+				{*** Look for values in pims_tag table for this component ***}
+
+				status = pims_lookup_get_build_select_array ( select_array, anal_id, component_name )
+
+				IF ( status = EMPTY ) THEN
+			                   
+					status = pims_tag_fields_select_array ( select_array, samp_id )
+
+				ENDIF
+
+				IF ( status = EMPTY ) THEN
+
+					{*** Actually select the data ***}
+
+					array_select ( "PIMS_TAG"   ,
+					               FALSE        ,
+					               select_array )
+
+					pims_tag        = SELECT pims_tag . tag
+					pims_server     = SELECT pims_tag . server
+					pims_time_table = SELECT pims_tag . time_table
+					pims_time_field = SELECT pims_tag . time_field
+
+					{*** Get the value out of PIMS ***}
+
+					IF pims_tag <> EMPTY THEN
+
+						pims_time = pims_get_time ( pims_time_table ,
+						                            pims_time_field ) 
+
+						status = pims_connect ( pims_server ) 
+
+						IF ( status = EMPTY ) THEN
+				
+							status = pims_get_result ( pims_server ,
+							                           pims_tag    ,
+							                           pims_time   ,
+							                           reslt_value ,
+							                           pims_units  )
+
+						ENDIF
+
+						pims_disconnect ( pims_server ) 
+
+					ENDIF
+
+				ENDIF
+
+				IF ( status = EMPTY ) THEN
+									    
+					IF ( NOT BLANK ( pims_units ) ) THEN
+
+						lims_units = unit_get_result_units ( test_number, component_name )
+
+						IF ( NOT BLANK ( lims_units ) ) THEN
+
+							reslt_value = unit_convert ( reslt_value ,
+							                             pims_units  ,
+							                             lims_units  ,
+							                             unit_status )
+
+							IF ( unit_status <> EMPTY ) THEN
+
+								message_fetch ( "PIMS_ERR_UNIT_ERR" , status )
+								message_add_parameter ( status, STRIP ( pims_server ) )
+								message_add_parameter ( status, STRIP ( pims_tag ) )
+								unit_status = message_get_text ( unit_status, 1 )
+								message_add_parameter ( status, STRIP ( unit_status ) ) 
+								status = message_get_text ( status, 1 ) 
+	
+							ENDIF
+
+						ENDIF
+
+					ENDIF
+
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+	ELSE
+
+		{*** Invalid Test ***}
+
+		message_fetch ( "PIMS_ERR_INVALID_TEST", status )
+		message_add_parameter ( status, STRIP ( test_number ) )
+		status = message_get_text ( status , 1 )
+
+	ENDIF
+
+	{*** Add a context to any error messages ***}
+
+	IF ( status <> EMPTY ) THEN
+
+		status = GET_USER_MESSAGE ( "PIMS_ERR_CONTEXT_GET" ,1 ) : status
+
+	ENDIF
+	
+	{*** Restore any saved selects  ***}
+
+	pop_file_descriptor ( select_sample   ) 
+	pop_file_descriptor ( select_test     ) 
+	pop_file_descriptor ( select_result   ) 
+	pop_file_descriptor ( select_pims_tag ) 
+	
+	RETURN ( status ) 
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_lookup_get_build_select_array ( select_array, anal_id, comp_name )
+
+{
+*
+*	Build a select array to select active, read tags
+*
+*******************************************************************************}
+
+	DECLARE status, pims_server
+
+	status = EMPTY
+
+	array_select_add ( select_array    ,
+	                   ARRAY_SELECT_EQ ,
+	                   "ACCESS_MODE"   ,
+	                   "FALSE"         )
+
+	array_select_add ( select_array     ,
+	                   ARRAY_SELECT_AND ,
+	                   EMPTY            ,
+	                   EMPTY            )
+
+	array_select_add ( select_array    ,
+	                   ARRAY_SELECT_EQ ,
+	                   "ANALYSIS"      ,
+	                   anal_id         )
+
+	array_select_add ( select_array     ,
+	                   ARRAY_SELECT_AND ,
+	                   EMPTY            ,
+	                   EMPTY            )
+
+	array_select_add ( select_array    ,
+	                   ARRAY_SELECT_EQ ,
+	                   "COMPONENT"     ,
+	                   comp_name       )
+	
+	pims_server = SELECT pims_server . identity
+		WHERE removeflag = FALSE
+
+	IF ( pims_server <> EMPTY ) THEN
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_AND ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+		array_select_add ( select_array      ,
+		                   ARRAY_SELECT_PUSH ,
+		                   EMPTY             ,
+		                   EMPTY             )
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_EQ  ,
+		                   "SERVER"         ,
+		                   pims_server      )
+
+		WHILE ( pims_server <> EMPTY )
+
+			array_select_add ( select_array    ,
+			                   ARRAY_SELECT_OR ,
+			                   EMPTY           ,
+			                   EMPTY           )
+
+			array_select_add ( select_array    ,
+			                   ARRAY_SELECT_EQ ,
+			                   "SERVER"        ,
+			                   pims_server     )
+
+			NEXT pims_server
+
+			pims_server = SELECT pims_server . identity
+
+		ENDWHILE
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_POP ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+	ELSE
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_AND ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+		array_select_add ( select_array     ,
+		                   ARRAY_SELECT_EQ  ,
+		                   "SERVER"         ,
+		                   ""               )
+
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_get_result ( VALUE pims_server ,
+                          VALUE pims_tag    ,
+                          VALUE pims_time   ,
+                                reslt_value ,
+                                pims_units  )
+
+{
+*
+*	Routine which gets the currently selected result value to PIMS.
+*
+*******************************************************************************}
+
+	DECLARE status, hostname, pims_lib
+	
+	status = EMPTY
+
+	pims_units = ""
+
+	{*** Lookup the pims_server record ***}
+
+	hostname = SELECT pims_server . hostname
+	           WHERE identity = pims_server
+	          
+	IF ( hostname <> EMPTY ) THEN
+	
+		pims_lib = SELECT pims_server . pims_type
+
+		CALL_ROUTINE "pims_get_result"
+		USING        hostname, pims_tag, pims_time, reslt_value, pims_units
+		RETURNING    status
+		IN LIBRARY   pims_lib
+
+	ENDIF
+
+	IF ( BLANK ( status ) ) THEN
+
+		status = EMPTY
+
+	ENDIF
+	
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+
+ROUTINE pims_add_select_clause (       select_array ,
+                                 VALUE field_name   ,
+                                 VALUE field_value  )
+
+
+{
+*
+*	Add a select clause for pims tag selection
+*
+*******************************************************************************}
+
+	array_select_add ( select_array      ,
+	                   ARRAY_SELECT_AND  ,
+	                   EMPTY             ,
+	                   EMPTY             )
+
+	array_select_add ( select_array      ,
+	                   ARRAY_SELECT_EQ   ,
+	                   field_name        ,
+	                   field_value       )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_get_time ( VALUE pims_time_table ,
+                        VALUE pims_time_field )
+
+{
+*
+*	Return a PIMS timestamp from the date/time based on the table and 
+*	field specified
+*
+*******************************************************************************}
+
+	DECLARE lims_time
+
+	lims_time = EMPTY
+
+	IF ( NOT BLANK ( pims_time_table ) ) THEN
+
+		lims_time = SELECT 'pims_time_table' . 'pims_time_field'
+
+	ENDIF
+
+	IF lims_time = EMPTY THEN
+
+		lims_time = SELECT sample . sampled_date
+
+	ENDIF
+	
+	RETURN ( lims_time )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_queue_submit ( VALUE pims_server    ,
+                            VALUE pims_tag       ,
+                            VALUE pims_timestamp ,
+                            VALUE test_num       ,
+                            VALUE component      ,
+                            VALUE pims_value     ,
+                            VALUE action         )
+
+{
+*
+*	Adds an entry to the PIMS Transfer queue
+*
+*******************************************************************************}
+
+	DECLARE valid_server, valid_tag, entry, commit_it, the_time_right_now
+	DECLARE status, reserve_status, lims_units, samp_id
+	DECLARE select_pims_tag, select_test, action_type
+	
+	push_file_descriptor ( "PIMS_TAG" , select_pims_tag )
+
+	{*** Validate the arguments before adding the entry to the queue ***}
+	
+	status = EMPTY
+	
+	valid_server = SELECT pims_server . identity
+	               WHERE identity = pims_server
+	
+	IF ( valid_server = EMPTY ) THEN
+	
+		message_fetch ( "PIMS_ERR_INVALID_SERVER", status )
+		message_add_parameter ( status , STRIP ( pims_server ) )
+		status = message_get_text ( status , 1 ) 
+		
+	ENDIF
+	
+	IF ( status = EMPTY ) THEN
+	
+		valid_tag = SELECT pims_tag . tag
+		            WHERE server = pims_server
+		            AND   tag    = pims_tag
+		            
+		IF ( valid_tag = EMPTY  ) THEN
+		
+			message_fetch ( "PIMS_ERR_INVALID_TAG", status )
+			message_add_parameter ( status , STRIP ( pims_tag ) )
+			status = message_get_text ( status , 1 ) 
+		
+		ENDIF
+		
+	ENDIF
+
+	IF ( status = EMPTY ) THEN
+
+		IF  ( variable_is_assigned ( pims_value ) )
+		AND ( NOT BLANK ( pims_value )            ) THEN 
+
+		ELSE
+
+			message_fetch ( "PIMS_ERR_INVALID_VALUE" , status )
+			message_add_parameter ( status , STRIP ( pims_value ) )
+			status = message_get_text ( status , 1 )
+
+		ENDIF
+
+	ENDIF
+	
+	IF ( status = EMPTY ) THEN
+	
+		lims_units = unit_get_result_units ( test_num , component )
+		
+		push_file_descriptor ( "TEST" , select_test )
+		
+		samp_id     = SELECT test . sample
+		              WHERE test_number = test_num
+		          
+		action_type = SELECT phrase . phrase_id
+		              WHERE phrase_text = action
+
+
+		pop_file_descriptor ( select_test )
+	
+		IF NOT transaction_is_write ( ) THEN
+
+			START WRITE TRANSACTION GET_USER_MESSAGE ( "PIMS_TRANS_WRITE_TRANS_ADD", 1 )
+			commit_it = TRUE
+
+		ELSE
+		
+			commit_it = FALSE
+		
+		ENDIF
+
+		entry = PACKED_DECIMAL ( INCREMENT ( "PIMS_QUEUE" , "ENTRY_NUMBER" ) )
+		
+		RESERVE ENTRY pims_queue , entry, reserve_status
+		
+		IF reserve_status = EMPTY THEN
+
+			the_time_right_now = NOW
+
+			ASSIGN pims_queue . pims_server    = pims_server
+			ASSIGN pims_queue . pims_tag       = pims_tag
+			ASSIGN pims_queue . value          = pims_value
+			ASSIGN pims_queue . units          = lims_units
+			ASSIGN pims_queue . sample         = samp_id
+			ASSIGN pims_queue . test           = test_num
+			ASSIGN pims_queue . component      = component
+			ASSIGN pims_queue . timestamp      = pims_timestamp
+			ASSIGN pims_queue . last_attempt   = the_time_right_now
+			ASSIGN pims_queue . date_queued    = the_time_right_now
+			ASSIGN pims_queue . operator       = GLOBAL ( "OPERATOR" )
+			ASSIGN pims_queue . attempts       = 0
+			ASSIGN pims_queue . action         = action_type
+
+		ELSE
+
+			message_fetch ( "PIMS_ERR_QUEUE_INSERT" , status )
+			message_add_parameter ( status , STRIP ( reserve_status ) )
+			status = message_get_text ( status , 1 ) 
+
+		ENDIF
+
+		UPDATE pims_queue
+
+		IF commit_it THEN
+
+			COMMIT
+
+		ENDIF
+
+	ENDIF
+	
+	pop_file_descriptor ( select_pims_tag ) 
+	
+	RETURN ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_exp_force ( rmb , row , odb )
+
+{
+*
+*	Explorer action routine. Performs interactive transfer to PIMS.
+*
+*******************************************************************************}
+
+	DECLARE pims_server, pims_tag, pims_time, reslt_value, lims_units, status, errors, action
+
+	errors = FALSE
+	status = EMPTY
+	
+	rmb . log_viewer . header      = GET_USER_MESSAGE ( "PIMS_EXP_TRANSFER_LOG_HEADER" , 1 )
+	rmb . log_viewer . confirm_msg = GET_USER_MESSAGE ( "PIMS_EXP_TRANSFER_LOG_CONFIRM", 1 )
+
+	odb . set_first ()
+	
+	WHILE odb . current <> EMPTY DO
+		
+		pims_server = SELECT pims_queue . pims_server IN OBJECT odb . current 
+		pims_tag    = SELECT pims_queue . pims_tag    IN OBJECT odb . current 
+		pims_time   = SELECT pims_queue . timestamp   IN OBJECT odb . current 
+		reslt_value = SELECT pims_queue . value       IN OBJECT odb . current 
+		lims_units  = SELECT pims_queue . units       IN OBJECT odb . current
+		action      = SELECT pims_queue . action      IN OBJECT odb . current
+		
+		status = pims_connect ( pims_server )
+		
+		IF ( action <> EMPTY ) AND
+		   ( action =  "A"   ) AND
+		   ( status =  EMPTY ) THEN
+		   
+			status = pims_send_result ( pims_server ,
+			                            pims_tag    ,
+			                            pims_time   ,
+			                            reslt_value ,
+			                            lims_units  )
+
+		ELSEIF ( action = "D" ) THEN
+		
+			status = pims_delete_result ( pims_server ,
+			                              pims_tag    ,
+			                              pims_time   )
+		
+		ENDIF
+
+		IF ( status <> EMPTY ) THEN
+
+			rmb . log_viewer . create_log_entry ( odb . current      ,
+			                                      status             ,
+			                                      LOG_SEVERITY_ERROR )
+
+			ASSIGN pims_queue . status         IN OBJECT odb . current = "F"
+			ASSIGN pims_queue . status_message IN OBJECT odb . current = status
+
+			errors = TRUE 
+
+		ELSE
+
+			ASSIGN pims_queue . status IN OBJECT odb . current = "S"
+
+		ENDIF
+		
+		pims_disconnect ( pims_server )
+		
+		odb . set_next ()
+		
+	ENDWHILE
+	
+	RETURN ( errors )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_exp_status ( rmb , row , odb )
+
+{
+*
+*	Explorer action routine. Displays the status of a failed entry.
+*
+*******************************************************************************}
+
+	DECLARE status
+	
+	rmb . log_viewer . header = GET_USER_MESSAGE ( "PIMS_EXP_STATUS_LOG_HEADER" , 1 )
+
+	odb . set_first ()
+	
+	WHILE odb . current <> EMPTY DO
+	
+		status = SELECT pims_queue . status_message IN OBJECT odb .current
+		
+		IF  ( status <> EMPTY      )
+		AND ( NOT BLANK ( status ) ) THEN
+		
+			rmb . log_viewer . create_log_entry ( odb . current      , 
+			                                      status             , 
+			                                      LOG_SEVERITY_ERROR )  
+			
+		ENDIF
+		
+		odb . set_next ()
+		
+	ENDWHILE
+	
+ENDROUTINE
+
+{*******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_exp_reactivate ( aux , object )
+
+{
+*
+*	Explorer aux action routine. Reactivates a suspended entry.
+*
+*******************************************************************************}
+
+	ASSIGN pims_queue . attempts IN OBJECT object = 0
+
+	RETURN ( TRUE )
+	
+ENDROUTINE
+
+{*******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_exp_delete ( aux , object )
+
+{
+*
+*	Explorer aux action routine. Deletes an entry from the queue.
+*
+*******************************************************************************}
+
+	object . delete ()
+
+	RETURN ( TRUE )
+	
+ENDROUTINE
+
+{*******************************************************************************}
+
+ROUTINE pims_config_msg_level( prompt_object )
+
+{
+*
+*	Config prompt routine for message level
+*
+*******************************************************************************}
+
+	DECLARE level_array
+
+	ARRAY level_array
+
+	level_array [ 1 , 1 ] = GET_USER_MESSAGE ( "PIMS_TRANS_MSG_LEVEL" , 2 )
+	level_array [ 1 , 2 ] = 8
+	level_array [ 2 , 1 ] = GET_USER_MESSAGE ( "PIMS_TRANS_MSG_LEVEL" , 3 )
+	level_array [ 2 , 2 ] = 5
+	level_array [ 3 , 1 ] = GET_USER_MESSAGE ( "PIMS_TRANS_MSG_LEVEL" , 4 )
+	level_array [ 3 , 2 ] = 2
+	level_array [ 4 , 1 ] = GET_USER_MESSAGE ( "PIMS_TRANS_MSG_LEVEL" , 5 )
+	level_array [ 4 , 2 ] = 0
+
+	PROMPT OBJECT prompt_object
+		CHOOSE OUTOF level_array
+
+ENDROUTINE
+
+{*******************************************************************************}
+
+ROUTINE lib_re_formula_get_pims_value ( self )
+
+{
+*	Function to retrieve a value from PIMS	
+*	
+*******************************************************************************}
+
+	DECLARE status  ,
+	        context
+	        
+	self . set_parameter_count_check_off()
+
+	context = self . context
+
+	IF ( context . error ) THEN
+
+		{ Error already signalled }
+
+	ELSEIF (( context . mode = FORMULA_MODE_CALCULATE )  OR
+	        ( context . mode = FORMULA_MODE_PRINT     )) THEN
+
+		CALL_ROUTINE "pims_lookup_and_get"
+		USING context . test_number, context . result_object . name , self . text
+		RETURNING status
+		IN LIBRARY "$PIMS_LIB"
+
+		IF NOT BLANK ( status ) THEN
+			
+			lib_re_formula_runtime_error ( context          ,
+			                               "GET_PIMS_VALUE" ,
+			                               status           ,
+			                               EMPTY            )
+
+		ELSEIF ( self . text <> EMPTY      )
+		AND    ( NOT BLANK ( self . text ) )
+
+			self . inequality = FORMULA_EQ	
+
+			unit_split_result ( self . text  ,
+			                    self . value ,
+			                    self . units ) 
+
+		ENDIF
+
+	ELSEIF ( context . mode = FORMULA_MODE_TEST_PHASE1 ) THEN
+
+		lib_re_formula_prompt_pims_value ( self . value )
+
+		self . inequality = FORMULA_EQ	
+		self . units      = ""
+
+	ENDIF
+
+ENDROUTINE
+{*******************************************************************************}
+
+ROUTINE lib_re_formula_prompt_pims_value ( val )
+
+{
+*
+* Ask the user for a value for the PIMS tag linked to the current result
+*
+********************************************************************************}
+
+	DECLARE screen_height, screen_width, form, value_prompt
+
+	screen_width  = GLOBAL ( "GUI_WIDTH"  )
+	screen_height = GLOBAL ( "GUI_HEIGHT" )
+
+	PROMPT OBJECT form CLASS "STD_FORM"
+	form . header  = "PIMS Tag Prompt" {GET_USER_MESSAGE("SETUP_MENU" ,1)}
+	form . row     = ( screen_height / 2 )
+	form . column  = (( screen_width - 56 ) / 2 )
+	form . height  = 1
+	form . width   = 56
+
+	form . add_display ( "PIMS Tag Value" , 2, 1, PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT value_prompt BROWSE ON real
+
+	value_prompt . column = 16
+	value_prompt . row    = 1
+
+	form . add_prompt ( value_prompt )
+
+	form . add_frame ( "", 1, 1, 1, 56 )
+
+	form . start_prompt ()
+	form . wait_prompt ()
+	form . end_prompt ()
+
+	val = value_prompt . value
+
+ENDROUTINE
+
+{* >>> 001   LLV	07-03-14  Begin            *}
+ROUTINE insert_pims_sample ( samp_id, timestamp, prod_id )
+
+	DECLARE new_identity, var_insert, check_ok, status
+
+	var_insert = SELECT vw_pims_sample_view . id_numeric WHERE id_numeric = samp_id
+
+	IF ( var_insert = EMPTY ) THEN
+		new_identity = samp_id : timestamp : prod_id
+
+		{* insere a amostra na pims queue..    *}
+
+		RESERVE ENTRY pims_sample_queue, new_identity, check_ok
+  	 
+		ASSIGN pims_sample_queue . location_job    = SELECT vw_pims_sample_view . location_job
+      	ASSIGN pims_sample_queue . template_job    = SELECT vw_pims_sample_view . template_job
+      	ASSIGN pims_sample_queue . template_sample = SELECT vw_pims_sample_view . template_sample
+      	ASSIGN pims_sample_queue . point_location  = SELECT vw_pims_sample_view . point_location
+      	ASSIGN pims_sample_queue . parent_location = SELECT vw_pims_sample_view . parent_location
+      	ASSIGN pims_sample_queue . sampling_point  = SELECT vw_pims_sample_view . sampling_point
+		ASSIGN pims_sample_queue . location_id     = SELECT vw_pims_sample_view . location_id
+		ASSIGN pims_sample_queue . job_name        = SELECT vw_pims_sample_view . job_name
+      	ASSIGN pims_sample_queue . id_numeric      = SELECT vw_pims_sample_view . id_numeric
+  		ASSIGN pims_sample_queue . date_completed  = SELECT vw_pims_sample_view . date_completed
+		ASSIGN pims_sample_queue . product         = SELECT vw_pims_sample_view . product
+		ASSIGN pims_sample_queue . family_name     = SELECT vw_pims_sample_view . family_name
+		ASSIGN pims_sample_queue . status          = SELECT vw_pims_sample_view . status
+		ASSIGN pims_sample_queue . location_type   = SELECT vw_pims_sample_view . location_type
+		ASSIGN pims_sample_queue . poco            = SELECT vw_pims_sample_view . poco
+		ASSIGN pims_sample_queue . processed       = FALSE
+		ASSIGN pims_sample_queue . modified_on     = NOW
+		ASSIGN pims_sample_queue . modified_by     = "SISTEMA"
+		ASSIGN pims_sample_queue . message         = "Amostra incluída com sucesso"
+
+      	START WRITE TRANSACTION "New entry pims_sample_queue"
+      	UPDATE pims_sample_queue
+      	COMMIT
+		
+		IF ( check_ok ) THEN
+			COMMIT
+		ELSE
+			ROLLBACK
+		ENDIF
+	ELSE
+		RETURN
+	ENDIF
+	
+	status = status
+	RESTORE DATE FORMAT
+
+ENDROUTINE
+{* >>> 001   LLV	07-03-14  End                      *}
+

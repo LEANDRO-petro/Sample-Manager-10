@@ -1,0 +1,3601 @@
+
+{******************************************************************************
+*
+* Module Name   : 
+*
+* Purpose       : 
+*
+* Document Ref. : 
+*
+* Specification :
+*
+* Portability   : 
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+SET NAME "DEFER/"
+
+ENABLE WINDOWS
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+
+JOIN STANDARD_LIBRARY STD_XML
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_VGL
+
+JOIN LIBRARY $LIB_POPUP_MENU
+JOIN LIBRARY $EXPLORER_RMB
+JOIN LIBRARY $PROMPT_IMPRINT
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_LIST_VIEWER
+JOIN LIBRARY $TOOLBOX
+JOIN LIBRARY $PROMPT_TREE
+JOIN LIBRARY $PROMPT_SPLIT
+JOIN LIBRARY $PROMPT_TAB
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $PROMPT_LIST
+JOIN LIBRARY $SAMP_JOB
+JOIN LIBRARY $EXPLORER_UTILS
+
+
+{* Global Constants ***********************************************************}
+
+{* Local Constants ************************************************************}
+
+CONSTANT TABLE_TYPE = "TABLE"
+CONSTANT BRANCH_IDENTITY		= "IDENTITY"
+CONSTANT BRANCH_DUMMY			= "DUMMY"
+
+
+CONSTANT TREE_USERINFO_OBJECT		= "TREE_USERINFO"
+{* Global Variables ***********************************************************}
+
+DECLARE table_prompt				
+
+{* Main Code ******************************************************************}
+
+qt_tree_choose_table ( )
+
+EXIT
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE define_audit_tree_userinfo_class
+					
+
+{
+*	Define_tree_userinfo_class
+*	This class is used to store info on the branches userinfo tree
+*	property.
+*		
+*
+*******************************************************************************}
+	
+	
+
+	DEFINE CLASS "TREE_USERINFO"
+
+	PROPERTIES
+
+		"table" ,		{Table the branch stores info on}
+
+		"key_one" ,		{Identity of record}
+
+		"key_two" ,		{The second key is used for tables
+					 like result where two identities
+					 are needed to find a unique
+					 value.  It is also used to store
+					 the transaction number, when the
+					 branch holds an event.}
+
+
+		"select_fields" ,	{Name of key_one field}
+
+		"key_two_field",
+
+		"branch_text"	,	{Contains string of branch text}
+
+		"display_fields" ,	{Array of display fields}
+
+		"field_type" ,		{ie TABLE, IDENTITY, EVENT}
+
+		"link_fields" ,		{Used in dynamic sql statement}
+		"child_branch_ids"	{Array of ids}
+
+	ACTIONS
+
+		"initialise",		{Fill properties of object}
+
+		"data_fill",		{Fill identites of tree}
+
+		"get_branch_text",	{Gets display fields and writes
+					sql result to text of branch}
+
+		"have_auditesigs"
+
+	END CLASS
+
+	
+	
+	ENDROUTINE
+
+{******************************************************************************}
+
+
+
+	ROUTINE tree_userinfo_action_initialise (	self 			, 
+							hierarchy 		, 
+							VALUE current_table 	, 
+							VALUE branch_type 	)
+					
+				
+
+{
+*	Audit_tree_userinfo action to fill object with initial data.
+*		
+*
+*******************************************************************************}
+
+	
+	self . key_one		= EMPTY
+	
+	self . key_two 		= EMPTY
+	
+	self . table 		= current_table
+			
+	self . field_type 	= branch_type
+		
+	self . display_fields 	= return_array_data_by_table ( 	hierarchy 	, 
+								current_table 	, 
+								4 		)
+	
+	
+	
+	self . select_fields 	= return_array_data_by_table ( 	hierarchy 	, 
+								current_table 	, 
+								2 		)
+
+	
+	
+	self . link_fields 	= return_array_data_by_table ( 	hierarchy 	, 
+								current_table 	, 
+								3 		)
+	
+	self . key_two_field 	= return_array_data_by_table ( 	hierarchy 	, 
+								current_table 	, 
+								5 		)
+	
+
+
+	ENDROUTINE
+
+{******************************************************************************}
+
+
+	ROUTINE tree_userinfo_action_data_fill ( 	self 		, 
+							VALUE identity 	)
+					
+
+{
+*	Audit_tree_userinfo action to fill the identity fields
+*		
+*
+*******************************************************************************}
+	
+	DECLARE select_array
+	
+
+		select_array = array_select_key0_to_array( self.table , identity )
+		
+		IF size_of_array( select_array ) = 1 THEN
+			
+			self . key_one = identity
+			
+		ELSE
+		
+			self . key_one 	= select_array [1,3]
+			self . key_two 	= select_array [2,3]
+		
+		ENDIF
+		
+	
+
+
+	
+	ENDROUTINE
+
+{******************************************************************************}
+
+
+
+	ROUTINE tree_userinfo_action_get_branch_text ( 
+							self 		, 
+							VALUE identity 	, 
+							VALUE identity2 )
+					
+
+{
+*	Tree_userinfo action to fill the text of branch.
+*	It searchs through the array of display fields and adds the results
+*	together.
+*
+*	Routine does not return a value, just sets the branch_text field.
+*		
+*
+*******************************************************************************}
+	
+	
+	DECLARE number_of_display_fields	,
+		field_counter			,
+		sql_result			,
+		sep_text			,
+		display_record
+		
+		
+	field_counter = 1
+	display_record = ""
+	
+	
+	IF self . table = "RESULT" THEN
+	
+		sep_text = ""
+	ELSE
+	
+		sep_text = " "
+	
+	ENDIF
+
+	{**********************************************************************}
+	{* If no display fields have been selected, just use the key 0 field. *}
+	{**********************************************************************}	
+	
+	IF self . display_fields [ field_counter ] = EMPTY THEN
+	
+	
+		self . branch_text = STRIP ( identity )
+	
+	
+	ELSE
+	
+	
+	{**********************************************************************}
+	{* Display fields are listed in a variable, seperated by comma's.     *}
+	{* These are stored in an array, so a loop is used to perform an      *}
+	{* sql statement selecting each display field content.		      *}
+	{**********************************************************************}
+	
+	
+		number_of_display_fields = size_of_array ( self . display_fields )
+		
+		IF identity2 = EMPTY THEN
+		
+		
+			WHILE field_counter <= number_of_display_fields
+
+
+				sql_result = select 'self . table' . 'self.display_fields [ field_counter ]' 
+						WHERE 'self . select_fields [ 1 ]' = identity
+
+					display_record = display_record : sep_text : STRIP( sql_result )
+
+							field_counter = field_counter + 1
+
+			ENDWHILE
+
+					
+		ELSE
+		
+		
+	{**********************************************************************}
+	{* Sometimes the unquie key is built up from two primary fields.      *}
+	{* Therefore the display select needs to take this into account.      *}
+	{**********************************************************************}
+			
+			WHILE field_counter <= number_of_display_fields
+
+
+				sql_result = select 'self . table' . 'self.display_fields [ field_counter ]'
+						WHERE  	'self . select_fields [ 1 ]' = identity AND
+							'self . key_two_field [ 1 ]' = identity2
+
+					display_record = display_record : sep_text : STRIP ( sql_result )
+
+							field_counter = field_counter + 1
+
+			ENDWHILE
+
+			
+		
+		
+		ENDIF
+
+		self . branch_text = display_record
+
+
+
+	ENDIF
+	
+	
+	
+	ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE tree_userinfo_action_have_auditesigs  ( self )
+								
+
+{
+*	Checks if the current branch should have any more children, returns 
+*	true or false.
+*	The function checks the current tree hierarchy, and checks if any
+* 	dynamic data is found.
+*
+*******************************************************************************}
+
+	DECLARE related_qt_data		,
+		number_of_audits	,
+		number_of_esigs		,
+		event_key_0		,
+		array_of_transactions	,
+		array_of_events
+
+	related_qt_data = FALSE
+
+	
+	IF self . key_two <> EMPTY
+	
+		event_key_0 = self . key_one : self . key_two
+	
+	ELSE
+	
+		event_key_0 = self . key_one
+	
+	ENDIF
+	
+	
+	array_of_transactions = get_transactions ( self . table	,event_key_0 	)
+
+	number_of_audits = size_of_array 	( array_of_transactions	)
+				
+	array_of_events = get_esig_events ( self . table , event_key_0 )
+	
+	number_of_esigs = size_of_array ( array_of_events )
+	
+	IF ( number_of_audits > 0 ) OR ( number_of_esigs > 0 ) THEN
+
+		related_qt_data = TRUE
+
+	ENDIF
+	
+	return ( related_qt_data )
+	
+
+	ENDROUTINE
+
+{******************************************************************************}
+
+
+	ROUTINE return_array_data_by_table ( 	hierarchy_array 	, 
+						VALUE table 		, 
+						VALUE array_column 	)
+					
+
+{
+*	This function is to fill data in the AUDIT_TREE_USERINFO objects.
+*	It needs the current table and type of data and finds it within the 
+*	hierarchy.  It then returns an array of fields.
+*
+*
+*	Example:  the hierarchy below , RESULT , 4
+*			
+*			result_to_lot_hierarchy[1,1] = "RESULT" 
+*			result_to_lot_hierarchy[1,2] = "TEST_NUMBER" 
+*			result_to_lot_hierarchy[1,3] = "TEST_NUMBER" 
+*			result_to_lot_hierarchy[1,4] = "TEST_NUMBER,NAME"
+*			result_to_lot_hierarchy[1,5] = EMPTY
+*
+*	It would return an array of: "TEST_NUMBER" , "NAME"
+*
+*******************************************************************************}
+	
+	
+	
+	
+	DECLARE hierarchy_array_place 	, 
+		array_of_fields
+	
+	
+	ARRAY array_of_fields
+	
+	array_of_fields [ 1 ] = EMPTY
+	
+	hierarchy_array_place = size_of_array ( hierarchy_array )
+	
+			
+	WHILE hierarchy_array_place >= 1 DO
+
+		IF 	TOUPPER( table ) =
+			TOUPPER( hierarchy_array [ hierarchy_array_place , 1 ]) THEN
+
+			array_of_fields = multiple_fields ( 
+				hierarchy_array [ hierarchy_array_place , array_column ] )
+
+
+		ENDIF
+
+		hierarchy_array_place = hierarchy_array_place - 1
+
+	ENDWHILE
+		
+	
+	return (array_of_fields)
+	
+	
+	
+	
+	
+	ENDROUTINE
+
+
+
+
+{******************************************************************************}
+	GLOBAL
+	
+	ROUTINE define_hierarchy_tree_class
+					
+
+{
+*	An extension of the tree, class.  This create a tree hierarachy
+*	ie sample\test\result.  
+*	
+*	
+*		
+*
+*******************************************************************************}
+	
+	
+
+	DEFINE CLASS "HIERARCHY_TREE"
+
+	INHERIT PROMPT_TREE_CLASS
+
+	PROPERTIES
+
+
+		"hierarchy"	,
+
+		"table"		,
+
+		"identities"	,
+
+		"children"	,	{True/False to children or parents
+					 of dynamic data}
+
+		"link"			{Object link to tree, ie selecting
+					a branch on the tree might update
+					the data within another tree.}
+
+
+	ACTIONS
+
+		"initialise",
+
+		"create_tree",		{Creates the initial branches.
+					User still needs to set the trees
+					dimentions.}
+
+		"have_children",	
+
+		"insert_nodata_dummy"	{When there is no data to display
+					to user, insert a branch}
+
+
+
+	END CLASS
+	
+	
+	
+	ENDROUTINE
+
+
+
+{******************************************************************************}
+
+
+
+
+	GLOBAL
+	
+	ROUTINE hierarchy_tree_action_initialise ( 	self 			, 
+							hierarchy_standard 	, 
+							VALUE current_table	, 
+							current_identities	,
+							VALUE get_children	)
+					
+
+{
+*	Setup what the standard hierarchy is.  The hierarchy is set up as
+*	follows:
+*
+*	hierarchy[1,1] = "RESULT" 	Table name 
+*	hierarchy[1,2] = "TEST_NUMBER" 	key_one/select field 
+*	hierarchy[1,3] = "TEST_NUMBER" 	Link field 
+*
+*	hierarchy[1,4] = EMPTY		Optional. Display field
+*					If field is empty the select field 
+*					will be used as branch text
+*					
+*	hierarchy[1,5] = "NAME"		Optional. Key_two
+*
+*	hierarchy[2,1] = "TEST"
+*	hierarchy[2,2] = "SAMPLE"
+*	hierarchy[2,3] = "TEST_NUMBER"
+*	hierarchy[2,4] = "ANALYSIS,TEST_COUNT"
+*	hierarchy[2,5] = EMPTY
+*		
+*
+*******************************************************************************}
+
+	DECLARE hierarchy	,
+		key_one
+		
+		ARRAY hierarchy 
+		
+		IF hierarchy_standard <> EMPTY THEN
+		
+
+			hierarchy = hierarchy_standard
+
+		ELSE
+
+			IF 	( current_table = "RESULT" ) OR
+				(current_table = "TEST" )OR
+				(current_table = "SAMPLE" )OR
+				(current_table = "JOB_HEADER") OR
+				(current_table = "LOT_DETAILS" ) THEN
+				
+				
+				hierarchy[1,1] = "RESULT" 		{** Table **}
+				hierarchy[1,2] = "TEST_NUMBER" 		{** Select field **}
+				hierarchy[1,3] = "TEST_NUMBER" 		{** Link field **}
+				hierarchy[1,4] = "TEST_NUMBER,NAME" 	{**Display field**}
+				hierarchy[1,5] = "NAME" 		{**optional select**}
+
+				hierarchy[2,1] = "TEST"
+				hierarchy[2,2] = "TEST_NUMBER"
+				hierarchy[2,3] = "SAMPLE"
+				hierarchy[2,4] = "ANALYSIS,TEST_COUNT"
+				hierarchy[2,5] = EMPTY
+
+				hierarchy[3,1] = "SAMPLE"
+				hierarchy[3,2] = "ID_NUMERIC"
+				hierarchy[3,3] = "JOB_NAME"
+				hierarchy[3,4] = "ID_TEXT"
+				hierarchy[3,5] = EMPTY
+
+				hierarchy[4,1] = "JOB_HEADER"
+				hierarchy[4,2] = "JOB_NAME"
+				hierarchy[4,3] = "LOT_ID"
+				hierarchy[4,4] = EMPTY
+				hierarchy[4,5] = EMPTY
+
+				hierarchy[5,1] = "LOT_DETAILS"
+				hierarchy[5,2] = "LOT_ID"
+				hierarchy[5,3] = "LOT_ID"
+				hierarchy[5,4] = EMPTY
+				hierarchy[5,5] = EMPTY
+			
+						
+			ELSEIF valid_table ( current_table ) THEN
+			
+	{**********************************************************************}
+	{* If hierarchy has not been set up, check the table is valid and     *}
+	{* get the identity field.					      *}
+	{**********************************************************************}
+
+			
+				GET_TABLE_DETAILS 'current_table', "KEY0_FIELD", key_one
+				
+				hierarchy[1,1] = current_table 		{** Table **}
+				hierarchy[1,2] = key_one [ 1 ]		{** Select field **}
+				hierarchy[1,3] = key_one [ 1 ]		{** Link field **}
+								
+			ENDIF
+		ENDIF
+			
+		
+
+		self . hierarchy 	= hierarchy
+		self . table 		= current_table
+		self . identities 	= current_identities
+		self . children 	= get_children
+		
+	
+	ENDROUTINE
+	
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE hierarchy_tree_action_create_tree  ( self )
+
+{
+*	Builds intial tree, with first two branches of table and id.
+*	
+*
+*******************************************************************************}
+
+	DECLARE base_branch		, 
+		id_branch_info		,
+		dummy_branch_info	,
+		icon_number		,
+		number_of_branches	,
+		counter			
+
+
+		counter = 1
+	
+
+		self . vgl_library      = GLOBAL ("CURRENT_LIBRARY")
+
+
+		self . row    = 0.5
+		self . column = 0
+		self . use_images = TRUE
+		
+		self . expanded_routine 	= "tree_expand_table"
+		self . right_mouse_routine 	= "tree_mouse_routine"
+		
+
+
+		self . set_image_resource ( 0 )	
+		
+		number_of_branches = size_of_array( self . identities )
+
+	{**********************************************************************}
+	{* If no data is found, add the nodata dummy branch,		      *}
+	{**********************************************************************}
+
+		
+		IF number_of_branches <> 0 THEN
+	
+	
+	{**********************************************************************}
+	{* If multiple ids are send to the create tree routine, create 	      *}
+	{* multiple base branches.  Also check if each has any children.      *}
+	{* If so add a dummy branch to tell the user there is more data	      *}
+	{**********************************************************************}
+	
+		WHILE counter <= number_of_branches DO
+		
+			CREATE OBJECT "TREE_USERINFO" , id_branch_info
+
+			id_branch_info . initialise ( 	self . hierarchy , 
+							self . table 	 , 
+							BRANCH_IDENTITY  )
+
+			id_branch_info . data_fill ( self . identities [ counter ] )
+
+			id_branch_info . get_branch_text ( 	id_branch_info . key_one , 
+								id_branch_info . key_two )
+			
+
+			icon_number = get_icon ( self . table , id_branch_info . branch_text )
+			
+			base_branch = self . insert_item ( id_branch_info . branch_text , 
+						0 , 
+						TREE_INSERT_LAST , 
+						icon_number ,
+						icon_number , 
+						id_branch_info )
+
+
+			IF self . have_children  ( base_branch ) = TRUE THEN
+
+				CREATE OBJECT "TREE_USERINFO" , dummy_branch_info
+
+
+				dummy_branch_info . initialise ( self . hierarchy 	, 
+								 self . table 		, 
+								 BRANCH_DUMMY		)	
+
+
+				dummy_branch_info . data_fill ( base_branch )
+
+
+
+				self . insert_item ( 	GET_USER_MESSAGE ( "AUDIT_TREE_SEARCH" , 1 ),
+							base_branch,
+							TREE_INSERT_LAST,
+							ICON_UNDO ,
+							ICON_UNDO,
+							dummy_branch_info  )
+
+			ENDIF
+			
+			counter = counter + 1
+ 
+		ENDWHILE
+
+		ELSE
+		
+			self . insert_nodata_dummy ()
+
+		
+		ENDIF
+	
+
+                          
+	ENDROUTINE
+
+	
+
+{******************************************************************************}
+
+
+	ROUTINE hierarchy_tree_action_have_children  ( 	self ,
+							VALUE item)
+
+{
+*	Checks if the current branch should have any more children, returns 
+*	true or false.
+*	The function checks the current tree hierarchy, and checks if any
+* 	dynamic data is found.
+*
+*******************************************************************************}
+
+	DECLARE current_branch_info	,
+		dynamic_data		,
+		next_table		,
+		children
+
+		
+
+	children = FALSE
+	next_table = EMPTY
+	
+	ARRAY dynamic_data 
+	
+	
+	current_branch_info = self . get_userinfo ( item )
+
+
+	
+	IF self . children = TRUE THEN
+
+		next_table = child_table  ( 	self . hierarchy , 
+						current_branch_info . table )
+		
+		IF next_table <> EMPTY THEN
+		
+			dynamic_data = find_children  ( self . hierarchy ,
+							current_branch_info . table ,  
+							current_branch_info . key_one , 
+							1 )
+											
+			
+		
+		ENDIF
+	ELSE
+		
+		
+		next_table = parent_table  ( 	self . hierarchy , 
+						current_branch_info . table )
+		
+		IF next_table <> EMPTY THEN
+		
+			dynamic_data = find_parent  ( 	self . hierarchy ,  
+							current_branch_info . table ,  
+							current_branch_info . key_one )
+		
+		ENDIF		
+		
+	ENDIF
+	
+	current_branch_info . child_branch_ids = dynamic_data
+	
+	IF size_of_array ( current_branch_info . child_branch_ids ) <> 0 THEN
+		
+		IF NOT BLANK ( current_branch_info . child_branch_ids [1] ) THEN
+			children = TRUE
+		ENDIF
+	
+	ENDIF
+
+	
+	return ( children )
+	
+
+	ENDROUTINE
+	
+{******************************************************************************}
+	ROUTINE hierarchy_tree_action_insert_nodata_dummy ( self )
+					
+{
+*	
+*	When no data is found insert a dummy branch which tells the user
+*	this.  Also clear the current tree.
+*
+*******************************************************************************}
+		
+	DECLARE blank_array		,
+		dummy_branch_info
+
+		self . remove_all ()	
+		ARRAY blank_array
+		self . items = blank_array
+		
+
+		CREATE OBJECT "TREE_USERINFO" , dummy_branch_info
+			
+			
+		dummy_branch_info . initialise ( self . hierarchy , self . table , BRANCH_DUMMY )
+		
+			
+		self . insert_item ( 	GET_USER_MESSAGE ( "AUDIT_TREE_NO_DATA" , 1 ),
+					0,
+					TREE_INSERT_LAST,
+					ICON_INFORMATION,
+					ICON_INFORMATION,
+					dummy_branch_info  )
+
+
+	ENDROUTINE	
+
+{****************************************************************************}
+
+	ROUTINE tree_expand_table (     self			,       
+		        		VALUE item             	,
+					VALUE already_expanded 	)
+
+{
+*	When a branch is expand, check it is the right type of branch, ie
+*	dynamic identity and find its children.
+*
+*	Any dummy branches will also be deleted.
+*
+*******************************************************************************}
+
+
+	DECLARE child_item		,
+		child_info		,
+		current_info		
+
+
+		IF NOT already_expanded THEN
+		
+			current_info 	= self . get_userinfo ( item )
+			child_item 	= self . get_first_child ( item )
+			child_info 	= self . get_userinfo ( child_item )
+			
+			
+			
+			IF child_info . field_type = BRANCH_DUMMY THEN
+			
+				self . remove_item( child_item )
+			
+			ENDIF 
+			
+			
+			IF current_info . field_type = BRANCH_IDENTITY THEN
+			
+		
+					
+				insert_next_identities ( self	   ,
+				{current branch}	item , 
+				{table name}		current_info . table , 
+				{identity}		current_info . key_one)
+
+		
+			ENDIF
+
+		ENDIF
+
+	ENDROUTINE	
+
+
+
+{****************************************************************************}
+
+
+
+	ROUTINE qt_tree_select_table (	self        ,       
+		        		VALUE item  )
+					
+{
+*	When data within the audit or esig tree, is selected update the
+*	appropriate list.
+*
+*
+*******************************************************************************}
+
+	DECLARE obj_to_update		,
+		selected_branch_info	,
+		array_of_ids		,
+		array_of_fields		,
+		branch_events	
+		
+	ARRAY branch_events
+	ARRAY array_of_fields
+	ARRAY array_of_ids
+
+
+
+	
+	IF item <> 0 THEN
+	
+	{**********************************************************************}
+	{* The audit and esig tree has a link to the list, the tree should    *}
+	{* update, get the list object and the relavent branch info from the  *}
+	{* selected branch. 						      *}
+	{**********************************************************************}
+
+		obj_to_update = self . link
+
+		selected_branch_info = self . get_userinfo ( item )
+
+		IF selected_branch_info . field_type <> BRANCH_DUMMY THEN
+
+			get_field_names(selected_branch_info . table, array_of_fields)
+
+			{**********************************************************************}
+			{* Now we have the object, table and identity get all the fields from *}
+			{* correct table, and add the columns to the list.		      *}
+			{**********************************************************************}
+		
+			obj_to_update . criteria = EMPTY
+			
+			ARRAY obj_to_update . criteria
+
+			obj_to_update . clear_columns ()
+
+			obj_to_update . table = selected_branch_info . table 
+
+			obj_to_update . auto_define_cols( selected_branch_info . table )
+
+			obj_to_update . create_list( )                   
+
+			ARRAY_SELECT_ADD( obj_to_update . criteria ,
+				  ARRAY_SELECT_EQ ,
+				  selected_branch_info . select_fields[ 1 ]      ,
+				  selected_branch_info . key_one            )
+
+
+			obj_to_update . autosize     	= TRUE
+			obj_to_update . load_data( )                     
+
+
+			
+		ELSE
+		
+			obj_to_update . remove_all_items () 
+			
+		
+		
+		ENDIF
+
+	
+	ENDIF
+
+
+	ENDROUTINE
+
+{****************************************************************************}
+
+
+
+
+	ROUTINE data_tree_select_table (	self        ,       
+		        			VALUE item  )
+					
+{
+*	When dynamic data is selected ie a sample, display the relevent
+*	audit or esig tree.
+*
+*
+*******************************************************************************}
+
+	DECLARE obj_to_update		,
+		selected_branch_info	,
+		array_of_ids		,
+		current_tab		,
+		treeprompt		,
+		event_key_0		,
+		list_of_field_data	,
+		branch_events		,
+		blank_array		,
+		selected_item
+
+
+	ARRAY branch_events
+	ARRAY array_of_ids
+
+
+	{**********************************************************************}
+	{* The sample/test... tree links to the right pane tab object.  When  *}
+	{* an identity is select check which tab is selected and update the   *}
+	{* tree.							      *}
+	{**********************************************************************}
+	
+	
+	IF item <> 0 THEN
+		
+		obj_to_update = self . link
+		
+		selected_branch_info = self . get_userinfo ( item )
+
+
+
+
+	{**********************************************************************}
+	{* Some dynamic data in the audit/esig tables is reprisented by       *}
+	{* adding, two primary keys together, check if the is the case with   *}
+	{* the selected branch and add them together			      *}
+	{**********************************************************************}
+
+
+		IF selected_branch_info . key_two <> EMPTY
+
+			event_key_0 = selected_branch_info . key_one : selected_branch_info . key_two
+
+		ELSE
+
+			event_key_0 = selected_branch_info . key_one
+
+		ENDIF
+
+
+		
+
+		current_tab = obj_to_update . last_selected
+
+	{**********************************************************************}
+	{* Tab 1 displays all audit info releted to the dynamic data.	      *}
+	{**********************************************************************}
+
+		IF current_tab = 1 THEN
+
+			treeprompt = obj_to_update . forms [ current_tab ] . promptobjects[1]
+
+
+
+
+			array_of_ids	 = get_transactions (  selected_branch_info . table , event_key_0 )
+
+			IF size_of_array ( array_of_ids ) <> 0 THEN
+				
+
+	{**********************************************************************}
+	{* Once all transactions are found, reset the audit tree, and create  *}
+	{* the transaction branches.					      *}
+	{**********************************************************************}
+
+				treeprompt . remove_all ()
+
+				ARRAY blank_array
+				treeprompt . items = blank_array
+
+				treeprompt . initialise ( treeprompt . hierarchy , "AUDIT_TRANSACTION" , array_of_ids , TRUE )
+				treeprompt . create_tree ()
+
+				selected_item = treeprompt . get_first_child ( 0 )
+
+				
+
+				qt_tree_select_table ( treeprompt , selected_item )
+
+			ELSE
+	
+	{**********************************************************************}
+	{* If not transaction are found, reset the tree anyway and insert a   *}
+	{* dummy branch.						      *}
+	{**********************************************************************}
+	
+	
+				treeprompt . insert_nodata_dummy ()
+				
+				list_of_field_data = treeprompt . link
+				list_of_field_data . remove_all_items ()
+				
+			ENDIF
+
+		ELSEIF current_tab = 2 THEN
+
+	{**********************************************************************}
+	{* Tab 2 displays all esig info releted to the dynamic data.	      *}
+	{**********************************************************************}
+
+
+				treeprompt = obj_to_update . forms [ current_tab ] . promptobjects[1]
+
+
+				branch_events	 = get_esig_events (  selected_branch_info . table , event_key_0 )
+
+				IF size_of_array ( branch_events ) <> 0 THEN
+				
+					treeprompt . remove_all ()
+					
+					ARRAY blank_array
+					treeprompt . items = blank_array
+
+
+					treeprompt . initialise ( treeprompt . hierarchy , "ESIG_EVENT" , branch_events , TRUE )
+					treeprompt . create_tree ()
+
+					list_of_field_data = treeprompt . link
+
+					selected_item = treeprompt . get_first_child ( 0 )
+
+					qt_tree_select_table ( treeprompt , selected_item )
+				
+				ELSE
+					treeprompt . insert_nodata_dummy ()
+		
+					list_of_field_data = treeprompt . link
+					list_of_field_data . remove_all_items ()
+				ENDIF
+
+
+		ELSE
+
+			
+
+		ENDIF
+
+	ENDIF
+
+
+
+	ENDROUTINE 
+
+		
+	
+{******************************************************************************}
+
+
+	
+	ROUTINE qt_tab_select ( self , VALUE item)
+
+
+{
+*  
+*	When a tab is selected, update the appropriate tree and data list.
+*
+******************************************************************************}
+	
+	
+	DECLARE data_tree		,
+		audit_tree		,
+		esig_tree		,
+		selected_data		,
+		array_of_qt_data	,
+		array_of_transactions	,
+		event_key_0		,
+		blank_array		
+		
+	ARRAY array_of_transactions	
+
+	data_tree = self . userinfo
+	
+	IF data_tree . selected = 0 THEN
+		data_tree . selected = 1
+	ENDIF
+	
+
+	{**********************************************************************}
+	{* When the tab was created the data tree was referenced in the tabs  *}
+	{* userinfo.							      *}
+	{**********************************************************************}
+	
+	selected_data = data_tree . get_userinfo ( data_tree . selected )
+
+	IF selected_data . key_two <> EMPTY
+
+		event_key_0 = selected_data . key_one : selected_data . key_two
+
+	ELSE
+
+		event_key_0 = selected_data . key_one
+
+	ENDIF
+	
+	
+
+	IF item = 1 THEN
+	
+		audit_tree = self.forms[item].promptobjects[1]
+		
+		audit_tree . remove_all ()	
+		ARRAY blank_array
+		audit_tree . items = blank_array
+					
+	
+		array_of_transactions = get_transactions (  selected_data . table , event_key_0 )
+		
+		audit_tree . initialise ( 	audit_tree . hierarchy 	, 
+						"AUDIT_TRANSACTION" 	, 
+						array_of_transactions 	, 
+						audit_tree . children 	)
+						
+		audit_tree . create_tree ()
+	
+	
+	ELSE
+	
+		esig_tree = self.forms[item].promptobjects[1]
+		
+		esig_tree . remove_all ()	
+	
+		ARRAY blank_array
+		esig_tree . items = blank_array
+	
+	
+	
+		array_of_qt_data = get_esig_events (  	selected_data . table 	, 
+							event_key_0 )
+		
+		
+		esig_tree . initialise ( 	esig_tree . hierarchy 	, 
+						"ESIG_EVENT" 		, 
+						array_of_qt_data 	, 
+						esig_tree . children	)
+		
+		
+		esig_tree . create_tree ()
+	
+	ENDIF
+					
+	ENDROUTINE 
+
+{******************************************************************************}
+
+
+	
+	ROUTINE insert_next_identities ( self         	,	
+					VALUE item 	, 
+					VALUE table	, 
+					VALUE identity 	)
+
+{
+*   	See routine tree_expand_table.  
+*
+******************************************************************************}
+
+      	DECLARE	user_info		,
+      		number_of_ids		,
+      		id_counter		,
+      		id_branch		,
+      		branch_ids		,
+      		branch_ids2		,
+          	dummy_parent_info	,
+      		hierarchy		,
+		dummy_branch_items	,
+		id_array		,
+		id_branch_info		,
+		dummy_branch_info	,
+		next_table		,
+		found_key2		,
+		icon_number		,
+		current_branch_info	,
+      		children		
+      		
+      		
+	
+      	ARRAY user_info 
+      	ARRAY branch_ids
+      	ARRAY branch_ids2
+      	ARRAY dummy_parent_info
+      	ARRAY hierarchy
+      	ARRAY dummy_branch_items
+
+
+      	ARRAY id_branch_info
+      	
+     	hierarchy 	= self . hierarchy
+     	children 	= self . children
+     	
+      	id_counter = 1
+	
+	current_branch_info = self . get_userinfo ( item )
+	IF children = TRUE THEN
+	
+		next_table = child_table  ( self . hierarchy , table )
+		branch_ids = current_branch_info . child_branch_ids
+					
+	ELSE
+		next_table = parent_table  ( self . hierarchy , table )
+		branch_ids = current_branch_info . child_branch_ids
+			
+	
+	ENDIF
+	
+	number_of_ids = size_of_array ( branch_ids )
+	
+		
+		found_key2 = return_array_data_by_table ( 	hierarchy 	, 
+						next_table	, 
+						5		)
+		IF  found_key2[ 1 ] <> EMPTY THEN
+
+			branch_ids2 = find_children  ( hierarchy ,  table,  identity , 2 )
+
+		ENDIF
+
+
+
+	WHILE id_counter <= number_of_ids DO
+
+		IF branch_ids [ id_counter ] <> EMPTY THEN
+
+
+
+			CREATE OBJECT TREE_USERINFO_OBJECT , id_branch_info [ id_counter ]
+
+			ARRAY id_array
+
+			id_branch_info [ id_counter ] . initialise ( hierarchy , next_table , BRANCH_IDENTITY )
+
+			id_branch_info  [ id_counter ] . data_fill ( branch_ids [ id_counter ] )
+
+
+
+			id_branch_info  [ id_counter ] . key_two =  branch_ids2 [ id_counter ] 
+
+
+			id_branch_info [ id_counter ] . get_branch_text ( branch_ids [ id_counter ] 
+								, branch_ids2 [ id_counter ] )
+
+			icon_number = get_icon ( next_table , id_branch_info [ id_counter ]. branch_text )
+
+
+			id_branch = self . insert_item ( id_branch_info [ id_counter ] . branch_text,
+						item ,
+						TREE_INSERT_LAST,
+						icon_number,
+						icon_number,
+						id_branch_info [ id_counter ] )
+
+
+
+
+
+			IF self . have_children  ( id_branch ) = TRUE THEN
+
+
+				CREATE OBJECT TREE_USERINFO_OBJECT , dummy_branch_info
+
+
+				dummy_branch_info . initialise ( hierarchy , next_table , BRANCH_DUMMY)
+
+
+				dummy_branch_info . data_fill ( id_branch )
+
+
+
+				self . insert_item ( 	GET_USER_MESSAGE ( "AUDIT_TREE_SEARCH" , 1 ),
+							id_branch,
+							TREE_INSERT_LAST,
+							ICON_UNDO ,
+							ICON_UNDO,
+							dummy_branch_info  )
+
+			ENDIF
+
+			id_branch = EMPTY
+
+
+		ENDIF
+
+		id_counter = id_counter + 1
+
+
+	ENDWHILE                                      
+	
+	
+	ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE get_icon ( VALUE table , VALUE type )
+{
+*	
+*
+*******************************************************************************}
+	DECLARE icon, icon_type
+	
+	icon_type = explorer_utils_get_table_default_icon ( table )
+
+	IF ( icon_type  = EMPTY ) OR ( icon_type  = "" ) THEN
+	
+		IF table = "JOB_HEADER" THEN
+	
+			icon = ICON_CYLINDERS
+	
+		ELSEIF table = "SAMPLE"
+	
+			icon = ICON_SAMPLE_FLASK
+	
+		ELSEIF table = "TEST"
+		
+			icon = ICON_TEST
+	
+		ELSEIF table = "RESULT"
+		
+			icon = ICON_RESULT
+	
+		ELSEIF table = "AUDIT_TRANSACTION"
+			
+			icon = ICON_BOXES
+	
+		ELSEIF table = "AUDIT_EVENT"
+			
+			IF INDEX ( type, "INSERT" ) <> 0  THEN
+
+				icon = ICON_NEW_ITEM
+
+			ELSEIF INDEX ( type, "MODIFY" ) <> 0 THEN
+
+				icon = ICON_EDIT_ITEM
+
+			ELSEIF INDEX ( type, "DELETE" ) <> 0 THEN
+			
+				icon = ICON_DELETE_ITEM
+			
+			ENDIF
+		ELSEIF table = "AUDIT_DATA"
+					
+			icon = ICON_DATA_ROWS
+
+		ELSEIF table = "ESIG_EVENT"
+					
+			icon = ICON_ESIG
+		
+		ELSEIF table = "ESIG_DATA"
+						
+			icon = ICON_DATA_ROWS
+	
+		ELSE
+		
+			icon = ICON_TABLE
+
+		ENDIF
+	ELSE
+		icon = explorer_utils_get_icon ( icon_type )
+		
+	ENDIF
+	
+	return ( icon )
+
+	ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE explorer_icon_event ( self, row )
+
+{	
+*	Return back an icon for the current user and group to show the config item's
+*	overide context
+*
+*******************************************************************************}
+
+	DECLARE icon_id
+
+	
+		icon_id = "INT_COMPUTER"
+	
+
+	RETURN ( client_icon_id_to_number ( icon_id ) )
+ 
+ENDROUTINE
+
+{******************************************************************************}
+
+
+
+
+	ROUTINE get_transactions ( 	VALUE audits_on_table	, 
+				VALUE identity 		)
+{
+*	Retrieves all events from the given table and identity.
+*
+*******************************************************************************}
+
+	DECLARE transaction_counter		, 
+		key_one			, 
+		array_of_transactions		
+
+	ARRAY array_of_transactions 
+
+	transaction_counter = 1
+	
+	audits_on_table = TOUPPER(audits_on_table)
+
+	
+	
+		key_one = SELECT DISTINCT audit_event.transaction
+				WHERE 	( table_name = audits_on_table	) 
+				AND	( record_Key0 = identity )
+	
+
+	
+	
+	WHILE key_one <> EMPTY DO
+
+		array_of_transactions[ transaction_counter ] = key_one
+	
+		NEXT audit_event
+	
+		key_one = SELECT audit_event.transaction
+		
+		IF key_one <> EMPTY
+
+			transaction_counter = transaction_counter + 1
+
+		ENDIF
+	
+	ENDWHILE
+	
+	return (array_of_transactions)
+
+	ENDROUTINE
+	
+
+{******************************************************************************}
+
+
+
+
+	ROUTINE get_esig_events ( 	VALUE esigs_on_table	, 
+					VALUE identity 		)
+{
+*	Retrieves all esig events from the given table and identity.
+*
+*******************************************************************************}
+
+	DECLARE event_counter		, 
+		key_one			, 
+		array_of_events		
+
+
+	ARRAY array_of_events 
+
+	event_counter = 1
+	
+	esigs_on_table = TOUPPER(esigs_on_table)
+
+	
+	
+		key_one = SELECT esig_data.esig_event_id
+				WHERE 	( table_name = esigs_on_table	) 
+				AND	( record_Key0 = identity )
+	
+
+	
+	
+	WHILE key_one <> EMPTY DO
+
+		
+		array_of_events[event_counter] = key_one
+		
+		
+	
+		NEXT esig_data
+
+
+
+		key_one = SELECT esig_data.esig_event_id
+
+
+
+
+		IF key_one <> EMPTY
+
+			event_counter = event_counter + 1
+
+		ENDIF
+	
+	
+	ENDWHILE
+	
+	
+	
+	return (array_of_events)
+
+
+  
+
+	ENDROUTINE
+	
+
+{******************************************************************************}
+
+	ROUTINE find_children  ( 	hierarchy_array 	, 
+					VALUE current_table 	, 
+					VALUE current_identity 	,
+					VALUE key_0_field	)
+{
+
+*
+*
+*
+*******************************************************************************}
+
+	DECLARE hierarchy_of_data	, 
+		hierarchy_array_place	, 
+		select_field
+
+	ARRAY hierarchy_of_data
+
+	hierarchy_array_place = size_of_array ( hierarchy_array )
+
+		
+	WHILE hierarchy_array_place > 1 DO
+
+		IF TOUPPER(current_table) = TOUPPER(hierarchy_array [ hierarchy_array_place , 1]) 
+			
+			
+			IF key_0_field = 1 THEN
+			
+				select_field = hierarchy_array [ hierarchy_array_place - 1 , 2 ]
+			
+			ELSE
+			
+				select_field = hierarchy_array [ hierarchy_array_place - 1 , 5 ]
+			
+			ENDIF
+			
+			hierarchy_of_data = dynamic_sql ( 	hierarchy_array [  hierarchy_array_place - 1, 1 ] , 
+								select_field ,  
+								hierarchy_array [  hierarchy_array_place - 1, 3 ],
+								current_identity )
+			
+		
+		ENDIF
+	
+		hierarchy_array_place = hierarchy_array_place - 1
+
+	ENDWHILE
+	
+
+	return (hierarchy_of_data)
+
+
+	ENDROUTINE
+
+
+{******************************************************************************}
+
+
+
+{******************************************************************************}
+
+	ROUTINE find_parent ( 	hierarchy_array 	, 
+				VALUE current_table 	, 
+				VALUE current_identity 	)
+{
+
+*
+*
+*
+*******************************************************************************}
+	DECLARE hierarchy_of_data	,
+		temp			,
+		data_array_place	,
+		hierarchy_array_place	,
+		sizeofhierarchy_array
+
+	ARRAY hierarchy_of_data 
+	ARRAY temp
+
+	data_array_place = 1
+
+	hierarchy_array_place = 1
+
+
+
+	sizeofhierarchy_array = size_of_array ( hierarchy_array )
+
+		WHILE hierarchy_array_place < sizeofhierarchy_array DO
+
+		
+		IF TOUPPER(current_table) = TOUPPER(hierarchy_array [  hierarchy_array_place , 1 ]) THEN
+		
+			
+
+			temp = dynamic_sql ( 	hierarchy_array [  hierarchy_array_place , 1 ] 	, 
+						hierarchy_array [  hierarchy_array_place , 3 ] 	, 
+						hierarchy_array [  hierarchy_array_place , 2 ] 	,
+						current_identity 				)
+
+			
+		
+			
+			hierarchy_of_data [ data_array_place ] = temp [ 1 ]
+				
+			
+		ENDIF
+
+
+		hierarchy_array_place = hierarchy_array_place + 1
+
+
+	
+		ENDWHILE 
+	
+
+		return (hierarchy_of_data)
+
+
+
+  
+
+	ENDROUTINE
+
+
+
+
+{******************************************************************************}
+
+	ROUTINE child_table  ( 	hierarchy_array 	, 
+				VALUE current_table 	)
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE next_table , hierarchy_array_place
+
+	next_table = EMPTY
+	hierarchy_array_place = size_of_array ( hierarchy_array )
+
+		
+	WHILE hierarchy_array_place > 1 DO
+
+		IF 	TOUPPER( current_table ) =
+			TOUPPER( hierarchy_array [ hierarchy_array_place , 1 ]) THEN
+			
+			
+			next_table = hierarchy_array [ hierarchy_array_place - 1 , 1 ]
+
+
+		ENDIF
+		
+
+
+		hierarchy_array_place = hierarchy_array_place - 1
+
+
+
+	ENDWHILE
+	
+
+	return (next_table)
+
+
+	ENDROUTINE
+
+
+
+
+{******************************************************************************}
+
+	ROUTINE multiple_fields  ( VALUE field_name )
+{
+*	Check if there is more than one field in the variable and each field
+*	sort in an array element.  
+*
+*******************************************************************************}
+
+	DECLARE array_of_fields		, 
+		array_counter		, 
+		separator_position 	, 
+		temp_field_name		,
+		size_of_field
+
+	ARRAY array_of_fields
+
+
+	size_of_field = STRINGLENGTH( field_name )
+	array_counter = 1
+
+	separator_position = INDEX ( field_name  , "," ) 
+
+	{we only need to separate fields if there is more than one}
+	WHILE separator_position <> 0 DO
+
+		array_of_fields [ array_counter ] = 
+			LEFTSTRING ( field_name , separator_position - 1 )
+
+		array_counter = array_counter + 1
+
+		temp_field_name = RIGHTSTRING ( field_name , size_of_field - separator_position )
+
+		field_name = temp_field_name
+		size_of_field = STRINGLENGTH( field_name )
+
+		separator_position = INDEX ( field_name , "," )
+
+
+	ENDWHILE
+
+	{If not comma's are found or file_name only contains the last field_name}
+	array_of_fields [ array_counter ] = field_name
+
+	return ( array_of_fields )
+
+
+
+	ENDROUTINE
+
+
+
+
+
+
+
+
+
+{******************************************************************************}
+
+
+	ROUTINE parent_table  ( hierarchy_array 	, 
+				VALUE current_table 	)
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE next_table 		, 
+		hierarchy_array_place	, 
+		hierarchy_array_counter
+
+	next_table = EMPTY
+
+	hierarchy_array_place = size_of_array ( hierarchy_array )
+	hierarchy_array_counter = 1
+
+
+
+	WHILE hierarchy_array_counter < hierarchy_array_place  DO
+
+		IF 	TOUPPER( current_table ) = 
+			TOUPPER( hierarchy_array [ hierarchy_array_counter , 1 ] ) THEN
+
+			next_table = hierarchy_array [ hierarchy_array_counter + 1 , 1 ]
+
+		ENDIF
+
+		hierarchy_array_counter = hierarchy_array_counter + 1
+
+	ENDWHILE
+
+
+	return (next_table)
+
+
+	ENDROUTINE
+
+
+
+{****************************************************************************}
+
+
+
+{*****************************************************************************}
+
+
+
+	ROUTINE dynamic_sql ( 	VALUE current_table 		, 
+					VALUE select_field 		, 
+					VALUE link_field 		, 
+					VALUE link_field_identity 	)
+{
+*	This routine is used by find_parent and find_children, to generate
+*	the sql to return the selected key0 field value.
+*
+*	If no data is found empty is returned.
+*
+*******************************************************************************}
+	DECLARE dynamic_sql_obj		, 
+		data_array_counter	, 
+		data_array		,
+		field_type		,
+		select_result  , remField
+
+
+	ARRAY data_array
+
+	data_array_counter = 1
+
+
+	GET_FIELD_DETAILS  'current_table'.'link_field' , "DATA_TYPE" , field_type 
+	GET_TABLE_DETAILS  'current_table', "REMOVE_FIELD" , remField 
+
+	IF field_type = "Text" THEN
+
+		link_field_identity = STRIP ( link_field_identity )
+
+	ENDIF
+
+
+
+
+	CREATE OBJECT "STD_DYNAMIC_SQL" , dynamic_sql_obj
+
+	dynamic_sql_obj . add_to_sql_statement ( "SELECT [" )
+	dynamic_sql_obj . add_to_sql_statement ( select_field )
+	dynamic_sql_obj . add_to_sql_statement ( "] FROM [" )
+	dynamic_sql_obj . add_to_sql_statement ( current_table )
+	dynamic_sql_obj . add_to_sql_statement ( "] WHERE ["  )
+	dynamic_sql_obj . add_to_sql_statement ( link_field )
+	dynamic_sql_obj . add_to_sql_statement ( "] = '" )
+	dynamic_sql_obj . add_to_sql_statement ( link_field_identity )
+	dynamic_sql_obj . add_to_sql_statement ( "'" )
+	
+	IF RemField <> EMPTY
+	
+		dynamic_sql_obj . add_to_sql_statement ( " AND " )
+		dynamic_sql_obj . add_to_sql_statement ( RemField )
+		dynamic_sql_obj . add_to_sql_statement ( "=" )
+		dynamic_sql_obj . add_to_sql_statement ( "'F'" )
+
+	ENDIF
+
+
+	dynamic_sql_obj . add_select_field  ( current_table , select_field )
+
+
+
+	dynamic_sql_obj . execute ()
+
+	select_result = dynamic_sql_obj . select ( 1 )
+
+
+	WHILE select_result <> EMPTY DO
+
+
+		data_array [ data_array_counter ] = select_result
+
+
+		dynamic_sql_obj . next ()
+
+		select_result = dynamic_sql_obj . select ( 1 )
+
+		IF select_result <> EMPTY THEN
+
+			data_array_counter = data_array_counter + 1
+
+		ENDIF
+
+
+	ENDWHILE
+
+
+
+
+	return ( data_array )
+
+  
+
+	ENDROUTINE
+
+{******************************************************************************}
+	
+
+	ROUTINE Imprint_Print ( VALUE report_name    ,
+                        parameter_list       ,
+                        VALUE use_parameters )
+
+{
+* 	Calls the appropriate report in Imprint with the specified parameters    
+*
+******************************************************************************}
+
+	DECLARE imprint_report , param_index
+
+	param_index = 1
+
+	{ Define the class, then create an instance }
+
+	define_imprint_class ( )
+
+	CREATE OBJECT IMPRINT, imprint_report
+
+	{ Generate a report }
+
+	imprint_report . create_ole_object( )
+	imprint_report . reset_ole_object ( )
+
+	IF ( use_parameters = "Y" ) THEN	
+
+		WHILE ( parameter_list [ param_index ] <> EMPTY ) DO
+
+			imprint_report . add_parameter ( parameter_list [ param_index ] )
+			
+			
+			
+			param_index = param_index + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	imprint_report . report  = report_name
+
+	imprint_report . generate ( )
+
+	imprint_report . ole_object = EMPTY
+
+	ENDROUTINE
+
+{****************************************************************************}
+
+
+	ROUTINE get_expanded_tree_data ( self )
+{
+*   	
+*	
+*
+******************************************************************************}	
+	
+	DECLARE userinfo_counter	,
+		search_branch_userinfo	,
+		imprint_array		,
+		number_of_items		,
+		event_key_0
+	
+	ARRAY imprint_array
+
+		
+	userinfo_counter = self . get_ancestor ( self . selected )
+	
+	number_of_items = size_of_array ( self . items )
+	
+	WHILE userinfo_counter <= number_of_items DO
+		
+		IF self . items [ userinfo_counter ] <> EMPTY THEN
+			search_branch_userinfo = self . get_userinfo ( userinfo_counter )
+					
+									
+			IF search_branch_userinfo . field_type = BRANCH_IDENTITY THEN
+
+				IF search_branch_userinfo . key_two <> EMPTY
+
+					event_key_0 = search_branch_userinfo . key_one : search_branch_userinfo . key_two
+
+				ELSE
+
+					event_key_0 = search_branch_userinfo . key_one
+
+				ENDIF		
+
+				imprint_array [ userinfo_counter , 1 ] = event_key_0
+				imprint_array [ userinfo_counter , 2 ] = search_branch_userinfo .table
+
+			ENDIF
+
+		ENDIF
+
+		userinfo_counter = userinfo_counter + 1
+	
+	
+	ENDWHILE
+
+
+	
+	return ( imprint_array )
+
+
+	ENDROUTINE
+
+{****************************************************************************}
+
+
+	ROUTINE tree_mouse_routine ( self )
+{
+*   	Check what item is being right clicked then display the correct
+*	pop-up menu items.
+*
+******************************************************************************}	
+	
+	
+
+
+	DECLARE current_branch_info	, 
+		custom			, 
+		table_database		,
+		select_array		,
+		qtmenu			,
+		standard
+
+		
+	current_branch_info = self . get_user_info ( self . selected )	
+		
+	IF current_branch_info . field_type <> BRANCH_DUMMY THEN		
+		
+	{**********************************************************************}
+	{* Before the standard menus can be found the identity of the selected*}
+	{* branch, needs to be in a db object.				      *}
+	{**********************************************************************}
+	
+	CREATE OBJECT "STD_OBJECT_DATABASE" , table_database
+	
+	table_database . initialise ( current_branch_info . table )
+	
+	ARRAY select_array
+	
+	array_select_add ( select_array ,
+	ARRAY_SELECT_EQ ,
+	current_branch_info . select_fields [1] ,
+	current_branch_info . key_one )
+	
+	table_database . select ( select_array )
+
+	
+	{**********************************************************************}
+	{* Load standard options for the current table.			      *}
+	{**********************************************************************}
+	
+	CREATE OBJECT POPUP_MENU_CLASS, custom
+
+
+	{*** Load standard options for this table ***}
+	standard = explorer_rmb_load_for_table ( current_branch_info . table , table_database )
+
+
+	IF standard <> EMPTY THEN
+
+		custom . add_menu( standard )
+
+	ENDIF
+	
+
+
+	
+	{**********************************************************************}
+	{* Load Audit/Esig explorer options				      *}
+	{**********************************************************************}
+
+	
+	CREATE OBJECT POPUP_MENU_CLASS, qtmenu
+	qtmenu . add_divider ()
+
+	IF current_branch_info . table = "AUDIT_TRANSACTION" THEN
+			
+		OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+		qtmenu . process_routine = "qt_audit_rmb_routine"
+		qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_EXP_T_P_TRANS" , 1 ) )
+	
+	
+	ELSEIF current_branch_info . table = "AUDIT_EVENT" THEN
+	
+		OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+		qtmenu . process_routine = "qt_audit_rmb_routine"
+		qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_EXP_T_P_EVENTS" , 1 ) )
+
+	
+	
+	ELSEIF current_branch_info . table = "AUDIT_DATA" THEN
+	
+		OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+		qtmenu . process_routine = "qt_audit_rmb_routine"
+		qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_TREE_P_SEL_DATA" , 1 ) )
+
+	ELSEIF current_branch_info . table = "ESIG_EVENT" THEN
+		
+		OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+		qtmenu . process_routine = "qt_audit_rmb_routine"
+		qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_TREE_P_REL_ESIG_EVENT" , 1 ) )
+		
+	ELSEIF current_branch_info . table = "ESIG_DATA" THEN
+			
+		{OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+		qtmenu . process_routine = "qt_audit_rmb_routine"
+		qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+		qtmenu . add_item ( GET_USER_MESSAGE ( "P_REL_ESIG_EVENT" , 1 ) )}
+	
+	ELSE
+		
+		OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+		qtmenu . process_routine = "qt_audit_rmb_routine"
+		qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_TREE_P_REL_TRANS" , 1 ) )
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_TREE_LIST_AUDIT" , 1 ) )
+		qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_TREE_LIST_ESIG" , 1 ) )
+		
+		
+		IF current_branch_info . table = "SAMPLE" THEN
+		
+			OBJECT_ASSIGN_UNCOUNTED( qtmenu . user_info , self )
+			qtmenu . process_routine = "qt_audit_rmb_routine"
+			qtmenu . process_library = GLOBAL ("CURRENT_LIBRARY")
+			qtmenu . add_item ( GET_USER_MESSAGE ( "AUDIT_TREE_P_SAMPLE" , 1 ) )
+		
+		ENDIF
+	
+	
+	ENDIF
+
+	custom . add_menu ( qtmenu )
+
+	custom . process ( custom . start ( ) )
+	ENDIF
+
+	ENDROUTINE
+
+{****************************************************************************}
+
+
+	ROUTINE qt_audit_rmb_routine ( rmb_object , value selected_menu  )
+{
+*   	Check what item is being right clicked then display the correct
+*	pop-up menu items.
+*
+******************************************************************************}		
+	
+	DECLARE sucess				, 
+		tree 				, 
+		imprint_array			, 
+		selected_branch_userinfo	,
+		ancester_item			,
+		array_of_data			,
+		parent_branch_userinfo
+	
+	ARRAY imprint_array
+	
+	tree = rmb_object . userinfo
+	
+	
+	selected_branch_userinfo =  tree . get_userinfo ( tree . selected )
+	
+	
+	
+	
+	IF selected_menu = GET_USER_MESSAGE ( "AUDIT_EXP_T_P_EVENTS" , 1 ) THEN
+	
+	
+		ancester_item =  tree . get_ancestor ( tree . selected )
+		parent_branch_userinfo = tree . get_userinfo ( ancester_item )
+	
+		{transaction}
+		imprint_array [ 1 ] = STRING ( parent_branch_userinfo . key_one )
+		{event}
+		imprint_array [ 2 ] = STRING ( selected_branch_userinfo . key_one ) 
+
+		Imprint_Print ( "r_audit_event_composite"    ,
+				imprint_array       ,
+			"Y" )
+			
+	
+	
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_EXP_T_P_TRANS" , 1 ) 
+	
+	
+	
+		{transaction}
+		imprint_array [ 1 ] = STRING ( selected_branch_userinfo . key_one )
+
+		Imprint_Print ( "r_audit_transaction_composite"    ,
+				 imprint_array       ,
+				"Y" ) 
+	
+	
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_TREE_P_SAMPLE" , 1 )		
+		
+	
+	
+		imprint_array [ 1 ] = selected_branch_userinfo . key_one
+
+		Imprint_Print ( "r_sample_id_audit_composite"    ,
+				 imprint_array       ,
+				"Y" )
+	
+	
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_TREE_P_REL_ESIG_EVENT" , 1 )		
+			
+		
+		
+			imprint_array [ 1 ] = selected_branch_userinfo . key_one
+	
+			Imprint_Print ( "r_esig_event_comp"    ,
+					 imprint_array       ,
+				"Y" )
+	
+	
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_TREE_P_SEL_DATA" , 1 ) 	
+	
+	
+		ancester_item =  tree . get_ancestor ( tree . selected )
+		parent_branch_userinfo = tree . get_userinfo ( ancester_item )
+	
+		{transaction}
+		imprint_array [ 1 ] = STRING ( parent_branch_userinfo . key_one )
+		{event}
+		imprint_array [ 2 ] = STRING ( selected_branch_userinfo . key_one ) 
+
+		Imprint_Print ( "r_audit_data_composite"    ,
+				imprint_array       ,
+				"Y" )
+	
+	
+	
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_TREE_LIST_AUDIT" , 1 )
+	
+		array_of_data = get_expanded_tree_data ( tree )
+	
+		create_audit_list ( array_of_data )
+	
+	
+	
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_TREE_LIST_ESIG" , 1 )
+		
+			array_of_data = get_expanded_tree_data ( tree )
+		
+			create_esig_list ( array_of_data )
+			
+		
+		
+			
+	ELSEIF selected_menu = GET_USER_MESSAGE ( "AUDIT_TREE_P_REL_TRANS" , 1 ) 
+	
+	
+		imprint_array [ 1 ] = selected_branch_userinfo . table 
+		
+		IF selected_branch_userinfo . key_two <> EMPTY
+		
+			imprint_array [ 2 ] = selected_branch_userinfo . key_one : selected_branch_userinfo . key_two
+		
+		ELSE
+		
+			imprint_array [ 2 ] = selected_branch_userinfo . key_one
+		
+		ENDIF
+				
+
+		Imprint_Print ( "r_table_record_audit_composite"    ,
+				imprint_array       ,
+				"Y" ) 
+	
+	
+	
+	ENDIF
+	
+	
+	
+	sucess = TRUE
+	return ( sucess )
+		
+	
+
+	ENDROUTINE	
+
+{****************************************************************************}
+
+
+
+
+{******************************************************************************}
+
+
+	ROUTINE create_audit_tree ( 	hierarchy		,
+					VALUE current_table 	, 
+					array_of_ids	,
+					VALUE get_children 	)
+					
+
+{
+*	Creates main form for audit tree.
+*		
+*
+*******************************************************************************}
+
+	DECLARE split			,
+		main_form		,
+		left_form		,
+		right_form		,
+		qt_tab			,
+		audit_tree		,
+		data_tree		,
+		esig_tree		,
+		audit_form		,
+		esig_form		,
+		audit_hierarchy		,
+		esig_hierarchy		,
+		prompt_data_list	,
+		prompt_data_list2	,
+		button_audit		,
+		button_esig		,
+		button_help		,
+		button_close		,
+		main_form_array		,
+		branch_events		,
+		array_of_transactions	,
+		array_of_esig_events	
+
+
+		ARRAY array_of_transactions
+		ARRAY array_of_esig_events
+		ARRAY main_form_array  
+		ARRAY branch_events
+		
+		
+
+	set_up_std_prompt_split_class ()
+
+	set_up_std_prompt_tree_class ()
+
+	set_up_std_prompt_tab_class () 
+
+	set_up_std_prompt_list_class () 
+	
+	set_up_popup_class ()
+
+	{**********************************************************************}
+	{* The following to classes are needed to set up the hierarachy tree. *}
+	{**********************************************************************}
+	
+	define_hierarchy_tree_class ()
+	
+	define_audit_tree_userinfo_class ()
+
+
+
+	CREATE OBJECT "STD_FORM" , main_form
+
+	main_form . header 		= GET_USER_MESSAGE ( "AUDIT_TREE_TITLE_3" , 1 )       
+	main_form . height 		= 20
+	main_form . width  		= 90
+	main_form . column 		= 10
+	main_form . row    		= 12
+	main_form . userinfo 		= main_form_array
+	main_form . button_style    	= FORM_BUTTON_NONE
+	main_form . help_context    	= "$QT_TREE"
+
+	main_form . add_display ( "Identity" , 1 , 1 , PROMPT_RENDITION_NORMAL )
+
+
+	CREATE OBJECT PROMPT_SPLIT_CLASS , split
+
+	split . height = main_form . height - 4
+	split . width  = main_form . width
+	split . row    = 0
+	split . column = 0
+
+
+	main_form . add_prompt ( split )
+
+
+	{ ** Contains audit data linked to selected event ** }
+
+
+	split . set_size         ( 2 , 1  ) 	{ Column   , Row 	}
+
+
+
+	split . set_column_width ( 1 , 27 ) 	{ Column # , Width 	} 
+	split . set_column_width ( 2 , 53 ) 	{ Column # , Width 	} 
+
+
+	CREATE OBJECT "STD_FORM" , left_form
+
+
+	left_form . height 		= 10 
+	left_form . width  		= 10 
+	left_form . column 		= 1
+	left_form . row    		= 1
+
+	CREATE OBJECT "STD_FORM" , right_form
+
+
+	right_form . height 		= 10
+	right_form . width  		= 45
+	right_form . column 		= 1
+	right_form . row    		= 1	
+
+
+
+	split . add_form (  1, 1, left_form  ) 	{ Column   , Row , Form }
+	split . add_form (  2, 1, right_form  )
+
+
+
+	CREATE OBJECT "HIERARCHY_TREE" , data_tree
+
+	{ ** Contains tree with hierarchy ** }
+	data_tree . full_screen 	= TRUE
+	data_tree . selected_routine 	= "data_tree_select_table"
+	data_tree . initialise ( hierarchy , current_table , array_of_ids , get_children )
+	data_tree . create_tree ()
+
+
+
+	CREATE OBJECT "STD_PROMPT_TAB" , qt_tab
+
+	qt_tab . height = right_form . height 
+	qt_tab . width  = right_form . width
+	qt_tab . row    = 0
+	qt_tab . column = 0
+	qt_tab . full_screen 	= TRUE
+	qt_tab . selected_routine = "qt_tab_select"
+
+
+
+	OBJECT_ASSIGN_UNCOUNTED( data_tree . link , qt_tab )
+
+
+	CREATE OBJECT "STD_FORM" , audit_form
+	audit_form . header = GET_USER_MESSAGE ( "AUDIT_TREE_AUD_TAB_TITLE" , 1 )
+	audit_form . row    = 0
+	audit_form . column = 0		
+	audit_form . height = qt_tab . height 
+	audit_form . width  = qt_tab . width 
+
+	CREATE OBJECT "STD_FORM" , esig_form
+	esig_form . header = GET_USER_MESSAGE ( "AUDIT_TREE_ESIG_TAB_TITLE" , 1 )
+	esig_form . row    = 0
+	esig_form . column = 0	
+	esig_form . height = qt_tab . height 
+	esig_form . width  = qt_tab . width 
+
+
+
+	{ ** Contains tree with hierarchy ** }
+	ARRAY audit_hierarchy
+
+	audit_hierarchy[1,1] = "AUDIT_DATA" 	{** Table 		**}
+	audit_hierarchy[1,2] = "DATA" 		{** Select field 	**}
+	audit_hierarchy[1,3] = "EVENT" 		{** Link field 		**}
+	audit_hierarchy[1,4] = "FIELD,DATA" 	{** Display field	**}
+	audit_hierarchy[1,5] = EMPTY 		{** Optional select	**}
+
+	audit_hierarchy[2,1] = "AUDIT_EVENT"
+	audit_hierarchy[2,2] = "EVENT"
+	audit_hierarchy[2,3] = "TRANSACTION"
+	audit_hierarchy[2,4] = "EVENT_ACTION,TABLE_NAME,EVENT"
+	audit_hierarchy[2,5] = EMPTY
+
+	audit_hierarchy[3,1] = "AUDIT_TRANSACTION"
+	audit_hierarchy[3,2] = "TRANSACTION"
+	audit_hierarchy[3,3] = ""
+	audit_hierarchy[3,4] = "TRANSACTION_NAME,TRANSACTION"
+	audit_hierarchy[3,5] = EMPTY
+
+
+
+	ARRAY esig_hierarchy
+
+	esig_hierarchy[1,1] = "ESIG_DATA" 		{** Table **}
+	esig_hierarchy[1,2] = "ESIG_DATA_ID" 		{** Select field **}
+	esig_hierarchy[1,3] = "ESIG_EVENT_ID" 		{** Link field **}
+	esig_hierarchy[1,4] = "TABLE_NAME,RECORD_KEY0,ESIG_DATA_ID" 			{**Display field**}
+	esig_hierarchy[1,5] = EMPTY 			{**optional select**}
+
+	esig_hierarchy[2,1] = "ESIG_EVENT"
+	esig_hierarchy[2,2] = "ESIG_EVENT_ID"
+	esig_hierarchy[2,3] = "ESIG_EVENT_ID"
+	esig_hierarchy[2,4] = "ESIG_EVENT_ID,ESIG_REASON"
+	esig_hierarchy[2,5] = EMPTY
+
+	CREATE OBJECT "HIERARCHY_TREE" , audit_tree
+	audit_tree . selected_routine 	= "qt_tree_select_table"	
+	audit_tree . width       = 71
+	audit_tree . height      = 10
+	audit_tree . full_screen = FALSE	
+
+	CREATE OBJECT "HIERARCHY_TREE" , esig_tree
+	esig_tree . selected_routine 	= "qt_tree_select_table"
+	esig_tree . width       = 71
+	esig_tree . height      = 10
+	esig_tree . full_screen = FALSE
+
+
+
+
+
+
+	PROMPT OBJECT button_audit
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = "Audit Config..." ,
+		       mouse_click_routine = "audit_button_routine" )
+		ON LINE main_form . height - 1 FROM 8 TO 18
+
+
+	main_form . add_prompt ( button_audit )
+	
+	
+	
+	PROMPT OBJECT button_esig
+			CLASS "STD_PROMPT_BUTTON"
+			WITH ( caption      = "Esig Config..." ,
+			       mouse_click_routine = "esig_button_routine" )
+			ON LINE main_form . height - 1 FROM 28 TO 38
+	
+	
+	main_form . add_prompt ( button_esig )
+	
+
+	PROMPT OBJECT button_help
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = "Help" ,
+		       send_lastkey = "HELP" )
+		ON LINE main_form . height - 1 FROM 48 TO 58 {main_form . width}
+
+
+	main_form . add_prompt ( button_help )
+	
+	PROMPT OBJECT button_close
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = "Close" ,
+		       send_lastkey = "DO" )
+		ON LINE main_form . height - 1 FROM 68 TO 78 {main_form . width}
+
+
+	main_form . add_prompt ( button_close )
+
+
+	{**********************************************************************}
+	{* Populate the data in the audit tab				      *}
+	{**********************************************************************}
+
+	array_of_transactions	 = get_transactions (  current_table , array_of_ids[1] )
+
+	audit_tree . initialise ( audit_hierarchy , "AUDIT_TRANSACTION" , array_of_transactions , TRUE )
+	audit_tree . create_tree ()
+	
+	{**********************************************************************}
+	{* Populate the data in the esig tab				      *}
+	{**********************************************************************}	
+
+
+	array_of_esig_events = get_esig_events (  current_table , array_of_ids[1] )
+
+	esig_tree . initialise ( esig_hierarchy , "ESIG_EVENT" , array_of_esig_events , TRUE )
+	esig_tree . create_tree ()
+	esig_tree . insert_nodata_dummy ()
+
+
+
+	define_list_viewer_class()
+
+
+	CREATE OBJECT LIST_VIEWER_CLASS, prompt_data_list
+	prompt_data_list . row         = 12
+	prompt_data_list . column      = 0
+	prompt_data_list . height      = 2
+	prompt_data_list . width       = 61
+
+
+
+	CREATE OBJECT LIST_VIEWER_CLASS, prompt_data_list2
+	prompt_data_list2 . row         = 12
+	prompt_data_list2 . column      = 0
+	prompt_data_list2 . height      = 2
+	prompt_data_list2 . width       = 61
+
+
+	OBJECT_ASSIGN_UNCOUNTED( audit_tree . link , prompt_data_list  )
+	OBJECT_ASSIGN_UNCOUNTED( esig_tree . link  , prompt_data_list2 )
+	OBJECT_ASSIGN_UNCOUNTED( qt_tab . userinfo , data_tree )
+
+
+	IF size_of_array(array_of_transactions) <> 0 THEN
+
+		qt_tree_select_table ( audit_tree , 1 )
+
+	ENDIF
+
+	IF size_of_array(array_of_esig_events) <> 0 THEN
+
+		qt_tree_select_table ( esig_tree , 1 )	
+
+	ENDIF
+
+
+
+
+
+	left_form 	. add_prompt ( data_tree )
+	right_form 	. add_prompt ( qt_tab )	
+
+	audit_form 	. add_prompt ( audit_tree )
+	audit_form 	. add_prompt ( prompt_data_list )
+
+	esig_form 	. add_prompt ( esig_tree )
+	esig_form 	. add_prompt ( prompt_data_list2 )
+
+
+	qt_tab		. add_form ( audit_form )
+	qt_tab		. add_form ( esig_form )	
+
+
+
+
+
+
+
+	main_form . start_prompt ()
+
+	main_form . wait_prompt ()
+
+	main_form . end_prompt () 
+	
+
+
+	ENDROUTINE
+
+
+{******************************************************************************}
+
+	ROUTINE audit_button_routine ( self )
+{
+*	Creates main form for audit tree.
+*		
+*
+*******************************************************************************}
+	
+	        MENUPROC 15047
+		
+	ENDROUTINE 
+	
+
+{******************************************************************************}
+
+	ROUTINE esig_button_routine ( self )
+{
+*	Creates main form for audit tree.
+*		
+*
+*******************************************************************************}
+
+		MENUPROC 15054
+
+	ENDROUTINE 
+	
+	
+	
+{******************************************************************************}
+
+	ROUTINE help_button_routine ( self )
+{
+*	Creates main form for audit tree.
+*		
+*
+*******************************************************************************}
+
+
+
+
+	ENDROUTINE 
+
+
+{******************************************************************************}
+
+
+	ROUTINE create_audit_list ( array_of_data )
+					
+
+{
+*	Creates main form for audit tree.
+*		
+*
+*******************************************************************************}
+	
+	DECLARE audit_data_form		, 
+		data_list		,
+		counter			,
+		data			,
+		number_of_records	,
+		icon_number		,
+		transaction_id		, 
+		event_action		, 
+		event_reason		, 
+		event_table		,
+		event_key		,
+		transaction_name	,
+		transaction_date 
+
+
+
+
+	
+	ARRAY data
+
+	counter = 1
+
+	CREATE OBJECT "STD_FORM" , audit_data_form
+
+	audit_data_form . header 		= GET_USER_MESSAGE ( "AUDIT_TREE_TITLE_4" , 1 )        
+	audit_data_form . height 		= 20
+	audit_data_form . width  		= 60
+	audit_data_form . column		= 30
+	audit_data_form . row			= 12
+	audit_data_form . button_style 		= FORM_BUTTON_NONE
+
+
+	CREATE OBJECT "STD_PROMPT_LIST" , data_list
+	data_list . row         = 0
+	data_list . column      = 0
+	data_list . height 	= 20
+	data_list . width  	= 60
+	data_list . use_images = TRUE
+	data_list . vgl_library = GLOBAL ("CURRENT_LIBRARY")
+	data_list . full_screen = TRUE
+	data_list . style = LIST_STYLE_REPORT
+
+
+
+
+	data_list . add_column ( GET_USER_MESSAGE ( "EXPLORER_RMB_IDENT" , 1 ) , 12 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_TRANS" , 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_EVENT" , 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_ACTION" , 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_NAME" , 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_DATE" , 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_REASON" , 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_TABLEID" , 1 ) , 10 )
+
+	number_of_records = size_of_array ( array_of_data )
+
+	WHILE counter <= number_of_records DO
+
+		data = SELECT audit_event . event
+			WHERE (table_name = array_of_data [ counter , 2 ] ) AND
+			(record_key0 = array_of_data [ counter , 1 ])
+
+		WHILE data <> EMPTY DO
+
+			transaction_id = SELECT audit_event . transaction
+			event_action = SELECT audit_event . event_action
+			event_reason = SELECT audit_event . event_reason
+			event_table = SELECT audit_event . table_name
+			event_key = SELECT audit_event . record_key0
+
+			icon_number = get_icon ( event_table , EMPTY )
+
+
+
+			transaction_name = SELECT audit_transaction . transaction_name
+				WHERE transaction = transaction_id
+
+			transaction_date = SELECT audit_transaction . transaction_date
+
+
+
+			data_list . insert_item ( STRIP ( event_key ) , icon_number )
+			data_list . set_item ( 2 , transaction_id )
+			data_list . set_item ( 3 , data )
+			data_list . set_item ( 4 , event_action )
+			data_list . set_item ( 5 , transaction_name )
+			data_list . set_item ( 6 , transaction_date )
+			data_list . set_item ( 7 , event_reason )
+			data_list . set_item ( 8 , event_table )
+
+
+			NEXT audit_event
+
+			data = SELECT audit_event . event
+
+		ENDWHILE
+
+		counter = counter + 1
+
+	ENDWHILE
+
+
+
+
+	audit_data_form . add_prompt ( data_list )
+
+	audit_data_form . start_prompt ()
+
+	audit_data_form . wait_prompt ()
+	audit_data_form . end_prompt () 
+
+	
+	ENDROUTINE
+
+
+{******************************************************************************}
+
+
+	ROUTINE create_esig_list ( array_of_data )
+					
+
+{
+*	Creates main form for esig tree.
+*		
+*
+*******************************************************************************}
+	
+	DECLARE esig_data_form		, 
+		data_list		,
+		counter			,
+		number_of_records	,
+		icon_number		,
+		data_table		, 
+		data_key 		,
+		data_id			,
+		event_id 		,
+		fullname		,
+		serverdate		, 	
+		ipadd 			,	
+		esigreason		, 	
+		sigcomment		, 	
+		clientname		, 	
+		clientdate 	
+
+
+	
+	ARRAY data_id
+
+	counter = 1
+
+	CREATE OBJECT "STD_FORM" , esig_data_form
+
+	esig_data_form . header 		= GET_USER_MESSAGE ( "AUDIT_TREE_TITLE_5" , 1 )        
+	esig_data_form . height 		= 20
+	esig_data_form . width  		= 60
+	esig_data_form . column			= 30
+	esig_data_form . row			= 12
+	esig_data_form . button_style 		= FORM_BUTTON_NONE
+
+
+	CREATE OBJECT "STD_PROMPT_LIST" , data_list
+	data_list . row         = 0
+	data_list . column      = 0
+	data_list . height 	= 20
+	data_list . width  	= 60
+	data_list . use_images = TRUE
+	data_list . vgl_library = GLOBAL ("CURRENT_LIBRARY")
+	data_list . full_screen = TRUE
+	data_list . style = LIST_STYLE_REPORT
+
+
+
+	data_list . add_column ( GET_USER_MESSAGE ( "EXPLORER_RMB_IDENT" 		, 1 ) , 12 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_EVENT_ID" 	, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_TREE_DATAID" 		, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_FULLNAME" 	, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_SERVER_DATE" 	, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_IP" 		, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_REASON" 		, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_COMMENT" 		, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_CLIENT_NAME" 	, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "ESIG_SIGNING_LOG_CLIENT_DATE" 	, 1 ) , 10 )
+	data_list . add_column ( GET_USER_MESSAGE ( "AUDIT_EXP_TABLEID" 		, 1 ) , 10 )
+
+	number_of_records = size_of_array ( array_of_data )
+
+	WHILE counter <= number_of_records DO
+
+		data_id = SELECT esig_data . esig_data_id
+			WHERE (table_name = array_of_data [ counter , 2 ] ) AND
+			(record_key0 = array_of_data [ counter , 1 ])
+
+		WHILE data_id <> EMPTY DO
+
+			data_table = SELECT esig_data . table_name
+			data_key = SELECT esig_data . record_key0
+
+			event_id = SELECT esig_data . esig_event_id
+
+
+			fullname = SELECT esig_event . fullname
+				WHERE esig_event_id = event_id
+
+
+			serverdate 	= SELECT esig_event . server_date
+			ipadd 		= SELECT esig_event . ip_address
+			esigreason 	= SELECT esig_event . esig_reason
+			sigcomment 	= SELECT esig_event . signature_comment
+			clientname 	= SELECT esig_event . client_name
+			clientdate 	= SELECT esig_event . client_date
+
+			icon_number 	= get_icon ( data_table , EMPTY )
+
+
+			data_list . insert_item ( STRIP ( data_key ) , icon_number )
+			data_list . set_item ( 2 , event_id )
+			data_list . set_item ( 3 , data_id )
+			data_list . set_item ( 4 , fullname )
+			data_list . set_item ( 5 , serverdate )
+			data_list . set_item ( 6 , ipadd )
+			data_list . set_item ( 7 , esigreason )
+			data_list . set_item ( 8 , sigcomment )
+			data_list . set_item ( 9 , clientname )
+			data_list . set_item ( 10 , clientdate )
+			data_list . set_item ( 11 , data_table)
+
+			NEXT esig_data
+
+			data_id = SELECT esig_data . esig_data_id
+
+		ENDWHILE
+
+		counter = counter + 1
+
+	ENDWHILE
+
+
+
+
+	esig_data_form . add_prompt ( data_list )
+
+	esig_data_form . start_prompt ()
+
+	esig_data_form . wait_prompt ()
+	esig_data_form . end_prompt () 
+
+
+	ENDROUTINE
+	
+
+{******************************************************************************}
+
+	GLOBAL
+	ROUTINE qt_tree_sample_option ( VALUE identity )
+
+{
+*	
+*		
+*
+*******************************************************************************}
+	DECLARE hierarchy, array_of_ids
+
+	hierarchy = EMPTY
+		
+	ARRAY array_of_ids					
+
+	array_of_ids[1] = identity
+				
+	create_audit_tree ( 	hierarchy,
+				"SAMPLE", 
+				array_of_ids,
+				TRUE )
+		
+
+	ENDROUTINE
+	
+{******************************************************************************}
+
+
+
+{******************************************************************************}
+
+	GLOBAL
+	ROUTINE qt_tree_job_option ( VALUE identity )
+
+{
+*	
+*		
+*
+*******************************************************************************}
+	DECLARE hierarchy, array_of_ids
+
+	hierarchy = EMPTY
+	
+	ARRAY array_of_ids					
+	
+	array_of_ids[1] = identity
+							
+
+	create_audit_tree ( 	hierarchy,
+				"JOB_HEADER", 
+				array_of_ids,
+				TRUE )
+		
+
+	ENDROUTINE
+	
+
+{******************************************************************************}
+
+	GLOBAL
+	ROUTINE qt_tree_child_explorer_rmb ( rmb_object , object , data )
+
+{
+*	
+*		
+*
+*******************************************************************************}
+	DECLARE table				, 
+		identity			,
+		select_field			,
+		hierarchy_type			,
+		number_of_items_selected	,
+		counter				,
+		array_of_ids			,
+		key0_fields
+
+	ARRAY hierarchy_type
+	ARRAY array_of_ids
+	
+	
+	counter = 0
+	data . set_first ()
+
+
+	IF data . current <> EMPTY THEN
+
+	table = data . current . table
+
+	GET_TABLE_DETAILS 'table', "KEY0_FIELD", key0_fields
+
+	IF table = "BATCH_HEADER" THEN
+
+		hierarchy_type[1,1] = "RESULT" 			{** Table **}
+		hierarchy_type[1,2] = "TEST_NUMBER" 		{** Select field **}
+		hierarchy_type[1,3] = "TEST_NUMBER" 		{** Link field **}
+		hierarchy_type[1,4] = "TEST_NUMBER,NAME" 	{**Display field**}		
+		hierarchy_type[1,5] = "NAME" 			{**optional select**}	
+
+		hierarchy_type[2,1] = "TEST"
+		hierarchy_type[2,2] = "TEST_NUMBER"
+		hierarchy_type[2,3] = "SAMPLE"
+		hierarchy_type[2,4] = EMPTY
+		hierarchy_type[2,5] = EMPTY
+
+		hierarchy_type[3,1] = "SAMPLE"
+		hierarchy_type[3,2] = "ID_NUMERIC"
+		hierarchy_type[3,3] = "BATCH_ID"
+		hierarchy_type[3,4] = EMPTY
+		hierarchy_type[3,5] = EMPTY
+
+		hierarchy_type[4,1] = "BATCH_HEADER"
+		hierarchy_type[4,2] = ""
+		hierarchy_type[4,3] = ""
+		hierarchy_type[4,4] = EMPTY
+		hierarchy_type[4,5] = EMPTY
+
+
+	ELSEIF table = "PROJECT_INFO" THEN
+
+		hierarchy_type[1,1] = "RESULT" 	
+		hierarchy_type[1,2] = "TEST_NUMBER" 	
+		hierarchy_type[1,3] = "TEST_NUMBER" 	
+		hierarchy_type[1,4] = "TEST_NUMBER,NAME"		
+		hierarchy_type[1,5] = "NAME"		
+
+		hierarchy_type[2,1] = "TEST"
+		hierarchy_type[2,2] = "TEST_NUMBER"
+		hierarchy_type[2,3] = "SAMPLE"
+		hierarchy_type[2,4] = EMPTY
+		hierarchy_type[2,5] = EMPTY
+
+		hierarchy_type[3,1] = "SAMPLE"
+		hierarchy_type[3,2] = "ID_NUMERIC"
+		hierarchy_type[3,3] = "PROJECT_ID"
+		hierarchy_type[3,4] = "ID_TEXT"
+		hierarchy_type[3,5] = EMPTY
+
+		hierarchy_type[4,1] = "PROJECT_INFO"
+		hierarchy_type[4,2] = ""
+		hierarchy_type[4,3] = ""
+		hierarchy_type[4,4] = EMPTY
+		hierarchy_type[4,5] = EMPTY
+
+
+	ELSE
+
+
+
+		hierarchy_type = EMPTY
+
+	ENDIF
+
+
+	select_field = key0_fields [1]
+	number_of_items_selected = data . size ()
+
+	WHILE counter < number_of_items_selected DO
+	
+		counter = counter + 1
+		identity = SELECT 'table' . 'select_field'
+					IN OBJECT data . current
+		
+		
+		
+		array_of_ids[counter] = identity
+		
+		
+		data . set_next ()
+
+	ENDWHILE
+		create_audit_tree ( 	hierarchy_type,
+					table, 
+					array_of_ids,
+					TRUE )
+	ENDIF
+
+	ENDROUTINE
+	
+
+{******************************************************************************}
+
+	GLOBAL
+	ROUTINE qt_tree_parent_explorer_rmb ( rmb_object , object , data )
+
+{
+*	
+*		
+*
+*******************************************************************************}
+	DECLARE table				, 
+		identity			,
+		select_field			,
+		hierarchy_type			,
+		number_of_items_selected	,
+		counter				,
+		array_of_ids			,
+		key0_fields
+
+	ARRAY hierarchy_type
+	ARRAY array_of_ids
+	
+	
+	counter = 0
+	data . set_first ()
+
+
+	IF data . current <> EMPTY THEN
+
+	table = data . current . table
+
+	GET_TABLE_DETAILS 'table', "KEY0_FIELD", key0_fields
+
+	IF table = "BATCH_HEADER" THEN
+
+		hierarchy_type[1,1] = "RESULT" 			{** Table **}
+		hierarchy_type[1,2] = "TEST_NUMBER" 		{** Select field **}
+		hierarchy_type[1,3] = "TEST_NUMBER" 		{** Link field **}
+		hierarchy_type[1,4] = "TEST_NUMBER,NAME" 	{**Display field**}		
+		hierarchy_type[1,5] = "NAME" 			{**optional select**}	
+
+		hierarchy_type[2,1] = "TEST"
+		hierarchy_type[2,2] = "TEST_NUMBER"
+		hierarchy_type[2,3] = "SAMPLE"
+		hierarchy_type[2,4] = EMPTY
+		hierarchy_type[2,5] = EMPTY
+
+		hierarchy_type[3,1] = "SAMPLE"
+		hierarchy_type[3,2] = "ID_NUMERIC"
+		hierarchy_type[3,3] = "BATCH_ID"
+		hierarchy_type[3,4] = EMPTY
+		hierarchy_type[3,5] = EMPTY
+
+		hierarchy_type[4,1] = "BATCH_HEADER"
+		hierarchy_type[4,2] = ""
+		hierarchy_type[4,3] = ""
+		hierarchy_type[4,4] = EMPTY
+		hierarchy_type[4,5] = EMPTY
+
+
+	ELSEIF table = "PROJECT_INFO" THEN
+
+		hierarchy_type[1,1] = "RESULT" 	
+		hierarchy_type[1,2] = "TEST_NUMBER" 	
+		hierarchy_type[1,3] = "TEST_NUMBER" 	
+		hierarchy_type[1,4] = "TEST_NUMBER,NAME"		
+		hierarchy_type[1,5] = "NAME"		
+
+		hierarchy_type[2,1] = "TEST"
+		hierarchy_type[2,2] = "TEST_NUMBER"
+		hierarchy_type[2,3] = "SAMPLE"
+		hierarchy_type[2,4] = EMPTY
+		hierarchy_type[2,5] = EMPTY
+
+		hierarchy_type[3,1] = "SAMPLE"
+		hierarchy_type[3,2] = "ID_NUMERIC"
+		hierarchy_type[3,3] = "PROJECT_ID"
+		hierarchy_type[3,4] = "ID_TEXT"
+		hierarchy_type[3,5] = EMPTY
+
+		hierarchy_type[4,1] = "PROJECT_INFO"
+		hierarchy_type[4,2] = ""
+		hierarchy_type[4,3] = ""
+		hierarchy_type[4,4] = EMPTY
+		hierarchy_type[4,5] = EMPTY
+
+
+	ELSE
+
+
+
+		hierarchy_type = EMPTY
+
+	ENDIF
+
+
+	select_field = key0_fields [1]
+
+	number_of_items_selected = data . size ()
+
+	WHILE counter < number_of_items_selected DO
+	
+		counter = counter + 1
+		identity = SELECT 'table' . 'select_field'
+					IN OBJECT data . current
+		
+		
+		
+		array_of_ids[counter] = identity
+		
+		
+		data . set_next ()
+
+	ENDWHILE
+		create_audit_tree ( 	hierarchy_type,
+					table, 
+					array_of_ids,
+					FALSE )
+	ENDIF
+
+	ENDROUTINE
+	
+
+
+
+{******************************************************************************}
+
+{******************************************************************************}
+
+	ROUTINE qt_tree_choose_table
+
+{
+*
+*	Choose a table for use in QT Tree
+*
+*******************************************************************************}	
+
+
+	DECLARE names_tables	,
+		pre_form	,
+		child_prompt	,
+		button_ok	,
+		button_cancel   ,				
+		window_column   ,
+		window_row
+
+
+	ARRAY names_tables
+
+	window_column = ( ( GLOBAL ( "SCREEN_WIDTH" ) - 40 ) DIV 2 )
+
+	window_row = ( GLOBAL ( "SCREEN_HEIGHT" )  DIV 2 )
+
+	CREATE OBJECT PROMPT_CLASS_FORM , pre_form
+
+	pre_form . header 		= GET_USER_MESSAGE ( "AUDIT_TREE_TITLE_1" , 1 )       
+	pre_form . height 		= 6
+	pre_form . width  		= 40
+	pre_form . column 		= window_column
+	pre_form . row    		= window_row
+	pre_form . return_behaviour 	= FORM_RETURN_LEAVE
+	pre_form . button_style		= FORM_BUTTON_NONE
+
+
+	pre_form . add_display ( GET_USER_MESSAGE ( "AUDIT_TREE_PROMPT_2" , 1 )
+				, 1 , 1 , PROMPT_RENDITION_NORMAL )
+
+	get_table_names( names_tables )
+
+	PROMPT OBJECT table_prompt 
+
+		WITH ( length = 30 )
+		ON LINE 1 FROM 17
+		CHOOSE OUTOF names_tables
+
+
+	pre_form . add_prompt ( table_prompt )
+
+	pre_form . add_display (  GET_USER_MESSAGE ( "AUDIT_TREE_PROMPT_3" , 1 )
+					, 1 , 3 , PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT child_prompt
+		FORMAT BOOLEAN
+		WITH ( TRUE_WORD =  GET_USER_MESSAGE ( "AUDIT_TREE_OPTION_1" , 1 ),
+		       FALSE_WORD =  GET_USER_MESSAGE ( "AUDIT_TREE_OPTION_2" , 1 ) )
+		       ON LINE 3 FROM 17
+
+	child_prompt . value = TRUE
+
+	pre_form . add_prompt ( child_prompt )
+
+
+	PROMPT OBJECT button_ok
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_OK" , 1 ) ,
+		       send_lastkey = "DO" )
+		ON LINE 5 FROM 8 TO 18
+
+
+	pre_form . add_prompt ( button_ok )
+
+	PROMPT OBJECT button_cancel
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_CANCEL" , 1 ) ,
+		       send_lastkey = "EXIT"   )
+		ON LINE 5 FROM 23 TO 33
+
+	pre_form . add_prompt ( button_cancel )	
+
+	pre_form . start_prompt ()
+	pre_form . wait_prompt ()
+	pre_form . end_prompt () 	
+
+	IF pre_form . get_lastkey ( ) <> "EXIT" THEN
+		qt_select_identity ( table_prompt.text , child_prompt . value )
+	ENDIF
+
+	ENDROUTINE 
+
+{******************************************************************************}
+
+	ROUTINE qt_tree_choose_sample ( VALUE option ) 
+
+{
+*
+*	Choose a sample for use in QT Tree
+*
+*******************************************************************************}	
+
+
+	DECLARE sample_id	,
+		pre_form	,
+		child_prompt	,
+		button_ok	,
+		button_cancel   ,				
+		window_column   ,
+		window_row
+
+
+
+	window_column = ( ( GLOBAL ( "SCREEN_WIDTH" ) - 40 ) DIV 2 )
+
+	window_row = ( GLOBAL ( "SCREEN_HEIGHT" )  DIV 2 )
+
+	CREATE OBJECT PROMPT_CLASS_FORM , pre_form
+
+	pre_form . header 		= GET_USER_MESSAGE ( "AUDIT_TREE_TITLE_2" , 1 )       
+	pre_form . height 		= 6
+	pre_form . width  		= 40
+	pre_form . column 		= window_column
+	pre_form . row    		= window_row
+	pre_form . return_behaviour 	= FORM_RETURN_LEAVE
+	pre_form . button_style		= FORM_BUTTON_NONE
+
+
+	pre_form . add_display (  GET_USER_MESSAGE ( "AUDIT_TREE_PROMPT_1" , 1 )
+					, 1 , 1 , PROMPT_RENDITION_NORMAL )
+
+
+	PROMPT OBJECT sample_id 
+
+		WITH ( length = 30 )
+		ON LINE 1 FROM 17
+		BROWSE ON SAMPLE
+
+
+	pre_form . add_prompt ( sample_id )
+
+	pre_form . add_display ( GET_USER_MESSAGE ( "AUDIT_TREE_PROMPT_3" , 1 )
+					, 1 , 3 , PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT child_prompt
+		FORMAT BOOLEAN
+		WITH ( TRUE_WORD =  GET_USER_MESSAGE ( "AUDIT_TREE_OPTION_1" , 1 ),
+		       FALSE_WORD =  GET_USER_MESSAGE ( "AUDIT_TREE_OPTION_2" , 1 ) )
+		ON LINE 3 FROM 17
+
+	child_prompt . value = TRUE
+
+	pre_form . add_prompt ( child_prompt )
+
+
+	PROMPT OBJECT button_ok
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_OK" , 1 ) ,
+		       send_lastkey = "DO" )
+		ON LINE 5 FROM 8 TO 18
+
+
+	pre_form . add_prompt ( button_ok )
+
+	PROMPT OBJECT button_cancel
+		CLASS "STD_PROMPT_BUTTON"
+		WITH ( caption      = GET_USER_MESSAGE ( "SMP_PROMPT_BUTTON_CANCEL" , 1 ),
+		       send_lastkey = "EXIT"   )
+		ON LINE 5 FROM 23 TO 33
+
+	pre_form . add_prompt ( button_cancel )	
+
+	pre_form . start_prompt ()
+	pre_form . wait_prompt ()
+	pre_form . end_prompt () 	
+
+	IF pre_form . get_lastkey ( ) <> "EXIT" THEN
+		call_qt_tree_routine ( "SAMPLE", sample_id . value, child_prompt . value )
+	ENDIF
+
+	ENDROUTINE 
+	
+{******************************************************************************}
+
+	ROUTINE qt_select_identity ( VALUE table , VALUE children )
+
+{
+*		
+*		
+*
+*******************************************************************************}
+
+	DECLARE 	id
+
+	IF prompt_in_window ( table                                         	,
+			      GET_USER_MESSAGE ( "AUDIT_TREE_PROMPT_1" , 1 )	,	
+			      GET_USER_MESSAGE ( "AUDIT_TREE_TITLE_2" , 1 ) 	,
+		              EMPTY                                         	,
+			      id                                            ) THEN
+
+		
+		call_qt_tree_routine ( table, id, children )
+
+	ENDIF
+
+	RETURN
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+
+	ROUTINE call_qt_tree_routine ( VALUE table    ,
+	                               VALUE identity ,
+	                               VALUE children )
+
+{
+*		
+*		
+*
+*******************************************************************************}	
+
+	DECLARE hierarchy, array_of_ids
+	
+	ARRAY array_of_ids
+	hierarchy = EMPTY
+	
+	
+	array_of_ids[1] = identity
+	IF NOT BLANK ( identity ) THEN
+
+		create_audit_tree ( 	hierarchy		,
+					STRIP( table )		, 
+					array_of_ids		,
+					children		)
+
+	ELSE
+		flash_message ( GET_USER_MESSAGE ( "SMP_K_IDNONEX", 1 ) , TRUE )
+	
+	ENDIF
+
+	ENDROUTINE 
+	
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

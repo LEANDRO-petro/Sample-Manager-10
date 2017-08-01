@@ -1,0 +1,361 @@
+{******************************************************************************
+*
+* Module Name   : $RESLSTAT
+*
+* Purpose       : SMP report for user defined code which is called when the
+*                 status of a sample is changed
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification : 
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : 
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Integração com o PI
+002	08/01/2013	atribuição de técnico executante e incerteza
+}
+{001}
+JOIN LIBRARY $PIMS_LIB
+JOIN LIBRARY $LIB_UTILS
+JOIN STANDARD_LIBRARY STD_DATABASE
+
+SET NOTPROTECTED
+{001}
+ROUTINE set_status_a
+{001}	
+	DECLARE test_number
+		test_number = SELECT result . test_number
+		comp_name = select result . name
+		if test_number <> EMPTY then
+			status = pims_lookup_and_send_result(test_number, comp_name, "Add")
+			if status <> EMPTY then
+				flash_message (status : " - " : get_user_message ("PIMS_ERR_AUTH_FAILED", 1), TRUE)
+				ROLLBACK
+			endif
+		endif	
+{001}
+ENDROUTINE
+
+
+ROUTINE set_status_e
+	{check the default information for the component and fill it if not assigned}
+{002}
+	{ tecnico executante } 
+
+	DECLARE TEC
+	TEC = SELECT RESULT . TECNICOEXECUTANTE
+	IF (TEC = EMPTY) or BLANK(TEC) THEN
+		ASSIGN RESULT . TECNICOEXECUTANTE = OPERATOR
+		UPDATE RESULT
+	ENDIF
+
+	{ incerteza } 
+	DECLARE INC, test_number, comp_name, anl
+	INC = SELECT RESULT . UNCERTAINTY_TEXT
+	IF (INC = EMPTY) OR BLANK(INC) THEN
+		test_number = SELECT result . test_number
+		comp_name = select result . name
+		ANL = SELECT TEST . ANALYSIS WHERE TEST_NUMBER = test_number
+		INC = SELECT VERSIONED_COMPONENT . UNCERTAINTY_TEXT WHERE ANALYSIS = ANL AND NAME = comp_name
+		ASSIGN RESULT . UNCERTAINTY_TEXT= INC
+		UPDATE RESULT
+	ENDIF
+{COPIA INCERTEZA DE COMPONENTE PARA CAMPO INCERTEZA E VALIDA SE FOI PREENCHIDA}
+
+{LOX \/ 003 21/07/2014}
+
+{IF ( GLOBAL("MODE") = "INTERACTIVE" ) THEN ---  inibido ação de uso só no modo interativa para usarmos o export PDA e Import PDA ---amjr - 05/03/2015}
+
+
+	
+	DECLARE aux_inc, inc, t_number, comp_name, anl, rep_c, r_name, or_name, re_name, incert_comp, ver_name
+	
+	
+	comp_name = SELECT result . name 
+	rep_c = SELECT result . rep_control
+	t_number = SELECT result . test_number
+	
+	
+	{Se componente é incerteza, pegar valor da incerteza e nome do componente original}
+	
+	IF  ( (rep_c = "I") ) THEN {AND (incert_comp = "T") ) THEN}
+	
+		aux_inc = STRIP( SELECT result . text )
+		
+		ASSIGN result . uncertainty_text = STRING (aux_inc)
+		
+		UPDATE result
+		
+		
+	ELSE
+	
+		IF ( (rep_c = "S") ) THEN {AND (incert_comp = "T") ) THEN} 
+		
+			r_name = STRIP (SELECT result . name)
+				
+			comp_name = "I_": r_name
+		
+			{* 002 LLV 25/03/2015 Begin *}
+			ver_name = SELECT samp_test_result . component_name WHERE component_name = comp_name AND test_number = t_number
+			{* 002 LLV 25/03/2015 End   *}
+			
+				IF ver_name <> EMPTY THEN
+		
+					inc =  SELECT samp_test_result . uncertainty_text WHERE component_name = comp_name AND test_number = t_number
+		
+		
+						IF ( ( STRIP(inc) = EMPTY ) OR ( STRIP(inc) = "" ) OR (inc = "Não Informada") )  THEN
+				
+							flash_message ("O valor da incerteza para o resultado " : comp_name : " é obrigatório!", TRUE)
+							RETURN
+				
+						ELSE
+				
+							ASSIGN result . uncertainty_text = STRING (inc)
+							UPDATE result
+						ENDIF
+			
+				ELSE
+					
+					
+					ASSIGN result . uncertainty_text = ""
+					UPDATE result
+					
+				ENDIF
+				
+			
+		ELSE
+		
+			RETURN
+			
+		ENDIF
+	
+	ENDIF
+	
+{ENDIF}
+{/\003}
+{002}
+
+
+		{CHECK IF THE RESULTS WERE ENTERED}
+		{para cada resultado, atribuir o instrumento}
+		
+		DECLARE ANLS, TST_NUM, COMP, INST, stock, stock_batch,AMT, UNIT, STOCK_BATCH_ID, HAS_INVENTORY, HAS_RESULT
+		
+		
+			TST_NUM = SELECT result.TEST_NUMBER
+			ANLS = SELECT TEST.ANALYSIS WHERE TEST.TEST_NUMBER = TST_NUM
+			{ATUALIZAR CONSUMO DE MATERIAIS}
+			
+			stock = SELECT STOCK_USE_BY_USER.STOCK WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS
+			
+			IF (STOCK<>EMPTY) THEN
+					IF transaction_is_write() = false then
+						START WRITE TRANSACTION "UPDATE STOCK FOR ANALYSIS"
+
+					endif
+				{11/06/13 - added while loop to consume all stocks from stock batches in components}
+				WHILE (STOCK<>EMPTY) DO 
+				
+				STOCK_BATCH = SELECT STOCK_USE_BY_USER.STOCK_BATCH
+				AMT = SELECT STOCK_USE_BY_USER.AMOUNT_USED
+				UNIT = SELECT STOCK_USE_BY_USER.UNIT
+				
+				
+				
+				STOCK_BATCH_ID = SELECT STOCK_BATCH.STOCK_BATCH_ID WHERE STOCK_BATCH_ID = STOCK_BATCH
+				STOCK_BATCH = SELECT STOCK_BATCH.STOCK_BATCH
+			
+				{CHECK IF THE INVENTORY ALREADY HAS THE SAME INFORMATION}
+				HAS_INVENTORY = SELECT STOCK_INVENTORY.TEST WHERE STOCK = STOCK AND STOCK_BATCH_ID = STOCK_BATCH_ID AND TEST = TST_NUM
+				HAS_RESULT = LENGTH(STRIP(SELECT RESULT.TEXT))
+				IF (HAS_RESULT>0) THEN
+				IF (HAS_INVENTORY=EMPTY) THEN
+					DECLARE next_stock_number,status
+
+					next_stock_number = SELECT MAX stock_inventory . order_number
+							   WHERE stock = stock AND
+								 stock_batch = stock_batch
+
+					IF next_stock_number = EMPTY THEN
+						next_stock_number = 0
+					ENDIF
+
+					REPEAT
+						next_stock_number = PACKED_DECIMAL ( next_stock_number + 1 )
+
+						RESERVE ENTRY stock_inventory, stock : stock_batch : next_stock_number, status
+
+					UNTIL status = EMPTY
+
+					ASSIGN stock_inventory.stock_batch_id  = STOCK_BATCH_ID
+					ASSIGN stock_inventory.use_type        = "TEST"
+					ASSIGN stock_inventory.test            = TST_NUM
+					ASSIGN stock_inventory.consumed_flag   = TRUE
+					ASSIGN stock_inventory.amount          = AMT
+					ASSIGN stock_inventory.unit            = UNIT
+					ASSIGN stock_inventory.date_created    = now
+					ASSIGN stock_inventory.created_by      = OPERATOR
+
+					UPDATE STOCK_INVENTORY
+					{COMMIT}
+				ENDIF
+				ENDIF
+					NEXT STOCK_USE_BY_USER
+					stock = SELECT STOCK_USE_BY_USER.STOCK
+				ENDWHILE
+			ENDIF
+			
+			
+			
+			COMP = SELECT RESULT.NAME FOR UPDATE WHERE TEST_NUMBER = TST_NUM
+			
+			WHILE (COMP<> EMPTY) DO
+				
+				{GET THE INSTRUMENT}
+				INST = SELECT INSTRUMENT_USE_BY_USER.INSTRUMENT WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS AND COMPONENT = COMP
+				
+				IF ((INST<>EMPTY) OR (LENGTH(STRIP(INST))<=0)) THEN
+					ASSIGN RESULT.INSTRUMENT = INST
+					IF transaction_is_write() = false then
+						START WRITE TRANSACTION "UPDATE INSTRUMENT FOR RESULT"
+					endif
+					UPDATE RESULT
+					{COMMIT}
+				ENDIF
+				NEXT RESULT
+				COMP = SELECT RESULT.NAME
+			ENDWHILE
+			
+			
+
+
+
+
+ENDROUTINE
+
+
+ROUTINE set_status_m
+	
+{LOX \/ 003 21/07/2014}
+
+IF ( GLOBAL("MODE") = "INTERACTIVE" ) THEN
+
+	DECLARE aux_inc, inc, t_number, comp_name, anl, rep_c, r_name, or_name, re_name, incert_comp, ver_name
+	
+	
+	comp_name = SELECT result . name 
+		
+	rep_c = SELECT result . rep_control
+		
+	t_number = SELECT result . test_number
+	
+	
+	{Se componente é incerteza, pegar valor da incerteza e nome do componente original}
+	
+	IF  ( (rep_c = "I") ) THEN {AND (incert_comp = "T") ) THEN}
+	
+		aux_inc = STRIP( SELECT result . text )
+		
+		ASSIGN result . uncertainty_text = STRING (aux_inc)
+		
+		UPDATE result
+		
+		
+	ELSE
+	
+		IF ( (rep_c = "S") ) THEN {AND (incert_comp = "T") ) THEN} 
+		
+			r_name = STRIP (SELECT result . name)
+				
+			comp_name = "I_": r_name
+		
+			{* 002 LLV 25/03/2015 Begin *}
+			ver_name = SELECT samp_test_result . component_name WHERE component_name = comp_name AND test_number = t_number
+			{* 002 LLV 25/03/2015 End   *}
+	
+				IF ver_name <> EMPTY THEN
+		
+					inc =  SELECT samp_test_result . uncertainty_text WHERE component_name = comp_name AND test_number = t_number
+		
+		
+						IF ( ( STRIP(inc) = EMPTY ) OR ( STRIP(inc) = "" ) OR (inc = "Não Informada") )  THEN
+				
+							flash_message ("O valor da incerteza para o resultado " : comp_name : " é obrigatório!", TRUE)
+							RETURN
+				
+						ELSE
+				
+							ASSIGN result . uncertainty_text = STRING (inc)
+							UPDATE result
+						ENDIF
+			
+				ELSE
+					
+					
+					ASSIGN result . uncertainty_text = ""
+					UPDATE result
+					
+				ENDIF
+				
+			
+		ELSE
+		
+			RETURN
+			
+		ENDIF
+	
+	ENDIF
+	
+ENDIF
+{/\003}
+{CHECK IF THE RESULTS WERE ENTERED}
+		{para cada resultado, atribuir o instrumento}
+		
+		DECLARE ANLS, TST_NUM, COMP, INST, stock, stock_batch,AMT, UNIT, STOCK_BATCH_ID, HAS_INVENTORY
+		
+		
+			TST_NUM = SELECT result.TEST_NUMBER
+			ANLS = SELECT TEST.ANALYSIS WHERE TEST.TEST_NUMBER = TST_NUM
+
+		COMP = SELECT RESULT.NAME FOR UPDATE WHERE TEST_NUMBER = TST_NUM
+			
+			WHILE (COMP<> EMPTY) DO
+				
+				{GET THE INSTRUMENT}
+				INST = SELECT INSTRUMENT_USE_BY_USER.INSTRUMENT WHERE USER_ID = OPERATOR AND ANALYSIS = ANLS AND COMPONENT = COMP
+				
+				IF ((INST<>EMPTY) OR (LENGTH(STRIP(INST))<=0)) THEN
+					ASSIGN RESULT.INSTRUMENT = INST
+					IF transaction_is_write() = false then
+						START WRITE TRANSACTION "UPDATE INSTRUMENT FOR RESULT"
+					endif
+					UPDATE RESULT
+					{COMMIT}
+				ENDIF
+				NEXT RESULT
+				COMP = SELECT RESULT.NAME
+			ENDWHILE
+
+ENDROUTINE
+
+
+ROUTINE set_status_r
+
+ENDROUTINE
+
+
+ROUTINE set_status_u
+
+ENDROUTINE
+
+
+ROUTINE set_status_x
+
+ENDROUTINE

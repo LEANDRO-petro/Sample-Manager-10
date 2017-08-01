@@ -1,0 +1,106 @@
+JOIN LIBRARY $LIB_UTILS
+join STANDARD_LIBRARY STD_ARRAY
+join STANDARD_LIBRARY STD_GENERAL
+join STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_DDE
+JOIN STANDARD_LIBRARY STD_CLIENT
+
+SET NAME "DEFER/"
+ENABLE WINDOWS
+SET NOTPROTECTED
+
+GLOBAL ROUTINE link_rel_rmb (rmb_object , object , data)
+
+DECLARE status, machine_name, samp_id, string_cmd, project_id, instalacao_id, DATAINI, DATAFIM
+	
+	{ Only one at a time please }
+
+	data . set_first()
+
+		samp_id = ""
+		string_cmd = ""
+	
+		IF ( data . current <> EMPTY ) THEN
+			
+			project_id    	= SELECT PROJECT_INFO . PROJECT_ID IN OBJECT data . current
+			instalacao_id 	= SELECT PROJECT_INFO . GROUP_ID   IN OBJECT data . current							
+		ENDIF
+
+		SET DATE FORMAT "DZ/MZ/YYYY'%2019:00'"
+				
+   		DATAINI = TODAY - INTERVAL (DAYNUMBER ( TODAY ))
+		DATAFIM = TODAY + INTERVAL (7 - DAYNUMBER ( TODAY ))
+		
+  		machine_name = TOUPPER(SUBSTRING( GLOBAL ("PDAFILEPATH"),3,8 ))
+
+	IF machine_name = "SBCAS219" THEN
+
+            string_cmd = "C:\Program Files (x86)\Mozilla Firefox\firefox.exe http://dsv-eplab.petrobras.biz/ConsultaCarteiraServico/GerarPDF?ProjectId=":STRIP(STRING(project_id)):"&LocalAmostra=":STRIP(STRING(instalacao_id)):"&InicioAutorizacaoAmostra=":STRIP(DATAINI):"&FimAutorizacaoAmostra=":STRIP(DATAFIM)	
+
+		dde_winexec ( string_cmd, "SW_SHOWMAXIMIZED", status )
+
+   					
+		IF status <> EMPTY THEN
+			flash_message ( "Falha ao executar a URL. Código do erro = " : status : ".", TRUE )
+			ret = FALSE
+		ELSE
+			ret = TRUE	
+		ENDIF
+			
+	ENDIF		
+
+	IF machine_name = "SBCAS215" THEN
+
+		string_cmd = "C:\Program Files (x86)\Mozilla Firefox\firefox.exe http://hmg-eplab.petrobras.biz/ConsultaCarteiraServico/GerarPDF?ProjectId=":STRIP(STRING(project_id)):"&LocalAmostra=":STRIP(STRING(instalacao_id)):"&InicioAutorizacaoAmostra=":STRIP(DATAINI):"&FimAutorizacaoAmostra=":STRIP(DATAFIM)	
+
+		dde_winexec ( string_cmd, "SW_SHOWMAXIMIZED", status )
+		
+		IF status <> EMPTY THEN
+			flash_message ( "Falha ao executar a URL. Código do erro = " : status : ".", TRUE )
+			ret = FALSE
+		ELSE
+			ret = TRUE	
+		ENDIF
+			
+	ENDIF	
+
+	IF machine_name = "SBCAS217"  THEN
+		
+		string_cmd = "C:\Program Files (x86)\Mozilla Firefox\firefox.exe http://eplab.petrobras.biz/ConsultaCarteiraServico/GerarPDF?ProjectId=":STRIP(STRING(project_id)):"&LocalAmostra=":STRIP(STRING(instalacao_id)):"&InicioAutorizacaoAmostra=":STRIP(DATAINI):"&FimAutorizacaoAmostra=":STRIP(DATAFIM)	
+
+		dde_winexec ( string_cmd, "SW_SHOWMAXIMIZED", status )
+		
+		IF status <> EMPTY THEN
+			flash_message ( "Falha ao executar a URL. Código do erro = " : status : ".", TRUE )
+			ret = FALSE
+		ELSE
+			ret = TRUE	
+		ENDIF
+			
+	ENDIF
+
+
+	IF machine_name = "SBCAS218"  THEN
+		
+		string_cmd = "C:\Program Files (x86)\Mozilla Firefox\firefox.exe http://hmg-eplab.petrobras.biz/ConsultaCarteiraServico/GerarPDF?ProjectId=":STRIP(STRING(project_id)):"&LocalAmostra=":STRIP(STRING(instalacao_id)):"&InicioAutorizacaoAmostra=":STRIP(DATAINI):"&FimAutorizacaoAmostra=":STRIP(DATAFIM)	
+
+		dde_winexec ( string_cmd, "SW_SHOWMAXIMIZED", status )
+		
+		IF status <> EMPTY THEN
+			flash_message ( "Falha ao executar a URL. Código do erro = " : status : ".", TRUE )
+			ret = FALSE
+		ELSE
+			ret = TRUE	
+		ENDIF
+	ENDIF		
+			
+      RESTORE DATE FORMAT
+
+ENDROUTINE {link_rel_rmb}
+	
+
+
+
+
+
+

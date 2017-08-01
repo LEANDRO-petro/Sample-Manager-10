@@ -1,0 +1,1501 @@
+{******************************************************************************
+*
+* Module Name   : $MLP_TO_TEST
+*
+* Purpose       : Create a test schedule from a MLP
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : VGSM 3.1
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Adicionar nome automático para plano de testes.
+}
+
+SET COMPILE_OPTION DECLARE
+SET NOTPROTECTED
+ENABLE WINDOWS
+SET NAME "DEFER/"
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_FLAGS
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+JOIN LIBRARY $LIB_MLPS
+JOIN LIBRARY $LIB_INSPECT
+JOIN LIBRARY $BROWSE_FIELD
+
+{* GLOBAL CONSTANTS ***********************************************************}
+
+{* LOCAL CONSTANTS ************************************************************}
+
+CONSTANT MLP_TO_TEST_COMPONENT_NOT_WANTED = 1
+CONSTANT MLP_TO_TEST_COMPONENT_WANTED     = 2
+CONSTANT MLP_TO_TEST_COMPONENT_EXISTS     = 3
+
+CONSTANT MLP_IDENTITY_PROMPT       = 1
+CONSTANT MLP_VERSION_PROMPT        = 2
+CONSTANT MLP_TEST_SCHEDULE_PROMPT  = 3
+CONSTANT MLP_SCHEDULE_GRID_PROMPT  = 6
+
+{* VARIABLES ******************************************************************}
+
+mlp_to_test_initialise ()
+mlp_to_test_wait_form  ()
+
+EXIT
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_initialise
+
+{
+*	Initialise the mlp_to_test module.
+*
+*******************************************************************************}
+
+	lib_grid_initialise ()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_wait_form
+
+{
+*	Create the form to prompt for the details and then prompt.
+*
+*
+******************************************************************************}
+
+	DECLARE form                  ,
+		mlp_identity          ,
+		mlp_version           ,
+		test_schedule         ,
+		update_mlp_header     ,
+		delete_existing_data  ,
+		schedules             ,
+		do_conversion         ,
+		leave_screen
+
+	mlp_to_test_create_form ( form                 ,
+				  mlp_identity         ,
+				  mlp_version          ,
+				  test_schedule        ,
+				  update_mlp_header    ,
+				  delete_existing_data ,
+				  schedules            )
+
+
+	form . start_prompt ()
+
+	REPEAT
+
+		form . wait_prompt  ()
+
+       		IF form . get_lastkey () = "DO" THEN
+
+			IF ( global ( "TERMTYPE" ) = "GUI" ) THEN
+
+				do_conversion = TRUE
+				leave_screen  = TRUE
+
+			ELSE
+
+				do_conversion = confirm ()
+				leave_screen  = do_conversion
+
+			ENDIF
+
+		ELSE
+
+			do_conversion = FALSE
+			leave_screen  = TRUE
+
+		ENDIF
+
+	UNTIL leave_screen
+
+	IF do_conversion THEN
+
+		START WRITE TRANSACTION "Test"
+
+		mlp_to_test_create_test_schedule (
+					mlp_identity          . value     ,
+					mlp_version           . value     ,
+					test_schedule         . value     ,
+					test_schedule         . value     ,
+					schedules             . user_info ,
+					update_mlp_header     . value     ,
+					delete_existing_data  . value     )
+
+		COMMIT
+
+		flash_message ( get_user_message ( "MLP_TO_TEST_CREATED",1) ,
+				TRUE                                        )
+
+	ENDIF
+
+	form . end_prompt   ()
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_create_form ( form                 ,
+				  mlp_identity         ,
+				  mlp_version          ,
+				  test_schedule        ,
+				  update_mlp_header    ,
+				  delete_existing_data ,
+				  schedules            )
+
+
+{
+*	Create the form to prompt for the details.
+*
+*
+******************************************************************************}
+
+	DECLARE display_column ,
+		message        ,
+		terminator
+
+	IF global ( "TERMTYPE" ) <> "GUI" THEN
+
+		terminator = ":"
+
+	ELSE
+
+		terminator = ""
+
+	ENDIF
+
+	display_column = 25
+
+ 	PROMPT OBJECT form
+	       CLASS PROMPT_CLASS_FORM
+	       ON LINE 7 FROM 3
+	       WITH ( header           = get_user_message ( "MLP_TO_TEST_HEADER" , 1),
+		      footer           = get_user_message ( "MLP_TO_TEST_FOOTER" , 1),
+		      width            = 70                                          ,
+		      height           = 14                                           ,
+		      return_behaviour = FORM_RETURN_WRAP	                     ,
+		      vgl_library      = global ( "current_library" )                ,
+		      validation_routine = "mlp_to_test_form_validation"             ,
+		      help_context       = "$MLP_TO_TEST" 	                     )
+
+	message = get_user_message ( "MLP_TO_TEST_MLP_ID" , 1 )
+	message = pad ( message , " " , display_column - 4 ) : terminator
+
+	form . add_display ( message                  ,
+			     2                        ,
+			     1	                      ,
+			     PROMPT_RENDITION_BOLD    +
+			     PROMPT_RENDITION_RAISED  )
+
+	message = get_user_message ( "MLP_TO_TEST_MLP_VERSION" , 1 )
+	message = pad ( message , " " , display_column - 4 ) : terminator
+
+	form . add_display ( message                  ,
+			     2                        ,
+			     2	                      ,
+			     PROMPT_RENDITION_BOLD    +
+			     PROMPT_RENDITION_RAISED  )
+
+	message = get_user_message ( "MLP_TO_TEST_TEST_SCHEDULE_ID" , 1 )
+	message = pad ( message , " " , display_column - 4 ) : terminator
+
+	form . add_display ( message                  ,
+			     2                        ,
+			     3	                      ,
+			     PROMPT_RENDITION_BOLD    +
+			     PROMPT_RENDITION_RAISED  )
+
+	PROMPT OBJECT  mlp_identity
+	       ON LINE  1
+	       FROM    display_column
+	       BROWSE ON mlp_header
+	       WITH ( vgl_library           = global ( "CURRENT_LIBRARY" ) ,
+		      leave_prompt_routine  = "MLP_TO_TEST_LEAVE_PRODUCT"  )
+
+	form . add_prompt ( mlp_identity )
+
+	PROMPT OBJECT  mlp_version
+	       ON LINE  2
+	       FROM    display_column
+	       BROWSE ON mlp_header . product_version
+	       WITH ( vgl_library           = global ( "CURRENT_LIBRARY" ) ,
+		      leave_prompt_routine  = "MLP_TO_TEST_LEAVE_VERSION"  )
+
+	form . add_prompt ( mlp_version )
+
+	PROMPT OBJECT   test_schedule
+	       ON LINE  3
+	       FROM     display_column
+	       FORMAT test_sched_header
+	       WITH ( browse_routine = "MLP_TO_TEST_TEST_SCHEDULE_BROWSE" )
+
+	form . add_prompt ( test_schedule )
+
+	PROMPT OBJECT  update_mlp_header
+	       ON LINE  5
+	       FROM    display_column
+	       BROWSE ON boolean
+	       WITH ( is_check = TRUE ,
+	              caption  = GET_USER_MESSAGE ( "MLP_TO_TEST_UPDATE_MLP_HEADER" , 1 ) )
+
+	update_mlp_header . value = TRUE
+
+	form . add_prompt ( update_mlp_header )
+
+	PROMPT OBJECT  delete_existing_data
+	       ON LINE  6
+	       FROM    display_column
+	       BROWSE ON boolean
+	       WITH ( is_check = TRUE ,
+	              caption  = GET_USER_MESSAGE ( "MLP_TO_TEST_DELETE_EXISTING_DATA" , 1 ))
+
+	delete_existing_data . value = TRUE
+
+	form . add_prompt ( delete_existing_data )
+
+	{ Add the schedule prompts grid }
+
+	CREATE OBJECT "STD_GRID_EDITOR" , schedules
+
+	schedules . row     = 8
+	schedules . column  = 6
+	schedules . border  = TRUE
+
+	schedules . width   = 61
+	schedules . height  = form . height - 8
+
+	schedules . vgl_library          = global ( "current_library" )
+
+	schedules . prompt_cell_routine  = "mlp_to_test_schedule_prompt"
+	schedules . display_cell_routine = "mlp_to_test_schedule_display"
+	schedules . no_cells_routine     = "mlp_to_test_schedule_no_cells"
+	schedules . off_top_routine      = "mlp_to_test_schedule_off_top"
+
+	schedules . title_separator_top   = GRID_SEPARATOR_CELLS
+	schedules . title_rendition_top   = PROMPT_RENDITION_BOLD
+
+	schedules . column_size [ 1 ] = 30
+	schedules . column_size [ 2 ] = 30
+	schedules . column_separator [1] = GRID_SEPARATOR_BOTH
+
+	schedules . title_text_top [ 1, 1] =
+			get_user_message ( "MLP_TO_TEST_TITLE1" ,1 )
+
+	schedules . title_text_top [ 2, 1] =
+			get_user_message ( "MLP_TO_TEST_TITLE2" ,1 )
+
+	schedules . title_size_top       = 1
+	schedules . cell_columns         = 2
+	schedules . cell_rows            = 0
+
+	form . add_prompt ( schedules )
+
+	{ add the frames   }
+
+	form . add_frame ( ""                ,
+			   1                 ,
+			   1                 ,
+			   3                 ,
+			   form . width      )
+
+	form . add_frame ( ""                ,
+			   1                 ,
+			   5                 ,
+			   2                 ,
+			   form . width      )
+
+	form . add_frame ( ""                 ,
+			   1                  ,
+			   8                  ,
+			   schedules . height ,
+			   form . width       )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_form_validation ( self )
+
+{
+*	Validate the form for the correct data.
+*
+*
+*******************************************************************************}
+
+	DECLARE valid       ,
+		count       ,
+		grid        ,
+		mlp_header  ,
+		mlp_version ,
+		exists
+
+	valid = TRUE
+
+	IF self . get_lastkey () <> "EXIT" THEN
+
+		mlp_header  = self . prompt_objects [ MLP_IDENTITY_PROMPT ] . value
+		mlp_version = self . prompt_objects [ MLP_VERSION_PROMPT ] . value
+
+		IF blank ( mlp_header ) THEN
+
+			flash_message ( get_user_message ( "MLP_TO_TEST_NO_PRODUCT",1) ,
+					TRUE                                          )
+			valid = FALSE
+
+		ELSEIF blank ( self . prompt_objects [ MLP_TEST_SCHEDULE_PROMPT ] . value ) THEN
+
+			flash_message ( get_user_message ( "MLP_TO_TEST_NO_SCHEDULE",1)  ,
+					TRUE                                             )
+			valid = FALSE
+
+		ELSE
+
+			exists = SELECT mlp_header . product_version
+				 WHERE ( identity         = mlp_header    ) AND
+				       ( product_version  = mlp_version   ) AND
+				       ( approval_status  = APPR_APPROVED )
+
+			IF exists = EMPTY THEN
+
+				flash_message ( get_user_message ( "MLP_TO_TEST_NO_SUCH_VERSION" ,1),
+						TRUE                                               )
+				valid = FALSE
+
+			ENDIF
+
+		ENDIF
+
+		IF valid THEN
+
+			grid  = self . prompt_objects [ MLP_SCHEDULE_GRID_PROMPT ]
+			count = 1
+
+			WHILE count <= grid . cell_rows DO
+
+				IF blank ( grid . user_info [ count , 2 ] ) THEN
+
+					flash_message (
+						get_user_message ( "MLP_TO_TEST_NO_SUB" ,1),
+						TRUE                                       )
+
+					valid = FALSE
+					count = grid . cell_rows
+
+				ENDIF
+
+				count = count + 1
+
+			ENDWHILE
+
+		ENDIF
+
+	ENDIF
+
+	RETURN ( valid )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_leave_product ( self )
+
+{
+*	Set the limits on the version prompt. Find the test schedule if there
+*	is one.
+*
+*******************************************************************************}
+
+	DECLARE form             ,
+		max_product_ver  ,
+		test_schedule    ,
+		select_array
+
+	IF ( self . text           <> self . original_text ) AND
+	   ( self . get_lastkey () <> "EXIT"               ) THEN
+
+		form = self . parent_prompt
+
+		IF ( NOT blank ( self . value )) THEN
+
+			mlp_get_version ( self . value    ,
+					  max_product_ver )
+
+			form . prompt_objects [ MLP_VERSION_PROMPT ] . value
+							= max_product_ver
+
+			ARRAY select_array ARRAYSIZE ( 0, 3 )
+			
+			array_select_add ( select_array    ,
+			                   ARRAY_SELECT_EQ ,
+			                   "IDENTITY"      ,
+			                   self . value    )
+
+			array_select_add ( select_array    ,
+			                   ARRAY_SELECT_AND ,
+			                   EMPTY            ,
+			                   EMPTY            )
+
+			array_select_add ( select_array      ,
+			                   ARRAY_SELECT_EQ   ,
+			                   "APPROVAL_STATUS" ,
+			                   APPR_APPROVED     )
+
+			form . prompt_objects [ MLP_VERSION_PROMPT ] . mandatory_array = select_array
+
+			form . prompt_objects [ MLP_VERSION_PROMPT ] . repaste ()
+
+			{ Assume an MLP is selected }
+{001 \/}			
+			test_schedule = SELECT mlp_header . test_schedule
+
+			IF LENGTH(STRIP(TEST_SCHEDULE)) = 0 THEN
+
+				TEST_SCHEDULE = SELF.VALUE
+			ENDIF
+{001 /\}
+	 		form . prompt_objects [ MLP_TEST_SCHEDULE_PROMPT ] .
+							value   = test_schedule
+ 			form . prompt_objects [ MLP_TEST_SCHEDULE_PROMPT ] .
+							text    = test_schedule
+ 			form . prompt_objects [ MLP_TEST_SCHEDULE_PROMPT ] . repaste ()
+
+			mlp_to_test_schedule_set_schedules ( form )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_leave_version ( self )
+
+{
+*	Update the schedule grid if needed.
+*
+*
+*******************************************************************************}
+
+	DECLARE form
+
+	IF ( self . text           <> self . original_text ) AND
+	   ( self . get_lastkey () <> "EXIT"               ) THEN
+
+		form = self . parent_prompt
+		mlp_to_test_schedule_set_schedules ( form )
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_test_schedule_browse ( self )
+
+{
+*	Always allow the test_schedule through.
+*
+*******************************************************************************}
+
+	IF browse_on_field ( self ) THEN
+		self . repaste ( )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_schedule_set_schedules (  form )
+
+{
+*	Get all the schedules from the mlp and stick them into the
+*	schedules grid.
+*
+******************************************************************************}
+
+	DECLARE count          ,
+		mlp_schedule   ,
+		test_schedule  ,
+		schedule_grid  ,
+		mlp_header     ,
+		mlp_version
+
+	schedule_grid = form . prompt_objects [ MLP_SCHEDULE_GRID_PROMPT ]
+	mlp_header    = form . prompt_objects [ MLP_IDENTITY_PROMPT ] . value
+	mlp_version   = form . prompt_objects [ MLP_VERSION_PROMPT ] . value
+
+
+	ARRAY schedule_grid . user_info ARRAY_SIZE ( 0,2)
+
+	count = 0
+
+	mlp_schedule = SELECT mlp_schedule . mlp_id
+		       WHERE ( identity         = mlp_header  ) AND
+			     ( identity_version = mlp_version )
+		       ORDER ON order_num
+
+	WHILE mlp_schedule <> EMPTY DO
+
+		test_schedule = SELECT mlp_header . test_schedule
+				WHERE identity = mlp_schedule
+
+		count = count + 1
+
+		schedule_grid . user_info [ count , 1 ] = mlp_schedule
+		schedule_grid . user_info [ count , 2 ] = test_schedule
+
+
+		NEXT mlp_schedule
+		mlp_schedule = SELECT mlp_schedule . mlp_id
+
+	ENDWHILE
+
+        schedule_grid . cell_rows = count
+	schedule_grid . rebuild ()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_schedule_prompt (       grid        ,
+                                      VALUE cell_column ,
+		                      VALUE cell_row    ,
+			                    screen      ,
+		                      VALUE column      ,
+		                      VALUE row         ,
+			              VALUE cell_width  ,
+			              VALUE cell_height )
+
+
+	IF cell_column = 1 THEN
+
+		PROMPT FOR grid . user_info [ cell_row , 1 ]
+		           ON LINE row
+			   FROM    column
+			   IN WINDOW screen
+			   BROWSE ON mlp_header
+			   WITH ( display_only = TRUE )
+
+	ELSE
+
+		PROMPT FOR grid . user_info [ cell_row , 2 ]
+		           ON LINE row
+			   FROM    column
+			   IN WINDOW screen
+			   BROWSE ON test_sched_header
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_schedule_display (       grid        ,
+                                       VALUE cell_column ,
+		                       VALUE cell_row    ,
+			                     screen      ,
+		                       VALUE column      ,
+		                       VALUE row         ,
+			               VALUE cell_width  ,
+			               VALUE cell_height )
+
+	IF cell_column = 1 THEN
+
+		DISPLAY grid . user_info [ cell_row , 1 ]
+		        ON LINE row
+			FROM    column
+			IN WINDOW screen
+
+	ELSE
+
+		DISPLAY grid . user_info [ cell_row , 2 ]
+		        ON LINE row
+			FROM    column
+			IN WINDOW screen
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_schedule_off_top ( self )
+
+	self . stop_prompt ()
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE mlp_to_test_schedule_no_cells ( self )
+
+	SET GLOBAL ( "LASTKEY" ) TO "TAB"
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_create_test_schedule ( VALUE mlp_header           ,
+					   VALUE mlp_version          ,
+					   VALUE test_schedule        ,
+					   VALUE component_list       ,
+					         schedule_names       ,
+					   VALUE update_mlp_header    ,
+					   VALUE delete_existing_data )
+
+{
+*	Controlling routine for creation of test schedule.
+*
+******************************************************************************}
+
+	DECLARE order_number
+
+	IF NOT ( global ( "COMPONENT_LIST_ENABLED" )) THEN
+
+		component_list = ""
+
+	ENDIF
+{001 \/}
+	component_list = ""
+{001 /\}
+	IF delete_existing_data THEN
+
+		mlp_to_test_delete_component_lists ( test_schedule  ,
+		                                     component_list )
+		mlp_to_test_delete_test_schedule ( test_schedule )
+
+		order_number = 1
+
+	ELSE
+
+		order_number = mlp_to_test_get_order_number ( test_schedule )
+
+	ENDIF
+
+	IF mlp_to_test_select_test_schedule ( test_schedule ,
+	                                      mlp_header    ) THEN
+
+		mlp_to_test_get_analyses ( mlp_header           ,
+					   mlp_version          ,
+					   test_schedule        ,
+					   component_list       ,
+					   delete_existing_data ,
+					   order_number         )
+
+		mlp_to_test_get_schedule ( mlp_header     ,
+					   mlp_version    ,
+					   test_schedule  ,
+					   schedule_names ,
+					   order_number   )
+
+		UPDATE test_sched_header
+
+		IF update_mlp_header THEN
+
+			mlp_to_test_update_mlp_header ( mlp_header    ,
+			                                mlp_version   ,
+							test_schedule )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_delete_test_schedule ( VALUE test_schedule )
+
+{
+*	Delete the entries for the test schedule.
+*
+******************************************************************************}
+
+	DECLARE entry    ,
+		status
+
+	entry = SELECT test_sched_header . identity
+		FOR UPDATE
+		WHERE  ( identity = test_schedule )
+
+	IF ( entry <> EMPTY ) THEN
+
+		mlp_to_test_lock_check ( entry )
+
+		DELETE test_sched_header, status
+
+	ENDIF
+
+	entry = SELECT test_sched_entry . identity
+		FOR UPDATE
+		WHERE  ( identity = test_schedule )
+
+	mlp_to_test_lock_check ( entry )
+
+	WHILE entry <> EMPTY DO
+
+		DELETE test_sched_entry , status
+
+		NEXT test_sched_entry
+
+		entry = SELECT test_sched_entry . identity
+
+		mlp_to_test_lock_check ( entry )
+
+	ENDWHILE
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_delete_component_lists ( VALUE test_schedule       ,
+                                             VALUE component_list_name )
+
+{
+*	Delete the entries for the component lists.
+*
+******************************************************************************}
+
+	DECLARE identity   ,
+		analysis   ,
+		descriptor ,
+		analysis_version 
+
+	push_file_descriptor ( "TEST_SCHED_ENTRY" , descriptor )
+
+	analysis = SELECT test_sched_entry . analysis_id
+	           WHERE ( identity = test_schedule )
+
+	WHILE ( analysis <> EMPTY ) DO
+
+		IF ( SELECT test_sched_entry . is_analysis ) THEN
+
+			analysis = SELECT complist_header_view . analysis
+			           WHERE  ( comp_list = component_list_name ) AND
+			                  ( analysis  = analysis            )
+			analysis_version = SELECT complist_header_view . 
+			                            analysis_version
+
+			IF ( analysis <> EMPTY ) THEN
+
+				identity = SELECT versioned_c_l_entry . name
+				           FOR UPDATE
+				           WHERE ( comp_list        = 
+				                     component_list_name ) AND
+				                 ( analysis         = 
+				                     analysis            ) AND
+				                 ( analysis_version = 
+				                     analysis_version    )
+
+				mlp_to_test_lock_check ( identity )
+
+				WHILE identity <> EMPTY DO
+
+					DELETE versioned_c_l_entry 
+
+					NEXT versioned_c_l_entry
+
+					identity = SELECT versioned_c_l_entry .
+					                    name
+
+					mlp_to_test_lock_check ( identity )
+
+				ENDWHILE
+
+				identity = SELECT versioned_c_l_header . analysis
+				           FOR UPDATE
+				           WHERE  ( comp_list         = 
+				                      component_list_name ) AND
+				                  ( analysis          = 
+				                      analysis            ) AND
+				                  ( analysis_version  = 
+				                      analysis_version    )
+
+				mlp_to_test_lock_check ( identity )
+
+				IF identity <> EMPTY THEN
+
+					DELETE versioned_c_l_header
+
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+		NEXT test_sched_entry
+		analysis = SELECT test_sched_entry . analysis_id
+
+	ENDWHILE
+
+	pop_file_descriptor ( descriptor )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_get_order_number ( VALUE test_schedule )
+
+{
+*	Get the order number from the test schedule - return 1 if
+*	the test schedule doesn't exist.
+*
+******************************************************************************}
+
+	DECLARE order_number
+
+	order_number = SELECT MAX test_sched_entry . order_num
+		       WHERE identity = test_schedule
+
+	IF order_number = EMPTY THEN
+
+		order_number = 1
+
+	ELSE
+
+		order_number = order_number + 1
+
+	ENDIF
+
+	RETURN ( order_number )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_select_test_schedule ( VALUE test_schedule ,
+					   VALUE mlp_identity  )
+
+{
+*	Try to select the test schedule - if it doesn't exist reserve it.
+*	Return FALSE if something went wrong.
+*
+*******************************************************************************}
+
+	DECLARE status   ,
+		message
+
+	status = SELECT test_sched_header . identity
+		 FOR UPDATE
+		 WHERE ( identity = test_schedule )
+
+	IF status = EMPTY THEN
+
+		RESERVE ENTRY test_sched_header , test_schedule , status
+
+		IF status = EMPTY THEN
+
+			message_fetch ( "MLP_TO_TEST_SCHED_DESCRIPTION" ,
+					 message                        )
+			message_add_parameter (         message        ,
+						strip ( mlp_identity ) )
+			message_add_parameter (         message   ,
+						strip ( now     ) )
+
+			ASSIGN test_sched_header . description = 
+			              message_get_text ( message , 1 )
+
+		ELSE
+
+			fatal_error ( status )
+
+		ENDIF
+
+	ELSEIF status = test_schedule THEN
+
+		status = EMPTY
+
+	ELSE
+
+		mlp_to_test_lock_check ( status )
+
+	ENDIF
+
+	RETURN ( status = EMPTY )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_get_analyses ( VALUE mlp_header           ,
+				   VALUE mlp_version          ,
+		                   VALUE test_schedule        ,
+		                   VALUE component_list       ,
+				   VALUE delete_existing_data ,
+					 order_number         )
+
+{
+*	Obtain all the unique analyses defined in the mlp and add
+*	to the test schedule.
+*
+*
+******************************************************************************}
+
+	DECLARE last_analysis    ,
+		current_analysis
+
+	last_analysis = EMPTY
+
+	current_analysis = SELECT mlp_components . analysis_id
+			   WHERE  ( product_id      = mlp_header  ) AND
+				  ( product_version = mlp_version )
+                           ORDER ON analysis_id
+
+	WHILE current_analysis <> EMPTY DO
+
+        	IF current_analysis <> last_analysis THEN
+
+			IF current_analysis <> "$NULL" THEN
+
+				mlp_to_test_create_analysis ( mlp_header          ,
+							      mlp_version          ,
+							      current_analysis     ,
+							      test_schedule        ,
+							      component_list       ,
+							      delete_existing_data ,
+							      order_number         )
+
+			ENDIF
+
+			last_analysis = current_analysis
+
+		ENDIF
+
+        	NEXT mlp_components
+
+		current_analysis = SELECT mlp_components . analysis_id
+
+	ENDWHILE
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_create_analysis ( VALUE mlp_header           ,
+				      VALUE mlp_version          ,
+				      VALUE analysis             ,
+		                      VALUE test_schedule        ,
+				      VALUE component_list       ,
+				      VALUE delete_existing_data ,
+					    order_number         )
+
+{
+*
+*	Create the analysis if not already there.
+*
+*
+******************************************************************************}
+
+	DECLARE descriptor       ,
+		exists           ,
+		components       ,
+		analysis_version
+
+	push_file_descriptor ( "TEST_SCHED_ENTRY" , descriptor )
+
+	exists = SELECT test_sched_entry . identity
+		 WHERE ( identity     = test_schedule ) AND
+                       ( analysis_id  = analysis      )
+
+	pop_file_descriptor ( descriptor )
+
+	IF exists = EMPTY THEN
+
+		RESERVE ENTRY test_sched_entry , test_schedule : analysis
+
+		ASSIGN test_sched_entry . is_analysis     = TRUE
+		ASSIGN test_sched_entry . order_num       = order_number
+		ASSIGN test_sched_entry . std_test        = TRUE
+		ASSIGN test_sched_entry . replicate_count = 1
+
+		IF NOT blank ( component_list ) THEN
+
+			ASSIGN test_sched_entry . component_list = component_list
+
+		ENDIF
+
+		order_number = order_number + 1
+
+		UPDATE test_sched_entry
+
+	ENDIF
+
+	IF NOT blank ( component_list ) THEN
+
+		if ( mlp_to_test_get_analysis_version ( analysis         ,
+		                                        analysis_version )) THEN
+{001 \/}
+			{mlp_to_test_create_component_list ( analysis         ,
+							    analysis_version ,
+							    component_list   ,
+							    test_schedule    )}
+{001 /\}
+			mlp_to_test_read_components ( analysis             ,
+						      analysis_version     ,
+						      component_list       ,
+						      components           ,
+						      delete_existing_data )
+
+		        mlp_to_test_update_components ( mlp_header       ,
+						        mlp_version      ,
+						        analysis         ,
+						        analysis_version ,
+						        components       )
+
+			mlp_to_test_write_components ( analysis         ,
+						       analysis_version ,
+						       component_list   ,
+						       components       )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_get_analysis_version ( VALUE analysis         ,
+                                                 analysis_version )
+
+{
+*	Locate the highest version for the given analysis.
+*	Use the analysis_view for this purpose.
+*
+******************************************************************************}
+
+	analysis_version = SELECT MAX analysis_view . analysis_version
+	                   WHERE  identity = analysis
+
+	RETURN ( analysis_version <> EMPTY )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_get_schedule ( VALUE mlp_header      ,
+				   VALUE mlp_version     ,
+		                   VALUE test_schedule   ,
+					 schedule_names  ,
+					 order_number    )
+
+{
+*	Read the mlp_schedule table and create the corresponding entries in
+*	the test_sched_entry table.
+*
+*
+*
+******************************************************************************}
+
+	DECLARE schedule_mlp   ,
+		identity       ,
+		count
+
+	schedule_mlp = SELECT  mlp_schedule . mlp_id
+		       WHERE ( identity         = mlp_header  ) AND
+			     ( identity_version	= mlp_version )
+		       ORDER ON order_num
+
+	WHILE schedule_mlp <> EMPTY DO
+
+		count = 1
+
+		WHILE count <= size_of_array ( schedule_names ) DO
+
+			IF schedule_mlp = schedule_names [ count,1 ] THEN
+
+				identity = schedule_names [ count,2 ]
+				count    = size_of_array ( schedule_names )
+
+			ENDIF
+
+			count = count + 1
+
+		ENDWHILE
+
+		mlp_to_test_create_schedule ( test_schedule ,
+					      identity      ,
+					      order_number  )
+
+
+		NEXT mlp_schedule
+		schedule_mlp = SELECT  mlp_schedule . mlp_id
+
+	ENDWHILE
+
+
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_create_schedule ( VALUE create_test_schedule ,
+		                      VALUE nested_test_schedule ,
+					    order_number         )
+
+{
+*
+*	Create the nested test schedule entry if not already there.
+*
+*
+******************************************************************************}
+
+	DECLARE descriptor  ,
+		exists
+
+	push_file_descriptor ( "TEST_SCHED_ENTRY" , descriptor )
+
+	exists = SELECT test_sched_entry . identity
+		 WHERE ( identity     = create_test_schedule ) AND
+                       ( analysis_id  = nested_test_schedule )
+
+	pop_file_descriptor ( descriptor )
+
+	IF exists = EMPTY THEN
+
+		RESERVE ENTRY test_sched_entry ,
+			      create_test_schedule :
+			      nested_test_schedule
+
+		ASSIGN test_sched_entry . is_analysis     = FALSE
+		ASSIGN test_sched_entry . order_num       = order_number
+		ASSIGN test_sched_entry . std_test        = TRUE
+		ASSIGN test_sched_entry . replicate_count = 1
+
+		order_number = order_number + 1
+
+		UPDATE test_sched_entry
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_create_component_list ( VALUE analysis         ,
+					    VALUE analysis_version ,
+					    VALUE component_list   ,
+					    VALUE test_schedule    )
+
+{
+*	Try to select the component list - if it doesn't exist reserve it.
+*
+*******************************************************************************}
+
+	DECLARE status     ,
+		message
+
+	status = SELECT versioned_c_l_header . analysis
+		 FOR UPDATE
+		 WHERE ( analysis         = analysis         ) AND
+		       ( analysis_version = analysis_version ) AND
+		       ( comp_list        = component_list   )
+
+	mlp_to_test_lock_check ( status )
+
+	IF status = EMPTY THEN
+
+		RESERVE ENTRY versioned_c_l_header ,
+			      analysis             :
+			      analysis_version     :
+			      component_list       ,
+			      status
+
+		message_fetch ( "MLP_TO_TEST_LIST_DESCRIPTION" ,
+				 message                        )
+		message_add_parameter (         message       ,
+					strip ( test_schedule ) )
+
+		message_add_parameter (         message   ,
+					strip ( now     ) )
+
+		ASSIGN versioned_c_l_header . description = message_get_text ( message , 1 )
+
+	ENDIF
+
+	UPDATE versioned_c_l_header
+
+ENDROUTINE
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_find_component ( VALUE component  ,
+				           components )
+
+{
+*	Try to find the given component in the components array. Return its
+*	position if found otherwise return 0.
+*
+******************************************************************************}
+
+	DECLARE count
+
+	count = 1
+
+	WHILE count <= size_of_array ( components ) DO
+
+		IF strip ( components [ count , 1] ) = component THEN
+
+			RETURN ( count )
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	RETURN ( 0 )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_read_components  ( VALUE analysis             ,
+				       VALUE analysis_version     ,
+				       VALUE component_list       ,
+				             components           ,
+				       VALUE delete_existing_data )
+
+{
+*	Read the component records from the analysis into an array.
+*	Read the component list and update the array to show which ones
+*	already exist.
+*
+******************************************************************************}
+
+	DECLARE component  ,
+		count
+
+	ARRAY components ARRAY_SIZE ( 0 , 2 )
+
+	count = 1
+
+	component = SELECT versioned_component . name
+		    WHERE  ( analysis         = analysis         ) AND
+		           ( analysis_version = analysis_version )
+		    ORDER ON order_number
+
+	WHILE component <> EMPTY DO
+
+		components [ count , 1 ] = component
+		components [ count , 2 ] = MLP_TO_TEST_COMPONENT_NOT_WANTED
+
+		count = count + 1
+
+		NEXT versioned_component
+		component = SELECT versioned_component . name
+
+	ENDWHILE
+
+	IF NOT delete_existing_data THEN
+
+		{ Now read the component list }
+
+		component = SELECT versioned_c_l_entry . name
+			    WHERE ( analysis         = analysis         ) AND
+				  ( analysis_version = analysis_version ) AND
+				  ( comp_list        = component_list   )
+
+		WHILE component <> EMPTY DO
+
+			count = mlp_to_test_find_component ( component  ,
+							     components )
+
+			IF count > 1 THEN
+
+				components [ count , 2 ] = MLP_TO_TEST_COMPONENT_EXISTS
+        	
+      			ENDIF
+
+			NEXT versioned_c_l_entry
+
+			component = SELECT versioned_c_l_entry . name
+
+		ENDWHILE
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_update_components  ( VALUE mlp_header       ,
+					 VALUE mlp_version      ,
+					 VALUE analysis         ,
+					 VALUE analysis_version ,
+					       components       )
+
+{
+*	Read the components from the mlp definition and update the array
+*
+******************************************************************************}
+
+	DECLARE component       ,
+		array_position  ,
+		file_descriptor
+
+	push_file_descriptor ( "MLP_COMPONENTS" , file_descriptor )
+
+	component = SELECT mlp_components . component_name
+		    WHERE ( product_id      = mlp_header  ) AND
+			  ( product_version = mlp_version ) AND
+			  ( analysis_id     = analysis    )
+
+	WHILE component <> EMPTY DO
+
+		array_position = mlp_to_test_find_component ( component  ,
+						              components )
+
+		IF array_position > 0 THEN
+
+			IF components [ array_position , 2 ] =
+					MLP_TO_TEST_COMPONENT_NOT_WANTED THEN
+
+ 				components [ array_position , 2 ] =
+					MLP_TO_TEST_COMPONENT_WANTED
+
+			ENDIF
+
+		ENDIF
+
+		NEXT mlp_components
+		component = SELECT mlp_components . component_name
+
+	ENDWHILE
+
+	pop_file_descriptor ( file_descriptor )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_write_components  ( VALUE analysis         ,
+					VALUE analysis_version ,
+					VALUE component_list   ,
+					      components       )
+
+{
+*	Write the component list entries back into the table. Set the order
+*	number correctly.
+*
+******************************************************************************}
+
+	DECLARE count        ,
+		order_number ,
+		status       ,
+		worked
+
+	count        = 1
+	order_number = 1
+
+	WHILE count <= size_of_array ( components ) DO
+
+		IF components [ count , 2 ] = MLP_TO_TEST_COMPONENT_EXISTS THEN
+
+			status = SELECT versioned_c_l_entry . name
+			         FOR UPDATE
+			         WHERE ( analysis         = analysis       ) AND
+				       ( analysis_version = analysis_version ) AND
+				       ( comp_list        = component_list ) AND
+	                               ( name             = components [ count , 2 ] )
+
+			mlp_to_test_lock_check ( status )
+
+			worked = status <> EMPTY
+
+		ELSEIF components [ count , 2 ] = MLP_TO_TEST_COMPONENT_WANTED THEN
+
+			RESERVE ENTRY versioned_c_l_entry      ,
+			              analysis                 :
+			              analysis_version         :
+				      component_list           :
+	                              components [ count , 1 ] ,
+				      status
+
+			worked = status = EMPTY
+
+		ELSE
+
+			worked = FALSE
+
+		ENDIF
+
+		IF worked THEN
+
+			ASSIGN versioned_c_l_entry . order_number = order_number
+
+			UPDATE versioned_c_l_entry
+
+			order_number = order_number + 1
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_update_mlp_header ( VALUE mlp_header     ,
+                                        VALUE mlp_version    ,
+					VALUE test_schedule  )
+
+{
+*	Update the MLP header to include the test schedule
+*
+*
+******************************************************************************}
+
+	DECLARE identity
+
+	identity = SELECT mlp_header . identity FOR UPDATE
+		   WHERE ( identity        = mlp_header  ) AND
+		         ( product_version = mlp_version )
+
+	mlp_to_test_lock_check ( identity )
+
+	IF identity = mlp_header THEN
+
+		ASSIGN mlp_header . test_schedule = test_schedule
+		UPDATE mlp_header
+
+	ENDIF
+
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE mlp_to_test_lock_check ( VALUE status )
+
+	IF status = LOCKED THEN
+
+		ROLLBACK
+		fatal_error ( get_user_message ( "MLP_TO_TEST_LOCKED" , 1 ))
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}

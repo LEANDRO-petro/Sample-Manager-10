@@ -1,0 +1,2811 @@
+{*******************************************************************************
+*
+* Module Name  : $PROMPT_IMPRINT
+*
+* Purpose      : Class for Launching Infomaker Report using IMPRINT
+*
+* Document Ref : SCR 13736/1/3
+*
+* Portability  : Not Checked
+*
+* Re-entrant   : No
+*
+*******************************************************************************}
+
+SET COMPILE_OPTION DECLARE
+SET NOTPROTECTED
+SET NAME "DEFER/"
+ENABLE WINDOWS
+
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_DDE
+JOIN STANDARD_LIBRARY STD_WINDOW
+JOIN STANDARD_LIBRARY STD_TRANSFER
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_GLOBAL
+JOIN STANDARD_LIBRARY STD_OUTPUT
+JOIN STANDARD_LIBRARY STD_DATABASE
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_IMPRINT
+JOIN LIBRARY $LIB_TEXT
+JOIN LIBRARY $PROMPT_HTML
+
+{******************************************************************************}
+
+GLOBAL CONSTANT IMPRINT               = "IMPRINT"
+GLOBAL CONSTANT IMPRINT_OBJECT        = "IMPRINT_OBJECT"
+GLOBAL CONSTANT IMPRINT_CLIENT_OBJECT = "IMPRINT_CLIENT_OBJECT"
+GLOBAL CONSTANT IMPRINT_DATABASE      = "IMPRINT_DATABASE"
+GLOBAL CONSTANT IMPRINT_SERVER        = "IMPRINT_SERVER"
+GLOBAL CONSTANT IMPRINT_USERNAME      = "IMPRINT_USERNAME"
+GLOBAL CONSTANT IMPRINT_PASSWORD      = "IMPRINT_PASSWORD"
+GLOBAL CONSTANT IMPRINT_SERVER_SIDE   = "IMPRINT_SERVER_SIDE"
+GLOBAL CONSTANT IMPRINT_INUSE          = "IMPRINT_INUSE"
+
+GLOBAL CONSTANT IMPRINT_REPORTING_DATE_FORMAT = "DD-Mon-YYYZ H24:MI"
+
+GLOBAL CONSTANT IMPRINT_FILETYPE_CLIPBOARD = "CLIPBOARD" { Save to the clipboard         - .clp  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_CSV       = "CSV"       { Comma-separated values        - .csv  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_DBASE2    = "DBASE2"    { dBASE-II format               - .dbf  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_DBASE3    = "DBASE3"    { dBASE-III format              - .dbf  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_DIF       = "DIF"       { Data Interchange Format       - .dif  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_EXCEL     = "EXCEL"     { Microsoft Excel format        - .xls  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_EXCEL5    = "EXCEL5"    { Microsoft Excel 5 format      - .xls  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_HTMLTABLE = "HTMLTABLE" { Pseudo HTML                   - .html }	
+GLOBAL CONSTANT IMPRINT_FILETYPE_PSREPORT  = "PSREPORT"  { Powersoft Report (PSR) format - .psr  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_SQLINSERT = "SQLINSERT" { SQL syntax                    - .sql  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_SYLK      = "SYLK"      { Microsoft Multiplan format    - .slk  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_WKS       = "WKS"       { Lotus 1-2-3 format            - .wks  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_WK1       = "WK1"       { Lotus 1-2-3 format            - .wk1  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_WMF       = "WMF"       { Windows Metafile format       - .wmf  }
+GLOBAL CONSTANT IMPRINT_FILETYPE_TEXT      = "TEXT"      { Tab-separated columns         - .txt  }
+
+CONSTANT DEFAULT_LIBRARY                = "SMRPT.PBL" 
+CONSTANT DEFAULT_RTIME                  = "OleImprint.pbd"
+CONSTANT DEFAULT_DATABASE               = "ODBC"
+CONSTANT DEFAULT_SERVER                 = "DSN=Limsvgsm"
+CONSTANT DEFAULT_PASSWORD               = ""
+CONSTANT DEFAULT_REPORT                 = ""
+
+CONSTANT OLEIMPRINT_CLSID               = "CLSID\{BB20C0A2-C944-11D1-9F52-0080C7FF9BC3}\PowerBuilder\LibraryList"
+CONSTANT PDF_OCX                        = "PDF.PdfCtrl."
+CONSTANT PDF_OCX_ROOT                   = "HKEY_CLASSES_ROOT"
+CONSTANT PDF_OCX_7                      = "AcroPDF.PDF." 
+
+CONSTANT PROMPT_IMPRINT_SQLSERVER_DATE  = "YYYY-MZ-DZ H24:MI:SS.MSS"
+
+{******************************************************************************}
+
+example_of_usage ( )           { This routine shows you how to use this Class. }
+
+{******************************************************************************}
+
+	GLOBAL 
+
+	ROUTINE define_imprint_class
+
+{ 
+* 	Define the IMPRINT class. 
+*
+*******************************************************************************}
+
+	DECLARE in_use
+
+	DEFINE CLASS IMPRINT
+
+		INITIALISATION
+		
+		DESTRUCTOR
+		
+		PROPERTIES
+
+			"copies"                 ,  { No of copies to print out                   }
+			"ole_object"             ,  { The OLE OBJECT                              }
+			"client_ole_object"      ,  { The client side OLE OBJECT                  }
+			"status_msg"             ,  { Display message                             }
+			"username"               ,  { Database username                           }
+			"password"               ,  { Database password                           }
+			"server"                 ,  { The server to use eg @TNS:VGSM              }
+			"database"               ,  { The database type eg ODBC                   }
+			"library"                ,  { Filename & path of the Reports PBL          }
+			"rtime_lib"              ,  { Filename & path of the Imprint PBD          }
+			"debug_mode"             ,  { Debug Mode True                             }
+			"debug_count"            ,  { Debug counter for syntax reports            }
+			"parameters"             ,  { Array of parameters for used by old Imprint }
+			"preview"                ,  { Preview mode                                }
+			"report"                 ,  { The Infomaker Report                        }
+			"syntax"                 ,  { The Infomaker Report syntax                 }
+			"save_filename"          ,  { The name of the file when saving            }
+			"save_filetype"          ,  { The format type of the saved file           }
+			"recipient"              ,  { The recipient of the report                 }
+			"subject"                ,  { Mail Subject for the report                 }
+			"client_printer_name"    ,  { Client printer name                         }
+			"server_side"		 ,  { Use server side OLE                         }
+			"exp_syntax"		 ,  { Exported syntax from report                 }		
+			"exp_parameters"	 ,  { Array of parsed parameters from syntax      }
+			"select_string"    	 ,
+			"nested_reports"	 ,  { Array of nested reports                     }
+			"primary_table"		 ,  
+			"error"			 ,  { If an error was found when creating lte     }
+			"enable_mailto"		 ,  { Mail to switch				  }
+			"enable_print"		 ,  { Print switch				  }
+			"enable_print_setup"	 ,  { Print setup switch			  }
+			"enable_save_as"	 ,  { Save as switch				  }
+			"datetime"                  { Boolean if a datetime parameter is added 
+			                              when a report is called. }
+			
+
+		ACTIONS
+
+			"generate"                 ,  { Generate the report                         }
+			"add_date_predicate"       ,  { Add a date according to DB                  }
+			"add_date_parameter"       ,  { Add a date parameter to the report          }
+			"add_parameter"            ,  { Add a parameter to the report               }
+			"add_recipient"            ,  { Add a recipient for the mailing list        }
+			"login"                    ,  { Login in to the database                    }
+			"login_server"             ,  { Login in to the database                    }
+			"login_client"             ,  { Login in to the database                    }
+			"debug_mode"               ,  { Enable Debug Mode                           }  
+			"create_ole_object"        ,  { Create the OLE Object                       }
+			"list_reports"             ,  { Returns all the reports                     }
+			"print"                    ,  { Print the report out                        }     
+			"reset_ole_object"         ,  { Empties out the ole objects previous params }
+			"report_from_syntax"       ,  { Generates a report from powerbuilder syntax }
+			"print_from_syntax"        ,  { Makes a call to Imprint to print from syntax}
+			"get_file_types"           ,  { Returns all file types                      }
+			"set_syntax"               ,  { Sets the report syntax to be the parameter  }
+			"set_report"               ,  { Set up the report to print                  }
+			"set_lte"                  ,
+			"set_subject"              ,  { Set the subject for the mail message        }
+			"set_copies"               ,  { Set up the number of copies                 }
+			"set_PBL_library"          ,  { Set up the Infomaker PBL lib                }
+			"set_runtime_library"      ,  { Set up the Runtime PBD library location     }
+			"set_save"                 ,  { Tells IMprint to save a report when printed }
+			"clean_temp_files"         ,  { Clean up temporary files                    }
+			"clean_server_temp_files"  ,  { Clean up servers temporary files            }
+			"temp_file_name"           ,  { Create a temporary file name                }
+			"wait_prompt"              ,  { Psuedo wait_prompt action                   }
+			"client_psr"               ,  { View the PSR on the CLIENT                  }
+			"client_other"             ,  { View an OLE File on the CLIENT              }
+			"client_adobe"             ,  { View an ADOBE PDF File on the CLIENT        }
+			"set_background_printer"   ,  { Set the background printer if possible      }
+			"log_output_name"          ,  { Output saved filename to background logfile }
+			"set_printer"              ,  { Set the OLE object printer                  }
+			"export_syntax"            ,  { Get syntax from report                      }
+			"import_report"            ,  { Import the syntax                           }
+			"check_nested"		   ,  { Check if current report is nested, if so
+							fill property nested_reports.             }
+			"get_parameters"           ,  { Parse parameters from syntax                }
+			"get_parameter_info"       ,  { Parse argument details and add then to each 
+						  	parameter.				  }
+			"validate_params"	   ,  { Once parsed check contents of parameters    }
+			"replace_quotes_in_syntax" ,  { replace quotes with [ for SQL server        }
+			"import_composites" ,         { move any composites in to temp pbl          }
+			"reset_after_error"           { Delete the global cluster on error          }
+
+	END CLASS
+
+	IF NOT user_cluster_exists ( IMPRINT ) THEN
+
+		add_global_cluster ( IMPRINT ) 
+
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_OBJECT        )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_CLIENT_OBJECT )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_DATABASE      )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_SERVER        )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_USERNAME      )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_PASSWORD      )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_SERVER_SIDE   )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_INUSE  )
+
+		in_use = FALSE
+		user_global_write ( IMPRINT        ,
+			                    IMPRINT_INUSE ,
+			                    in_use         )
+
+	ENDIF 
+
+ENDROUTINE { define_imprint_class }
+
+{******************************************************************************}
+
+	ROUTINE imprint_class_initialisation ( self ) 
+
+{ 
+*	Class initialisation action.
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE temp_file    ,
+	        imprint_path ,
+		in_use
+
+	in_use = read_user_global ( IMPRINT, IMPRINT_INUSE )
+
+	WHILE in_use DO
+
+		IF GLOBAL ( "MODE") = "INTERACTIVE" THEN
+
+			{ Use this call to give up the current time slice }
+			temp_file = client_temporary_file ( )
+			client_delete_file ( temp_file )
+
+		ENDIF
+
+		SLEEP FOR INTERVAL ( "0 00:00:01" )
+
+		in_use = read_user_global ( IMPRINT, IMPRINT_INUSE )
+	
+	ENDWHILE
+
+	in_use = TRUE
+	user_global_write ( IMPRINT        ,
+		                    IMPRINT_INUSE ,
+		                    in_use         )
+
+	self . clean_temp_files ( )
+
+	self . ole_object               = EMPTY
+	self . copies           	= ROUND ( GLOBAL ( "OLEIMPRINT_COPIES" ) )
+	self . report           	= DEFAULT_REPORT
+	self . server           	= ""
+	self . database         	= DEFAULT_DATABASE
+	self . preview          	= ( GLOBAL ( "OLEIMPRINT_PREVIEW" ) = "TRUE" )
+	self . debug_mode       	= ( GLOBAL ( "OLEIMPRINT_DEBUG" ) = "TRUE" )
+	self . debug_count              = 0
+	self . subject          	= ""
+	self . recipient                = ""
+	self . syntax           	= ""
+	self . client_printer_name      = ""
+	self . status_msg       	= get_user_message ( "IMPRINT_LOADING" , 1 )
+	self . save_filename    	= GLOBAL ( "OLEIMPRINT_SAVE_FILENAME" )
+	self . save_filetype    	= GLOBAL ( "OLEIMPRINT_SAVE_FILETYPE" )
+	self . username         	= STRIP ( OPERATOR )
+	self . password         	= DEFAULT_PASSWORD
+	self . primary_table 		= EMPTY
+	self . error 			= FALSE
+	self . select_string		= ""
+        self . datetime         	= TRUE
+	self . enable_mailto		= TRUE
+ 	self . enable_print		= TRUE
+	self . enable_print_setup 	= TRUE
+	self . enable_save_as		= TRUE	
+
+	ARRAY self . parameters
+
+	self . server_side = GLOBAL ( "OLEIMPRINT_SERVER_SIDE" )
+
+	{ Setup the object }
+
+	IF self . server_side THEN
+
+		imprint_path = lib_utils_logical_containing_file ( "smp$imprint"   ,
+		                                                   DEFAULT_LIBRARY )
+
+		IF imprint_path = EMPTY THEN
+			imprint_path = lib_utils_logical_to_string ( "smp$imprint" )
+		ENDIF
+
+		self . library = imprint_path : "\" : DEFAULT_LIBRARY
+
+		self . rtime_lib = REGISTRY_GET_VALUE ( HKEY_CLASSES_ROOT ,
+		                                        OLEIMPRINT_CLSID  ,
+		                                        ""                )
+	ELSE
+		imprint_path = client_get_imprint_path ( ) : "\"
+		self . rtime_lib = imprint_path : DEFAULT_RTIME
+		self . library   = imprint_path : DEFAULT_LIBRARY
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_class_destructor ( self ) 
+
+{ 
+*	Class destructor action.
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE temp_file ,
+	        in_use
+
+	in_use = FALSE
+	user_global_write ( IMPRINT        ,
+		                    IMPRINT_INUSE ,
+		                    in_use         )
+
+	IF GLOBAL ( "MODE") = "INTERACTIVE" THEN
+
+		{ Use this call to give up the current time slice }
+		temp_file = client_temporary_file ( )
+		client_delete_file ( temp_file )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_clean_temp_files ( self ) 
+
+{ 
+*	Clean up temporary files previously created by Imprint
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+DECLARE  temp_file, temp_path, temp_files, pos, count, files
+
+	ARRAY temp_files
+	
+	temp_file = client_temporary_file ( )
+	
+	pos = INDEX ( TOUPPER ( temp_file ), "~SMW" )
+	
+	temp_path = TOUPPER ( LEFTSTRING ( temp_file , pos - 1 ))
+	client_get_file_names ( temp_path : "temp_imprint_*.pbl" , temp_files ) 
+
+	files = size_of_array ( temp_files ) 
+
+	IF ( files > 0 ) 
+
+		count = 1
+
+		WHILE ( count <= files ) 
+
+			client_delete_file ( temp_path : temp_files [ count ] ) 
+
+			count = count + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	client_delete_file ( temp_file )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_clean_server_temp_files ( self, ole_object ) 
+
+{ 
+*	Clean up temporary files previously created by Imprint on server
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+DECLARE  temp_file, temp_files, count, files, status
+
+	ARRAY temp_files
+	
+	temp_file = ole_object . ?"is_Temp_Path"? : "Temp_Imprint_*.pbl"
+	
+	FILE FIND temp_file, temp_files, status
+
+	files = size_of_array ( temp_files ) 
+
+	count = 1
+
+	WHILE ( count <= files ) 
+
+		FILE DELETE temp_files [ count ], status
+
+		count = count + 1
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_temp_file_name ( self ) 
+
+{ 
+*
+*	Form a temporary file name for use with server side reporting
+*
+*******************************************************************************}
+
+DECLARE temp_file
+
+	SET DATE FORMAT "DZ-Mon-YYYZ-H24-MI-SS"
+
+	temp_file = lib_utils_logical_to_string ( "smp$textreports" )
+	
+	temp_file = temp_file : "\imprint" : GLOBAL ( "PROCESS_ID" ) :
+	            "_" : STRIP ( NOW )
+	
+	RESTORE DATE FORMAT
+	
+	RETURN ( temp_file )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_reset_after_error ( self ) 
+
+{ 
+*	Check for an error on the OLE object and reset the cluster
+*
+* 	Parameters  self : the imprint class
+* 	Returns     TRUE if error encountered
+*
+*******************************************************************************}
+
+	DECLARE lasterror
+
+	lasterror = self . ole_object . ?"get_lasterror"? ( )
+
+	IF lasterror <> "" THEN
+	
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_OBJECT        )
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_CLIENT_OBJECT )
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_DATABASE      )
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_SERVER        )
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_USERNAME      )
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_PASSWORD      )
+		delete_user_global ( IMPRINT               ,
+		                  IMPRINT_SERVER_SIDE   )
+
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_OBJECT        )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_CLIENT_OBJECT )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_DATABASE      )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_SERVER        )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_USERNAME      )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_PASSWORD      )
+		add_user_global ( IMPRINT               ,
+		                  IMPRINT_SERVER_SIDE   )
+
+		flash_message ( "Please re-run report. Error detected : " : lasterror, TRUE )
+
+	ENDIF
+
+	RETURN ( lasterror <> "" )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_login_client ( self ) 
+
+{ 
+*	Imprint login when using client side report generation
+*
+* 	Parameters  self : the imprint class
+* 	Returns     TRUE if logged in successfully
+*
+*******************************************************************************}
+
+DECLARE do_login,
+        is_logged_in,
+        ole_logged_in ,
+        login_DSN
+
+	ole_logged_in = 0
+	is_logged_in  = FALSE
+	do_login      = TRUE 
+
+	window_set_status ( self . status_msg )
+
+	IF self . ole_object . ?"logged_in"? ( ) THEN  
+
+		IF ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_DATABASE ) <> self . database )
+		OR ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_SERVER   ) <> self . server   )
+		OR ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_USERNAME ) <> self . username )
+		OR ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_PASSWORD ) <> self . password ) THEN
+
+			self . ole_object . ?"logout"? ( )
+
+		ELSE
+
+			do_login     = FALSE
+			is_logged_in = TRUE
+
+		ENDIF 
+
+	ENDIF  
+
+	IF do_login THEN
+
+		IF BLANK ( self . server ) THEN
+			self . server = lib_imprint_form_link_name ()
+		ENDIF
+
+		self . ole_object . ?"is_database"? =  self . database
+		self . ole_object . ?"is_server"?   =  self . server
+		self . ole_object . ?"is_username"? =  self . username
+		self . ole_object . ?"is_password"? =  self . password
+
+		{ SampleManager 2000 has an updated OLEIMPRINT which      }
+		{ returns a boolean from the login function and also      }
+		{ includes a function that returns the last error         }
+		{ encountered. Earlier versions returned a number from    }
+		{ login - 1 for success, 0 for failure.                   }
+		{ This code uses the return type to determine which       }
+		{ OLEIMPRINT is installed - just in case the current      }
+		{ client doesnt have a 2000 compatible version.           }
+
+		login_DSN = "DSN=" : lib_imprint_create_link ( )
+		self . ole_object . ?"is_server"?   =  login_DSN
+
+		IF NOT BLANK ( login_DSN ) THEN
+			ole_logged_in = self .  ole_object . ?"login"? ( )
+		ELSE
+			ole_logged_in = 0
+		ENDIF
+		
+		IF variable_get_type ( ole_logged_in ) = "Boolean" THEN
+			is_logged_in = ole_logged_in
+		ELSE
+			is_logged_in = ( ole_logged_in = 1 )
+		ENDIF
+
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_DATABASE ,
+		                    self . database  )
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_SERVER   ,
+		                    self . server    )
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_USERNAME ,
+		                    self . username  )
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_PASSWORD ,
+		                    self . password  )
+
+	ENDIF
+
+	IF ( is_logged_in ) THEN
+		window_set_status ( GET_USER_MESSAGE ( "IMPRINT_READY" , 1 ) )
+		
+	ELSE
+
+		IF variable_get_type ( ole_logged_in ) = "Boolean" THEN
+			flash_message ( self . ole_object . ?"get_lasterror"? ( ), TRUE )
+		ENDIF
+
+		window_set_status ( "" )
+		
+	ENDIF
+
+	RETURN ( is_logged_in )
+
+ENDROUTINE { imprint_action_login_client }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_login_server ( self ) 
+
+{ 
+*	Imprint login when using server side report generation
+*
+* 	Parameters  self : the imprint class
+* 	Returns     TRUE if logged in successfully
+*
+*******************************************************************************}
+
+DECLARE do_login,
+        is_logged_in,
+        ole_logged_in
+
+	ole_logged_in = 0
+	is_logged_in  = FALSE
+	do_login      = TRUE 
+
+	IF BLANK ( self . server ) THEN
+		self . server = lib_imprint_form_link_name ()
+	ENDIF
+
+	self . ole_object . ?"is_database"? =  self . database
+	self . ole_object . ?"is_server"?   =  self . server
+	self . ole_object . ?"is_username"? =  self . username
+	self . ole_object . ?"is_password"? =  self . password
+
+	window_set_status ( self . status_msg )
+
+	IF self . ole_object . ?"logged_in"? ( ) THEN  
+
+		IF ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_DATABASE ) <> self . database )
+		OR ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_SERVER   ) <> self . server   )
+		OR ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_USERNAME ) <> self . username )
+		OR ( read_user_global ( IMPRINT          , 
+		                        IMPRINT_PASSWORD ) <> self . password ) THEN
+
+			self . ole_object . ?"logout"? ( )
+
+		ELSE
+
+			do_login     = FALSE
+			is_logged_in = TRUE
+
+		ENDIF 
+
+	ENDIF  
+
+	IF do_login THEN
+
+		{ SampleManager 2000 has an updated OLEIMPRINT which      }
+		{ returns a boolean from the login function and also      }
+		{ includes a function that returns the last error         }
+		{ encountered. Earlier versions returned a number from    }
+		{ login - 1 for success, 0 for failure.                   }
+		{ This code uses the return type to determine which       }
+		{ OLEIMPRINT is installed - just in case the current      }
+		{ client doesnt have a 2000 compatible version.           }
+
+		self . ole_object . ?"is_server"? = self . server
+
+		self . ole_object . ?"is_connectextra"? = lib_imprint_database_login_details ( )
+
+		self . ole_object . ?"is_connectoptions"? = "SQL_DRIVER_CONNECT,SQL_DRIVER_NOPROMPT"
+
+		ole_logged_in = self .  ole_object . ?"login"? ( )
+		
+		IF variable_get_type ( ole_logged_in ) = "Boolean" THEN
+			is_logged_in = ole_logged_in
+		ELSE
+			is_logged_in = ( ole_logged_in = 1 )
+		ENDIF
+
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_DATABASE ,
+		                    self . database  )
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_SERVER   ,
+		                    self . server    )
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_USERNAME ,
+		                    self . username  )
+		user_global_write ( IMPRINT          ,
+		                    IMPRINT_PASSWORD ,
+		                    self . password  )
+
+	ENDIF
+
+	IF ( is_logged_in ) THEN
+		window_set_status ( GET_USER_MESSAGE ( "IMPRINT_READY" , 1 ) )
+		
+	ELSE
+
+		IF variable_get_type ( ole_logged_in ) = "Boolean" THEN
+			flash_message ( self . ole_object . ?"get_lasterror"? ( ), TRUE )
+		ENDIF
+
+		window_set_status ( "" )
+		
+	ENDIF
+
+	RETURN ( is_logged_in )
+
+ENDROUTINE { imprint_action_login_server }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_login ( self ) 
+
+{ 
+*	Call the appropriate login routine
+*
+* 	Parameters  self : the imprint class
+* 	Returns     TRUE if logged in successfully
+*
+*******************************************************************************}
+
+DECLARE logged_in
+
+	IF self . server_side THEN
+	
+		logged_in = self . login_server ( )
+
+	ELSE
+
+		logged_in = self . login_client ( )
+
+	ENDIF
+
+	RETURN ( logged_in )
+
+ENDROUTINE { imprint_action_login }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_create_ole_object ( self ) 
+
+{ 
+*	Check whether the global ole object needs creating and if so create it
+*	Assign it to the IMPRINT class 
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*
+*******************************************************************************}
+
+DECLARE ole_object,
+        client_ole_object,
+        server_side,
+        ok
+
+
+	client_ole_object = EMPTY
+
+	server_side = read_user_global ( IMPRINT             ,
+	                                 IMPRINT_SERVER_SIDE )
+
+	IF server_side = EMPTY THEN
+
+		server_side = self . server_side
+
+		IF self . server_side THEN
+
+			CREATE OBJECT "STD_OLE_AUTOMATION_SERVER" , ole_object
+
+			ok = ole_object . create ( "LabSystems.Imprint" )
+
+			IF ok <> EMPTY THEN
+
+				fatal_error ( "STD_OLE_AUTOMATION_SERVER " : ok )
+
+			ENDIF
+
+			self . clean_server_temp_files ( ole_object )
+
+			ole_object . ?"set_debug"? ( self . debug_mode )
+
+			ole_object . ?"set_useaddlib"? ( TRUE )
+
+			IF NOT BLANK ( GLOBAL ( "OLEIMPRINT_ADD_LIBRARY" )) THEN
+
+				ole_object . ?"add_library"? ( GLOBAL ( "OLEIMPRINT_ADD_LIBRARY" ))
+
+			ENDIF
+
+			ole_object . ?"create_temp_library"? ( )
+
+		ELSE
+
+			CREATE OBJECT "STD_OLE_AUTOMATION" , ole_object
+
+			ok = ole_object . create ( "LabSystems.Imprint" )
+
+			IF ok <> EMPTY THEN
+
+				fatal_error ( "STD_OLE_AUTOMATION " : ok )
+
+			ENDIF
+
+			ole_object . ?"set_debug"? ( self . debug_mode )
+
+		ENDIF
+
+		user_global_write ( IMPRINT             ,
+		                    IMPRINT_SERVER_SIDE ,
+		                    server_side         )
+
+		user_global_write ( IMPRINT        ,
+		                    IMPRINT_OBJECT ,
+		                    ole_object     )
+
+		user_global_write ( IMPRINT               ,
+		                    IMPRINT_CLIENT_OBJECT ,
+		                    client_ole_object     )
+
+	ELSE
+
+		IF server_side THEN
+
+			client_ole_object = read_user_global ( IMPRINT               ,
+			                                       IMPRINT_CLIENT_OBJECT )
+
+		ENDIF
+
+		ole_object = read_user_global ( IMPRINT        ,
+		                                IMPRINT_OBJECT )
+
+	ENDIF
+
+	self . ole_object        = ole_object
+	self . client_ole_object = client_ole_object
+
+	IF ( GLOBAL ( "COMMIT_VIEW_MODE" ) ) THEN
+
+		self . ole_object . ?"set_tableset"? ( GLOBAL ( "COMMITTED_TABLE_SET" ) )
+
+	ELSE
+
+		self . ole_object . ?"set_tableset"? ( "" )
+
+	ENDIF
+
+	IF NOT BLANK ( self . rtime_lib ) THEN
+		self . ole_object . ?"set_rtime"? ( self . rtime_lib )
+	ENDIF
+
+ENDROUTINE { imprint_action_create_ole_object }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_debug_mode ( self , VALUE debug ) 
+
+{ 
+*	Enable the Debug mode
+*
+* 	Parameters  self  : the imprint class
+*	            debug : the debug mode required
+* 	Returns     N/A
+*
+*
+*******************************************************************************}
+
+	self . ole_object . ?"set_debug"? ( debug )
+
+	IF self . client_ole_object <> EMPTY THEN
+	
+		self . client_ole_object . ?"set_debug"? ( debug )
+
+	ENDIF
+
+	self . debug_mode  = debug
+
+ENDROUTINE { imprint_action_debug_mode }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_list_reports ( self ) 
+
+{ 
+*	Show all the reports in an imprint library
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+DECLARE ret_val 
+  
+	ret_val = self . ole_object . ?"listreport"? ( )
+
+	RETURN ( ret_val )
+
+ENDROUTINE { imprint_action_list_reports }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_get_file_types ( self ) 
+
+{ 
+*	Show all the valid file formats to which a report can be saved
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+DECLARE ret_val 
+  
+	ret_val = self . ole_object . ?"get_filetypes"? ( )
+
+	RETURN ( ret_val )
+
+ENDROUTINE { imprint_action_get_file_types }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_save ( self           ,
+	                                  VALUE filename ,
+	                                  VALUE filetype ) 
+
+{ 
+*	Specifies a file name and file type which oleimprint will save a generated
+*	report to when retrieved.
+*
+*	The list of filetypes to choose from is as follows:
+*
+*	CLIPBOARD, CSV, DBASE2, DBASE3, DIF, EXCEL, EXCEL5, HTMLTABLE, PSREPORT,
+*	SQLINSERT, SYLK, WKS, WK1, WMF, TEXT, PDF
+*
+* 	Parameters  self : the imprint class
+* 	Returns     TRUE if succesfull 
+*
+*******************************************************************************}
+
+DECLARE ret_val 
+  
+	filename = translate_file_name ( filename )
+
+	ret_val = self . ole_object . ?"set_save"? ( filename ,
+	                                             filetype )
+
+	RETURN ( ret_val )
+
+ENDROUTINE { imprint_action_set_save }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_pbl_library ( self , VALUE library ) 
+
+{ 
+*	Set up the infomaker library
+*
+* 	Parameters  self  : the imprint class
+*	            value : the name of an InfoMaker library
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	self . ole_object . ?"set_library"? ( library )
+    
+	self . library = library
+
+ENDROUTINE { imprint_action_set_pbl_library }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_runtime_library ( self , VALUE rtime_lib ) 
+
+{ 
+*	Set up the infomaker runtime library location
+*
+* 	Parameters  self  : the imprint class
+*	            value : the name of an InfoMaker Runtime library
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	self . ole_object . ?"set_rtime"? ( rtime_lib )
+    
+	self . rtime_lib = rtime_lib
+
+ENDROUTINE { imprint_action_set_runtime_library }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_wait_prompt ( self  ) 
+
+{ 
+*	Wait for the user to finish viewing the report.
+*	If server side printing is enabled transfer it to the client.
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE temp_file, trans, status, pos, extension
+
+	trans = EMPTY
+
+	IF ( self . server_side ) AND ( GLOBAL ( "MODE") <> "INTERACTIVE" ) THEN
+
+		{ This is a background process }
+
+	ELSEIF ( self . server_side ) THEN
+
+		{ save_filename does not include the file extension }
+
+		self . save_filename = self . ole_object . ?"is_filename"?
+		extension            = RIGHTSTRING ( self . save_filename, 3 )
+
+		{ Copy the file to the client }
+
+		temp_file = TOUPPER ( client_temporary_file ( ))
+		client_delete_file ( temp_file )
+
+		pos = INDEX ( temp_file, "~SMW" )
+	
+		temp_file = LEFTSTRING ( temp_file , pos - 1 ) :
+		            "imprint" : GLOBAL ( "PROCESS_ID" ) : 
+		            "." : extension
+
+		trans = transfer_binary_from_server ( self . save_filename ,
+		                                      temp_file            )
+
+		IF trans = EMPTY THEN
+	
+			IF TOUPPER ( extension ) = "PSR" THEN
+
+				self . client_psr ( temp_file )
+
+			ELSE
+
+				self . client_other ( temp_file )
+
+			ENDIF
+
+		ELSE
+
+			flash_message ( trans, TRUE )
+
+		ENDIF
+
+		FILE DELETE self . save_filename, status
+
+		{ Tidy up }
+
+		client_delete_file ( temp_file )
+
+	ELSE
+
+		WHILE NOT self . ole_object . ?"finished"? ( ) DO
+
+			SLEEP FOR INTERVAL ( "0 00:00:01" )
+
+		ENDWHILE
+
+	ENDIF
+
+ENDROUTINE { imprint_action_wait_prompt }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_client_psr ( self, VALUE file_name  ) 
+
+{	View a PSR on the Client 
+*
+* 	Parameters  Self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE client_ole_object,
+		ok
+
+	{ Make the client display the report }
+
+	IF self . client_ole_object = EMPTY THEN
+
+		CREATE OBJECT "STD_OLE_AUTOMATION" , client_ole_object
+
+		ok = client_ole_object . create ( "LabSystems.Imprint" )
+
+		IF ok <> EMPTY THEN
+
+			fatal_error ( "STD_OLE_AUTOMATION " : ok )
+
+		ENDIF
+
+		user_global_write ( IMPRINT               ,
+		                    IMPRINT_CLIENT_OBJECT ,
+		                    client_ole_object     )
+
+		self . client_ole_object = client_ole_object
+
+		self . client_ole_object . ?"set_debug"?  ( self . debug_mode )
+		self . client_ole_object . ?"set_copies"? ( self . copies     )
+
+		IF NOT BLANK ( self . subject ) THEN
+			self . client_ole_object . ?"set_subject"?   ( self . subject )
+		ENDIF
+
+		IF NOT BLANK ( self . recipient ) THEN
+			self . client_ole_object . ?"add_recipient"? ( self . recipient )
+		ENDIF
+
+		IF NOT BLANK ( self . client_printer_name ) THEN
+			self . client_ole_object . ?"set_printer"? ( self . client_printer_name )
+		ENDIF
+		
+
+	ENDIF
+		
+	self . client_ole_object . ?"ib_enabled_mailto"? =
+	                     ( GLOBAL ( "OLEIMPRINT_ENABLE_MAILTO"     ) = self . enable_mailto )
+	self . client_ole_object . ?"ib_enabled_print"? =
+	                     ( GLOBAL ( "OLEIMPRINT_ENABLE_PRINT"      ) = self . enable_print )
+	self . client_ole_object . ?"ib_enabled_printsetup"? =
+	                     ( GLOBAL ( "OLEIMPRINT_ENABLE_PRINTSETUP" ) = self . enable_print_setup )
+	self . client_ole_object . ?"ib_enabled_saveas"? =
+	                     ( GLOBAL ( "OLEIMPRINT_ENABLE_SAVEAS"     ) = self . enable_save_as )
+	
+	self . client_ole_object . ?"ib_preview"? = self . preview
+	self . client_ole_object . ?"display_psr_file"? ( file_name )
+
+	IF self . preview THEN
+
+		{ Wait for the user to finish viewing the file }
+
+		WHILE NOT self . client_ole_object . ?"finished"? ( ) DO
+
+			SLEEP FOR INTERVAL ( "0 00:00:01" )
+
+		ENDWHILE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_client_other ( self, VALUE file_name  ) 
+
+{	View an Other Type output on the Client 
+*
+* 	Parameters  Self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE status, command_line, program
+
+	status  = EMPTY
+	program = client_get_file_association ( file_name )
+
+    IF ( INDEX ( TOUPPER ( program ), "ACRORD32" ) > 0 ) OR
+       ( INDEX ( TOUPPER ( program ), "ACROBAT.EXE" ) > 0 ) THEN
+
+		IF self . preview THEN
+
+			status = self . client_adobe ( file_name )
+
+		ELSE
+
+			command_line = program : " /p /h " : file_name
+			dde_winexec ( command_line, "SW_HIDE", status )
+			SLEEP FOR INTERVAL ( "0 00:00:05" )
+
+		ENDIF
+
+	ELSEIF NOT BLANK ( program ) THEN
+
+{
+		CREATE OBJECT PROMPT_CLASS_OLE, ole
+
+		ole . header   = "SampleManager Report"
+		ole . filename = file_name
+
+		IF self . preview THEN
+			
+			ole . mode = PROMPT_OLE_OPEN
+
+		ELSE
+
+			ole . mode = PROMPT_OLE_PRINT
+
+		ENDIF
+
+		ole . start_prompt ()    	                                                                  	
+		ole . wait_prompt  ()
+		ole . end_prompt   ()
+}
+
+		IF self . preview THEN
+
+			command_line = program : " " : file_name
+			status = dde_winexec_wait ( command_line, "SW_SHOWMAXIMISED" )
+
+		ELSE
+
+			status = "Cannot Print Automatically with " : program
+
+		ENDIF
+
+	ELSE
+
+		status = "Could Not Display : " : file_name
+
+	ENDIF
+
+	IF ( status <> EMPTY ) THEN
+
+		flash_message ( status, TRUE )
+
+	ENDIF
+
+ENDROUTINE 
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_client_adobe ( self, VALUE file_name  ) 
+
+{	View an Adobe Acrobat PDF
+*
+* 	Parameters  Self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE form, ole, name, count, class
+	count = 20
+	class = EMPTY
+
+	WHILE ( count >= 1 ) AND ( class = EMPTY ) DO
+
+		class = PDF_OCX : STRIP ( count )
+		name  = client_registry_enum_value ( PDF_OCX_ROOT, class, 0 )
+			
+		IF name = EMPTY THEN
+
+			class = EMPTY
+
+		ENDIF
+
+		count = count - 1
+
+	ENDWHILE
+
+	count = 20
+	WHILE ( count >= 1 ) AND ( class = EMPTY ) DO
+
+		class = PDF_OCX_7 : STRIP ( count )
+		name  = client_registry_enum_value ( PDF_OCX_ROOT, class, 0 )
+
+		IF name = EMPTY THEN
+
+			class = EMPTY
+
+		ENDIF
+
+		count = count - 1
+
+	ENDWHILE
+
+	IF class <> EMPTY THEN
+
+		set_up_std_prompt_html_class( )
+
+		CREATE OBJECT "STD_FORM", form
+
+		form . height = ( GLOBAL ( "GUI_HEIGHT" ) * 0.85 )
+		form . width  = ( GLOBAL ( "GUI_WIDTH"  ) * 0.95 )
+		form . row    = 0
+		form . column = 2
+		form . border = TRUE
+		form . header = "SampleManager Report : " : self . report
+
+		form . button_style = FORM_BUTTON_NONE
+		form . use_top_line = TRUE
+
+		{Avoid compilation errors }
+		ole = ""
+		ole = ole
+
+		DECLARE browser , info_prompt
+
+		PROMPT OBJECT info_prompt
+		       FORMAT TEXT
+		       WITH ( row = form . height ,
+		              column = 2 ,
+		              height = 1 ,
+		              width = 50 ,
+		              value = GET_USER_MESSAGE ( "LTE_TAB_GUI_HTML_MESS" , 1 ) ,
+		              display_only = TRUE )
+
+		form . add_prompt ( info_prompt )
+
+		CREATE OBJECT PROMPT_HTML_CLASS, browser
+
+		browser . row    = 0
+		browser . column = 0
+		browser . width  = form . width  + 2.4
+		browser . height = form . height
+
+		form . add_prompt ( browser )
+
+		browser . set_home ( file_name )
+
+		form . start_prompt ( )
+
+		form . wait_prompt ( )
+		form . end_prompt ( )
+
+	ELSE
+
+		flash_message ( "Unable to find Adobe PDF OCX", TRUE )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_print ( self  ) 
+
+{ 
+*	Print the report
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	IF self . server_side THEN
+
+		IF NOT self . set_background_printer ( ) THEN
+
+			IF self . save_filename = "" THEN
+				self . save_filename = self . temp_file_name ( )
+			ENDIF
+
+			self . set_save ( self . save_filename , self . save_filetype )
+
+			self. log_output_name ( )
+
+		ENDIF
+
+		self . ole_object . ?"ib_preview"? = FALSE
+
+	ELSE
+
+		self . ole_object . ?"ib_preview"? = self . preview
+
+	ENDIF
+
+	self . ole_object . ?"print"? ( )
+
+	IF NOT self . reset_after_error ( ) THEN
+
+		self . wait_prompt ( )
+
+	ENDIF
+
+ENDROUTINE { imprint_action_print }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_report ( self , VALUE report ) 
+
+{
+*	Set up the infomaker report
+*
+*	Parameters  self    : the imprint class
+*	            report  : The name of the report in the infomaker library
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	IF ( database_system ( ) = DATABASE_SQLSERVER ) THEN
+
+		IF ( self . ole_object . ?"report_exists"? ( report : "_sql" ) ) THEN
+
+			report = report : "_sql" 
+
+		ENDIF
+
+	ENDIF
+
+	self . ole_object . ?"set_report"? ( report )
+    
+	self . report = report
+
+ENDROUTINE { imprint_action_set_report }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_lte ( self , VALUE identity ) 
+
+{
+*	Set the imprint object in line with an infomaker_link record.
+*
+*	Parameters  self    : the imprint class
+*	            identity  : identity of infomaker_link record.
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE library, report, copies, imprint_path
+
+    IF GLOBAL ( "OLEIMPRINT_SERVER_SIDE" ) THEN
+    	imprint_path = lib_utils_logical_to_string ( "smp$imprint" )
+    ELSE
+    	imprint_path = client_get_imprint_path ()
+    ENDIF
+
+	library = SELECT infomaker_link . library
+			WHERE identity = identity
+	
+	IF library <> EMPTY THEN
+	
+		report = SELECT infomaker_link . report
+		copies = SELECT infomaker_link . copies
+
+		self . library = imprint_path : "\" : STRIP(library) 		
+		self . report =  STRIP(report) 
+		self . set_copies( copies )
+	
+	ENDIF
+	
+ENDROUTINE { imprint_action_set_report }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_subject ( self , VALUE subject ) 
+
+{
+*	Sets the subject for the mail message
+*
+*	Parameters  self    : the imprint class
+*	            subject : A subject description
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	IF self . client_ole_object <> EMPTY THEN
+
+		self . client_ole_object . ?"set_subject"? ( subject )
+
+	ELSE
+
+		self . ole_object . ?"set_subject"? ( subject )
+    
+	ENDIF
+
+	self . subject = subject
+
+ENDROUTINE { imprint_action_set_subject }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_copies ( self , VALUE copies ) 
+
+{ 
+*	Sets up the number of copies
+*
+* 	Parameters  self     : the imprint class
+*	            copies   : number of copies required
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	IF self . client_ole_object <> EMPTY THEN
+
+		self . client_ole_object . ?"set_copies"? ( copies )
+
+	ELSE
+	
+		self . ole_object . ?"set_copies"? ( copies )
+
+	ENDIF
+
+	self . copies  = copies
+
+ENDROUTINE { imprint_action_set_copies }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_background_printer ( self )
+
+{ 
+*	Set the printer for a background report
+*
+* 	Parameters  self     : the imprint class
+*
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE background_printer, port_details, printer_found, 
+	        printer_name, count, message, background_type
+	        
+	printer_found = FALSE
+	
+	IF GLOBAL ( "MODE" ) <> "INTERACTIVE" THEN
+
+		printer_name = ""
+		background_printer = GLOBAL ( "BACKGROUND_PRINTER" )
+		
+		IF NOT BLANK ( background_printer ) THEN
+
+			background_type = SELECT printer . device_type
+			                  WHERE  identity = background_printer
+
+			IF background_type = "QUEUE" THEN
+				printer_name = STRIP ( SELECT printer . logical_name )
+			ENDIF
+
+		ENDIF
+		
+		IF NOT BLANK ( printer_name ) THEN
+		
+			{ Get port details for printers on server }
+				
+			ARRAY port_details
+
+			get_printer_details ( port_details )
+			
+			{ Find background_printer in server printer list }
+		
+			count = 1
+
+			WHILE ( (count <= size_of_array( port_details ) ) AND ( NOT printer_found) ) DO
+
+				IF printer_name = STRIP( port_details[ count, 1 ] ) THEN 
+
+					printer_name = printer_name : ",":
+					STRIP( GLOBAL( "PRINTER_DRIVER" ) ):",":
+					STRIP( port_details[ count, 2 ] )
+
+					printer_found = TRUE
+
+				ENDIF
+
+
+				count = count + 1
+
+			ENDWHILE
+			
+			IF NOT printer_found THEN
+
+				{ Couldn't get port details for the printer }
+
+				message_fetch( "BACKGROUND_IMPRINT_NO_PRINTER_PORT", message )
+
+				message_add_parameter( message, background_printer )
+
+				LOG_MESSAGE "LOGFILE", message
+
+				background_printer = ""
+
+			ELSE
+
+				self . ole_object . ?"set_printer"? ( printer_name )
+				LOG_MESSAGE "LOGFILE", printer_name
+
+			ENDIF
+
+		ELSE 
+		
+			message_fetch( "BACKGROUND_IMPRINT_NO_PRINTER_NAME", message )
+			
+			message_add_parameter( message, background_printer )
+			
+			LOG_MESSAGE "LOGFILE", message
+			
+		ENDIF
+
+	ENDIF
+
+	RETURN ( printer_found )
+
+ENDROUTINE { imprint_action_set_background_printer }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_log_output_name ( self ) 
+
+{ 
+*	
+*
+* 	Parameters  self     : the imprint class
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE message, status
+
+	IF GLOBAL ( "MODE" ) <> "INTERACTIVE" THEN
+
+		message_fetch ( "SMP_BACKGROUND_BAD_DESTINATION" ,
+		                message                          )
+
+		IF message <> EMPTY THEN
+
+			message_add_parameter ( message              ,
+			                        self . save_filename )
+
+			LOG_MESSAGE "LOGFILE" , message , status
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE { imprint_action_log_output_name }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_reset_ole_object ( self ) 
+
+{ 
+*	
+*
+* 	Parameters  self     : the imprint class
+*	Returns     N/A
+*
+*******************************************************************************}
+
+	self . ole_object . ?"clear_arguments"? ( )
+
+	IF self . client_ole_object <> EMPTY THEN
+
+		self . client_ole_object . ?"initialise"? ( )
+
+	ENDIF
+
+ENDROUTINE { imprint_action_reset_ole_object }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_add_date_predicate ( self , VALUE parameter ) 
+
+{ 
+*	Adds a date predicate to the ole objects parameter string
+*	For SQL SErver this stays as a date
+*	For Oracle the value is converted to a string
+*
+*	Parameters  self         : the imprint class
+*	            parameter    : the date value to be added to the parameters string
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	IF ( database_system ( ) = DATABASE_SQLSERVER ) THEN
+	
+		self . add_date_parameter ( parameter )
+
+	ELSE
+	
+		parameter = CLIENT_DATE_TO_SERVER ( parameter )
+
+		SET DATE FORMAT IMPRINT_REPORTING_DATE_FORMAT
+
+		self . add_parameter ( STRIP ( parameter ))
+
+		RESTORE DATE FORMAT
+
+	ENDIF
+
+ENDROUTINE { imprint_action_add_date_predicate }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_add_date_parameter ( self , VALUE parameter ) 
+
+{ 
+*	Adds a date parameter to the ole objects parameter string
+*
+*	Parameters  self         : the imprint class
+*	            parameter    : the date value to be added to the parameters string
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE ok
+
+	ok = FALSE
+
+	IF NOT ( variable_get_type ( parameter ) = "Date" ) THEN
+
+		IF IS_DATE ( STRIP ( parameter )) THEN
+
+			ok = TRUE
+			parameter = DATE ( parameter )
+
+		ENDIF
+
+	ELSE
+
+		ok = TRUE
+
+	ENDIF
+
+	IF ok THEN
+
+		parameter = CLIENT_DATE_TO_SERVER ( parameter )
+		self . ole_object . ?"add_date_parameter"? ( parameter )
+
+	ELSE
+
+		self . ole_object . ?"add_parameter"? ( parameter )
+
+	ENDIF
+
+ENDROUTINE { imprint_action_add_date_parameter }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_add_parameter ( self , VALUE parameter ) 
+
+{ 
+*	Adds parameters to the ole objects parameter string
+*
+*	Parameters  self         : the imprint class
+*	            parameter    : the value to be added to the parameters string
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	{ The following lines removes training spaces and }
+	{ makes sure the format is correct                }
+	
+	parameter = substring ( parameter, 1, length ( parameter ))
+	self . ole_object . ?"add_parameter"? ( parameter )
+
+ENDROUTINE { imprint_action_add_parameter }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_add_recipient ( self , VALUE recipient ) 
+
+{ 
+*	Adds a recipient to the report mailing list
+*
+*	Parameters  self         : the imprint class
+*	            recipient    : an e-mail address 
+*	
+*	e.g John.Smith@Labsystems.com OR Smith John OR 'Jane Smith'
+*
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	IF NOT BLANK ( recipient ) THEN
+
+		IF self . client_ole_object <> EMPTY THEN
+
+			self . client_ole_object . ?"add_recipient"? ( recipient )
+
+		ELSE
+
+			self . ole_object . ?"add_recipient"? ( recipient )
+
+		ENDIF
+
+	ENDIF
+	
+	self . recipient = recipient
+
+ENDROUTINE { imprint_action_add_recipient }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_generate ( self ) 
+
+{ 
+*	This is the main action for the class and it generates the report
+*
+* 	Parameters     self : the imprint object
+* 	Returns        N/A
+*
+*******************************************************************************}
+
+	DECLARE parameter_index , current_datetime
+
+	{ Add any parameters in array for backward compatiblity with old Imprint }
+
+	current_datetime = NOW
+	parameter_index = 1
+
+	WHILE ( self . parameters [ parameter_index ] <> EMPTY ) DO
+
+		self . add_parameter ( self . parameters [ parameter_index ] )
+		parameter_index = parameter_index + 1
+
+	ENDWHILE
+
+	self . create_ole_object()
+	self . login()
+
+	self . set_copies  ( self . copies  )
+	self . set_PBL_library ( self . library )
+	
+	self . set_syntax ( self . export_syntax ( self . report ))	
+
+	self . set_report  ( self . report  )
+	
+	IF ( self . datetime ) THEN
+	
+		self . add_parameter ( current_datetime )
+	
+	ENDIF
+
+	IF self . save_filename <> "" THEN
+
+		self . set_save ( self . save_filename , self . save_filetype )
+
+	ENDIF
+
+	IF self . ole_object . ?"logged_in"? ( ) THEN 
+
+		self . print_from_syntax () 
+
+	ENDIF	
+	
+	window_set_status ( "" )
+
+ENDROUTINE { imprint_action_generate }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_syntax( self , VALUE the_syntax ) 
+{ 
+*	Set up the infomaker syntax to use
+*
+* 	Parameters  self  : the imprint class
+*	            value : a syntax string
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE status,
+	        file_name
+
+	IF ( GLOBAL ( "OLEIMPRINT_DEBUG" )) THEN
+
+		self . debug_count = self . debug_count + 1
+
+		file_name = "SMP$TEXTREPORTS:SetSyntax_":packed_decimal(self.debug_count):".txt"
+		
+		file_name = SUBSTITUTE ( file_name, " ", "0" )
+	
+		FILE CREATE file_name, status
+		FILE WRITE  file_name, the_syntax, status
+		FILE CLOSE  file_name, status
+
+	ENDIF
+
+	self . ole_object . ?"set_syntax"? ( the_syntax )
+    
+	self . syntax = the_syntax
+
+ENDROUTINE { imprint_action_set_syntax }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_print_from_syntax ( self )
+
+{ 
+*	Print the report from the syntax
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	DECLARE current_datetime
+
+	SET DATE FORMAT IMPRINT_REPORTING_DATE_FORMAT
+
+	current_datetime = STRIP ( NOW )
+
+	RESTORE DATE FORMAT
+
+	IF self . server_side THEN
+
+		IF NOT self . set_background_printer ( ) THEN
+
+			IF self . save_filename = "" THEN
+				self . save_filename = self . temp_file_name ( )
+			ENDIF
+
+			self . set_save ( self . save_filename , self . save_filetype )
+
+			self. log_output_name ( )
+
+		ENDIF
+
+		self . ole_object . ?"ib_preview"? = FALSE
+
+	ELSE
+
+		self . ole_object . ?"ib_preview"? = self . preview
+
+	ENDIF
+
+        IF ( self . datetime ) THEN
+	
+		self . add_parameter ( current_datetime )
+	
+	ENDIF
+	
+	self . ole_object . ?"create_from_syntax"? ( )
+
+	IF NOT self . reset_after_error ( ) THEN
+    
+		self . wait_prompt ( )
+
+	ENDIF
+
+ENDROUTINE { imprint_action_print_from_syntax }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_report_from_syntax ( self )
+
+{ 
+*	Print the report from the syntax
+*
+* 	Parameters  self : the imprint class
+* 	Returns     N/A
+*
+*******************************************************************************}
+
+	self . set_copies  ( self . copies  )
+	self . set_PBL_library ( self . library )
+	self . set_report  ( self . report  )
+	self . set_syntax  ( self . syntax  )
+
+	IF self . save_filename <> "" THEN
+		self . set_save ( self . save_filename , self . save_filetype )
+	ENDIF
+
+	IF self . ole_object . ?"logged_in"? ( ) THEN
+		self . print_from_syntax ()
+	ENDIF
+
+ENDROUTINE { imprint_action_report_from_syntax }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_set_printer ( self               , 
+	                                     VALUE printer_name )
+
+{ 
+*	Sets the printer on the appropriate OLE object depending on 
+*       whether client or server side reporting is used.
+*
+*******************************************************************************}
+
+	IF ( global_exists( "PLATFORM" ) )               AND
+	   ( global_exists( "OLEIMPRINT_SERVER_SIDE" ) ) THEN
+
+		IF ( GLOBAL ( "PLATFORM" ) = "NT" ) AND
+		   ( GLOBAL ( "OLEIMPRINT_SERVER_SIDE" )) THEN
+
+			IF self . client_ole_object <> EMPTY THEN
+				self . client_ole_object . ?"set_printer"? ( printer_name )
+			ELSE
+				self . client_printer_name = printer_name
+			ENDIF
+
+		ELSE
+
+			self . ole_object . ?"set_printer"? ( printer_name )
+
+		ENDIF
+
+	ELSE
+
+			self . ole_object . ?"set_printer"? ( printer_name )
+
+	ENDIF
+
+ENDROUTINE { imprint_action_set_printer }
+
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_replace_quotes_in_syntax (       self     ,
+	                                                  VALUE instring )
+
+{ 
+*	Turn ~"IDENTITY~" into [IDENTITY]
+*
+*******************************************************************************}
+
+	DECLARE first_pos  ,
+	        first_bit  ,
+	        second_bit ,
+	        keyword    ,
+	        checkword
+
+	first_pos = INDEX ( instring, ASCII ( 126 ) : ASCII ( 34 ))
+
+	IF first_pos > 0 THEN
+
+		first_bit  = SUBSTRING ( instring, 1, first_pos - 1 )
+		second_bit = SUBSTRING ( instring, first_pos + 2, LENGTH ( instring ) - first_pos - 1 )
+
+		first_pos = INDEX ( second_bit, ASCII ( 126 ) : ASCII ( 34 ))
+		
+		IF first_pos > 0 THEN
+		
+			keyword    = SUBSTRING ( second_bit, 1, first_pos - 1 )
+			second_bit = SUBSTRING ( second_bit, first_pos + 2, LENGTH ( second_bit ) - first_pos - 1 )
+			
+			checkword = TOUPPER ( keyword )
+
+			IF ( checkword = "IDENTITY"    ) OR
+			   ( checkword = "ROLE"        ) OR
+			   ( checkword = "TRANSACTION" ) THEN
+				instring = first_bit :
+				           ASCII ( 91 ) :
+				           keyword :
+				           ASCII ( 93 ) :
+				           self . replace_quotes_in_syntax ( second_bit )
+			ELSE
+				instring = first_bit :
+				           ASCII ( 126 ) : ASCII ( 34 ) :
+				           keyword :
+				           ASCII ( 126 ) : ASCII ( 34 ) :
+				           self . replace_quotes_in_syntax ( second_bit )
+			ENDIF
+		ENDIF
+	ENDIF
+
+	RETURN ( instring )
+
+ENDROUTINE { imprint_action_replace_quotes_in_syntax }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_import_composites (       self        , 
+	                                           VALUE syntax_string )
+
+{ 
+*	Export all composites defined by the syntax_string
+*      
+*
+*******************************************************************************}
+
+	DECLARE comp_pos        ,
+	        output_string   ,
+	        end_name        ,
+	        dataobject_name ,
+	        external_syntax ,
+	        import_name
+
+	comp_pos = INDEX ( syntax_string, "dataobject" )
+	
+	IF ( comp_pos > 0 ) THEN
+	
+		output_string = SUBSTRING ( syntax_string, 1, comp_pos - 1 + 10 {length of string 'dataobject'} )
+
+		syntax_string = STRIP ( SUBSTRING ( syntax_string, comp_pos + 10, LENGTH ( syntax_string ) - comp_pos - 10 + 1 ))
+		
+		IF ( SUBSTRING ( syntax_string, 1, 1 ) = "=" ) THEN
+
+			output_string = output_string : "="
+			syntax_string = STRIP ( RIGHTSTRING ( syntax_string, LENGTH ( syntax_string ) - 1 ))
+			
+			IF ( SUBSTRING ( syntax_string, 1, 1 ) = ASCII ( 34 )) THEN
+
+				output_string = output_string : ASCII ( 34 )
+				syntax_string = STRIP ( RIGHTSTRING ( syntax_string, LENGTH ( syntax_string ) - 1 ))
+				
+				end_name = INDEX ( syntax_string, ASCII ( 34 ))
+				
+				IF ( end_name > 0 ) THEN
+				
+					dataobject_name = SUBSTRING ( syntax_string, 1, end_name - 1 )
+					syntax_string   = RIGHTSTRING ( syntax_string, LENGTH ( syntax_string ) - end_name + 1 )
+
+					external_syntax = self . export_syntax ( dataobject_name )
+
+					import_name = self . import_report ( external_syntax )
+					
+					output_string = output_string : STRIP ( import_name )
+
+				ENDIF
+
+			ENDIF			
+
+		ENDIF
+		
+		output_string = output_string : self . import_composites ( syntax_string )
+
+	ELSE
+		output_string = syntax_string
+	ENDIF		
+
+	RETURN ( output_string )
+
+ENDROUTINE { imprint_action_import_composites }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_export_syntax (       self        , 
+	                                       VALUE report_name )
+
+{ 
+*	Return the syntax of a specific report, and return it as a string.
+*      
+*
+*******************************************************************************}
+
+	DECLARE syntax_string
+
+	IF ( database_system ( ) = DATABASE_SQLSERVER ) THEN
+
+		IF ( self . ole_object . ?"report_exists"? ( report_name : "_sql" ) ) THEN
+
+			report_name = report_name : "_sql" 
+
+		ENDIF
+
+	ENDIF
+
+	syntax_string = self . ole_object . ?"export_syntax"? ( report_name )
+
+	IF GLOBAL ( "DATABASE_TYPE" ) = "SQLSERVER" THEN
+	
+		syntax_string = self . replace_quotes_in_syntax ( syntax_string )
+		
+		{ syntax_string = self . import_composites ( syntax_string ) }
+
+	ENDIF
+	
+	RETURN ( syntax_string )
+
+ENDROUTINE { imprint_action_export_syntax }
+
+{******************************************************************************}
+
+	ROUTINE imprint_action_import_report (       self         , 
+	                                       VALUE report_syntax )
+
+{ 
+*	Import the report syntax
+*      
+*
+*******************************************************************************}
+
+	DECLARE default_import,
+	        file_name,
+	        status
+
+	IF GLOBAL ( "DATABASE_TYPE" ) = "SQLSERVER" THEN
+	
+		report_syntax = self . replace_quotes_in_syntax ( report_syntax )
+
+	ENDIF
+	
+	IF ( GLOBAL ( "OLEIMPRINT_DEBUG" )) THEN
+
+		self . debug_count = self . debug_count + 1
+
+		file_name = "SMP$TEXTREPORTS:ImportReport_":packed_decimal(self.debug_count):".txt"
+		
+		file_name = SUBSTITUTE ( file_name, " ", "0" )
+	
+		FILE CREATE file_name, status
+		FILE WRITE  file_name, report_syntax, status
+		FILE CLOSE  file_name, status
+
+	ENDIF
+
+	default_import = self . ole_object . ?"import_report"? ( report_syntax )
+
+	RETURN ( default_import )
+
+ENDROUTINE { imprint_action_import_report }
+
+{******************************************************************************}
+
+	GLOBAL
+	
+	ROUTINE imprint_action_get_parameters ( self , VALUE syntax_string )
+
+{ 
+* Summary    : Parse parameters from passed syntax
+*		
+*
+* Parameters : syntax_string - syntax from imprint
+*
+* Return     : EMPTY or an array of report names.
+*
+*******************************************************************************}
+
+	DECLARE arg_array, arg_start, char_pos, curr_char, params,
+		quote_found, array_pos, build_type , build_param , comma_found
+
+	ARRAY arg_array
+	quote_found = FALSE
+	comma_found = FALSE 
+	array_pos = 1
+	build_param = ""
+	build_type  = ""
+	
+	arg_start = INDEX ( syntax_string , "arguments=(" )
+
+	
+	IF arg_start <> 0 THEN
+
+		params = 1
+		char_pos = arg_start + 11	
+		
+		WHILE params <> 0 DO
+
+			curr_char = GET_CHARACTER_AT ( syntax_string , char_pos )
+			
+			
+			IF curr_char = ")" THEN
+			
+				params = params - 1
+				
+				IF comma_found THEN
+				
+					arg_array [ array_pos , 2 ] = TOUPPER ( STRIP ( build_type ) )
+					build_type = ""
+					array_pos = array_pos + 1
+					comma_found = FALSE
+				ENDIF
+				
+				
+			ELSEIF curr_char = "(" THEN
+			
+				params = params + 1
+				
+			ELSEIF curr_char = ASCII(34) THEN
+			
+				IF quote_found THEN
+					
+					{Parameter has been found, has been built}
+					quote_found = FALSE
+					
+					arg_array [ array_pos , 1 ] = build_param
+					build_param = ""
+					
+				ELSE
+					
+					quote_found = TRUE
+					
+				ENDIF
+			
+			ELSEIF curr_char = "," THEN
+				
+				{if params > 1 then we are within brackets}
+				IF params > 1 THEN
+					comma_found = TRUE
+				ENDIF
+			
+			ELSEIF quote_found THEN
+			
+				build_param = build_param : curr_char
+				
+			ELSEIF comma_found THEN
+						
+				build_type = build_type : curr_char
+			
+			
+			ENDIF
+			
+			
+			char_pos = char_pos + 1
+		
+		ENDWHILE
+	
+	ENDIF
+	
+	
+	self . exp_parameters = arg_array 
+
+ENDROUTINE { imprint_action_get_parameters }
+
+
+{******************************************************************************}
+
+ROUTINE imprint_action_get_parameter_info ( self , VALUE syntax_string )
+
+{
+* Summary    : Parses the syntax string into arguments for the report.
+*	       These are placed in self . exp_parameters.
+*
+* Parameters : syntax_string - syntax from imprint
+*
+* Return     : None
+*
+*******************************************************************************}
+
+DECLARE where_start, arg_start, array_count, param_found, dot_found, curr_char,
+	build_param, char_pos, where_string 
+	
+
+array_count = 0
+
+self . primary_table = ""
+self . select_string = ""
+
+WHILE array_count < size_of_array ( self . exp_parameters ) DO
+
+	array_count = array_count + 1
+
+	IF self . exp_parameters[ array_count , 1 ] = "DATE_AND_TIME" THEN
+
+		self . exp_parameters[ array_count , 2 ] = "FORMAT"
+		self . exp_parameters[ array_count , 3 ] = "DATETIME"
+		self . exp_parameters[ array_count , 4 ] = ""
+
+	ELSEIF self . exp_parameters[ array_count , 1 ] = "DATE" THEN
+
+		self . exp_parameters[ array_count , 2 ] = "FORMAT"
+		self . exp_parameters[ array_count , 3 ] = "DATE"
+		self . exp_parameters[ array_count , 4 ] = ""
+	ELSE
+
+		where_start = INDEX ( syntax_string , "WHERE" )
+		arg_start = INDEX ( syntax_string , "arguments=(" )
+
+		IF (where_start > 0 ) AND (arg_start > 0) THEN	
+
+			where_string = SUBSTRING( syntax_string, 
+						  where_start + 5 , 
+						  arg_start - ( where_start + 5 ) )
+
+			IF LENGTH( STRIP (where_string) ) > 0 THEN
+				self . select_string = where_string
+			ELSE
+				self . select_string = ""
+			ENDIF
+
+			param_found = 	INDEX ( TOUPPER ( where_string ), 
+					":" : TOUPPER ( self . exp_parameters[ array_count , 1 ] ) )
+
+			IF param_found > 0 THEN
+
+				char_pos = param_found
+				curr_char = GET_CHARACTER_AT ( where_string , char_pos )
+				WHILE curr_char <> "." DO
+				{Find first space}
+					char_pos = char_pos - 1
+					curr_char = GET_CHARACTER_AT ( where_string , char_pos )
+
+				ENDWHILE
+
+				dot_found = char_pos
+
+				{Build table}
+				curr_char = ""
+				char_pos = dot_found - 1 
+
+				curr_char = GET_CHARACTER_AT ( where_string , char_pos )
+				build_param = ""
+
+
+				WHILE curr_char <> " " DO
+				{Find first space}
+					char_pos = char_pos - 1
+					curr_char = GET_CHARACTER_AT ( where_string , char_pos )
+
+				ENDWHILE
+
+				build_param = STRIP ( SUBSTRING( where_string, char_pos , dot_found - char_pos ) )
+
+				IF ( self . exp_parameters[ array_count , 3 ] = "" ) OR
+				   ( self . exp_parameters[ array_count , 3 ] = EMPTY )THEN
+
+					self . exp_parameters[ array_count , 3 ] = 
+						lib_text_remove_invalid_id_chars ( build_param )
+				ENDIF
+
+
+				{Build field}
+				curr_char = ""
+				char_pos = dot_found + 1
+
+				curr_char = GET_CHARACTER_AT ( where_string , char_pos )
+				build_param = ""
+
+				WHILE curr_char <> " " DO
+
+					build_param = build_param : curr_char
+
+					char_pos = char_pos + 1
+					curr_char = GET_CHARACTER_AT ( where_string , char_pos )
+
+				ENDWHILE
+
+				IF ( self . exp_parameters[ array_count , 4 ] = "" ) OR
+				   ( self . exp_parameters[ array_count , 4 ] = EMPTY ) THEN
+
+					self . exp_parameters[ array_count , 4 ] = 
+						lib_text_remove_invalid_id_chars ( build_param )
+
+				ENDIF
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+ENDWHILE
+
+self . validate_params ()
+
+
+ENDROUTINE { imprint_action_get_parameter_info }
+
+{******************************************************************************}
+
+ROUTINE imprint_action_validate_params ( self )
+
+{
+* Summary    : Check parameters, and fill in blanks.
+*	       
+*
+* Parameters : self - imprint object
+*
+* Return     : EMPTY or an array of report names.
+*
+*******************************************************************************}
+
+
+DECLARE array_count, key_field, link_table, link_field
+
+array_count = 0
+
+WHILE array_count < size_of_array ( self . exp_parameters ) DO
+
+
+	array_count = array_count + 1
+	
+	{if the table and field is valid make the type into a browse}
+	IF valid_table ( self . exp_parameters[ array_count , 3 ] ) THEN
+
+		IF valid_field ( self . exp_parameters[ array_count , 3 ] , 
+				 self . exp_parameters[ array_count , 4 ] ) THEN
+				 
+			self . exp_parameters[ array_count , 2 ] = "BROWSE"
+			self . primary_table = self . exp_parameters[ array_count , 3 ]
+
+			GET_FIELD_DETAILS 'self . exp_parameters[ array_count , 3 ]'.
+					  'self . exp_parameters[ array_count , 4 ]', 
+					  "KEY0_FIELD", key_field
+
+
+			GET_FIELD_DETAILS 'self . exp_parameters[ array_count , 3 ]'.
+					  'self . exp_parameters[ array_count , 4 ]', 
+					  "LINK_TABLE", link_table
+
+			GET_FIELD_DETAILS 'self . exp_parameters[ array_count , 3 ]'.
+					  'self . exp_parameters[ array_count , 4 ]', 
+					  "LINK_FIELD", link_field
+
+
+			IF NOT key_field THEN
+
+				{If the current field is not part of the key zero fields
+				check if it's actually part of another table.		
+				example: report display samples, by customer needs to browse
+				on the customer table.					}
+				
+				IF ( link_table <> EMPTY ) AND ( link_field <> EMPTY ) THEN
+					
+					self . exp_parameters[ array_count , 3 ] = link_table
+					self . exp_parameters[ array_count , 4 ] = link_field
+					
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+	{Now date and table parameters have been found deal with whats left}
+	IF self . exp_parameters[ array_count , 2 ] = "STRING" THEN
+
+		self . exp_parameters[ array_count , 2 ] = "FORMAT"
+		self . exp_parameters[ array_count , 3 ] = "TEXT"
+		self . exp_parameters[ array_count , 4 ] = ""
+		
+	ELSEIF self . exp_parameters[ array_count , 2 ] = "NUMBER" THEN
+
+		self . exp_parameters[ array_count , 2 ] = "FORMAT"
+		self . exp_parameters[ array_count , 3 ] = "INTEGER"
+		self . exp_parameters[ array_count , 4 ] = ""
+	
+	ENDIF
+	
+ENDWHILE
+
+ENDROUTINE { imprint_action_validate_params }
+
+{******************************************************************************}
+ROUTINE imprint_action_check_nested ( self, VALUE syntax_string )
+
+{
+* Summary    : Check if main report is a composite report, if so pass the
+*	       report names back.
+*
+* Parameters : syntax_string - syntax from imprint
+*
+* Return     : EMPTY or an array of report names.
+*
+*******************************************************************************}
+
+DECLARE nested_reports, found_report, curr_char, char_pos, quotes, report_name,
+	array_count, finished_string
+
+ARRAY nested_reports
+
+array_count = 0
+
+
+IF INDEX ( syntax_string , "nest_arguments=" ) > 0 THEN
+
+	
+	found_report = INDEX ( syntax_string , "dataobject=" )
+	report_name = ""
+	
+	
+	
+	WHILE found_report <> 0 DO
+	
+		finished_string = FALSE
+		char_pos = found_report
+		quotes = 0
+		report_name = ""
+		
+		WHILE finished_string = FALSE DO
+	
+			curr_char = GET_CHARACTER_AT ( syntax_string , char_pos )
+			
+			IF curr_char = ASCII(34) THEN
+			
+				quotes = quotes + 1
+			
+			ELSEIF quotes  = 1 THEN
+				
+				
+				report_name = report_name : curr_char
+				
+			ELSEIF quotes  = 2 THEN
+			
+				finished_string = TRUE
+				array_count = array_count + 1
+				nested_reports [array_count] = report_name
+			
+			ENDIF
+
+			char_pos = char_pos + 1
+	
+		ENDWHILE
+		
+		syntax_string = SUBSTRING( syntax_string, char_pos , STRINGLENGTH ( syntax_string ) - char_pos ) 
+		
+		found_report = INDEX ( syntax_string , "dataobject=" )
+	
+	ENDWHILE
+
+
+ELSE
+
+	nested_reports = EMPTY
+
+ENDIF
+
+self . nested_reports = nested_reports
+
+
+ENDROUTINE { imprint_action_check_nested }
+
+{******************************************************************************}
+
+
+{******************************************************************************}
+{* End of IMPRINT class definition 
+{*******************************************************************************}
+
+GLOBAL
+
+ROUTINE build_parmeters ( VALUE info_library, VALUE info_report )
+
+{
+* Summary    : Build infomaker parameters
+*	       
+*
+* Parameters : Powerbuilder library, report name
+*
+* Return     : Paramters
+*
+*******************************************************************************}
+
+
+DECLARE imprint_path, imprint_obj, export_syn, composite_syntax, report_count
+	
+
+IF ( info_library = EMPTY ) OR ( info_report = EMPTY) THEN
+
+	flash_message ( 
+		GET_USER_MESSAGE ( "IMPRINT_CONNECT_UNSUCCESSFUL" , 1 ) , TRUE )
+
+ELSE
+
+	info_library = STRIP ( info_library )
+
+	imprint_path = client_get_imprint_path ()
+
+	IF imprint_path = EMPTY THEN
+
+	    flash_message ( 
+		GET_USER_MESSAGE ( "IMPRINT_CONNECT_UNSUCCESSFUL" , 1 ) , TRUE )
+
+	ELSE
+
+	    define_imprint_class ()
+
+	    CREATE OBJECT IMPRINT , imprint_obj
+
+	    imprint_obj . create_ole_object ()
+
+	    imprint_obj . reset_ole_object ()
+
+	    imprint_obj . login ()
+
+	    IF GLOBAL ( "OLEIMPRINT_SERVER_SIDE" ) THEN
+
+		imprint_obj . library = lib_utils_logical_containing_file ( "smp$imprint",
+		                                                            info_library )
+
+		IF imprint_obj . library <> EMPTY THEN
+			imprint_obj . library = imprint_obj . library : "\" : info_library
+		ELSE
+			imprint_obj . library = info_library
+		ENDIF
+
+            ELSE
+
+		imprint_obj . library = imprint_path : "\" : info_library
+
+	    ENDIF
+
+	    imprint_obj . set_PBL_Library ( imprint_obj . library )
+
+	    export_syn = imprint_obj . export_syntax ( STRIP ( info_report ) )
+
+	    imprint_obj . check_nested ( export_syn )
+
+	    IF imprint_obj . nested_reports = EMPTY THEN
+
+			imprint_obj . get_parameters ( export_syn )
+
+			imprint_obj . get_parameter_info ( export_syn )
+
+	    ELSE
+
+			composite_syntax  = export_syn
+
+			imprint_obj . get_parameters ( composite_syntax )
+
+			report_count = 0
+
+			WHILE report_count < size_of_array ( imprint_obj . nested_reports ) DO
+
+				report_count = report_count + 1
+
+				export_syn = imprint_obj . 
+					export_syntax ( 
+					STRIP ( 
+					imprint_obj . nested_reports 
+					[report_count] ) )
+
+
+				IF ( export_syn <> EMPTY ) AND ( export_syn <> "" ) THEN	
+
+					imprint_obj . get_parameter_info ( export_syn )
+
+				ELSE
+
+					imprint_obj . error = TRUE
+				ENDIF
+
+			ENDWHILE
+
+	    ENDIF
+
+	ENDIF
+	
+ENDIF
+	   		
+RETURN ( imprint_obj . exp_parameters )
+
+ENDROUTINE { build_parmeters }
+
+{*******************************************************************************}
+
+GLOBAL
+
+ROUTINE prompt_imprint_date_string ( VALUE indate )
+
+{ 
+* 	Returns a date string that can be passed into SQL Server Imprint reports
+*
+*******************************************************************************}
+
+	DECLARE retstr
+
+	IF ( database_system ( ) = DATABASE_SQLSERVER ) THEN
+
+		retstr = DATE ( indate )
+
+		SET DATE FORMAT PROMPT_IMPRINT_SQLSERVER_DATE
+
+		retstr = STRING ( retstr )
+
+		RESTORE DATE FORMAT
+
+	ELSE
+		retstr = STRING ( indate )
+	ENDIF
+
+	RETURN ( retstr )
+
+ENDROUTINE { prompt_imprint_date_string }
+
+{*******************************************************************************}
+
+	ROUTINE example_of_usage 
+
+{ 
+* 	This Example of Usage assumes the default locations a report called 
+* 	r_active_samples.
+*
+*******************************************************************************}
+
+
+DECLARE imprint_report , rpts , str_len
+
+	{ Define the class, then create an instance }
+
+	define_imprint_class ( )
+
+	CREATE OBJECT IMPRINT, imprint_report
+
+	{ Generate a report }
+
+	imprint_report . create_ole_object( )   
+	imprint_report . reset_ole_object ( ) 
+
+	imprint_report . report = "r_active_samples"
+
+	imprint_report . generate ( ) 
+
+	{ Demonstrate list reports function }
+
+	rpts = imprint_report . list_reports()
+	str_len = STRINGLENGTH ( rpts )
+	flash_message ( rpts : str_len, TRUE ) 
+
+	imprint_report . ole_object = EMPTY
+
+ENDROUTINE { example_of_usage }
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

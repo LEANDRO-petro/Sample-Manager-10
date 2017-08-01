@@ -1,0 +1,96 @@
+{*****************************************************************************************************************
+*
+* Module Name   : $TESTSTAT
+*
+* Purpose       : SMP report for user defined routines which are called when a
+*                 test changes status
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification : 
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : 
+*
+******************************************************************************************************************
+002	30/11/2016	LLV	Atualizar EMPRESA e EMPRESA PRESTADORA correspondentes ao autorizador.
+******************************************************************************************************************}
+
+JOIN STANDARD_LIBRARY STD_DATABASE
+
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+
+{\/ 002 LLV Begin  
+*********************************************************************************}
+ROUTINE set_status_a
+
+	DECLARE autorizador, empresa, prestadora, chk_ok
+
+	autorizador = SELECT test . authoriser
+	chk_ok = FALSE
+
+	IF ( autorizador <> EMPTY ) THEN
+		
+		empresa    = SELECT personnel . nomeempresa
+			       WHERE identity = autorizador
+
+		prestadora = SELECT personnel . nomeempresaprestadora
+
+		chk_ok = TRUE
+
+	ENDIF
+
+	IF ( chk_ok ) THEN
+		ASSIGN test . nomeempresa = empresa
+		ASSIGN test . nomeempresaprestadora = prestadora
+	ENDIF
+
+ENDROUTINE
+{********************************************************************************
+                                                                /\ 002 LLV End  }
+ROUTINE set_status_i
+
+ENDROUTINE
+
+
+ROUTINE set_status_c
+
+ENDROUTINE
+
+
+ROUTINE set_status_p
+
+ENDROUTINE
+
+
+ROUTINE set_status_r
+
+ENDROUTINE
+
+
+ROUTINE set_status_u
+
+ENDROUTINE
+
+
+ROUTINE set_status_v
+
+ENDROUTINE
+
+
+ROUTINE set_status_w
+
+ENDROUTINE
+
+
+ROUTINE set_status_x
+
+ENDROUTINE
+
+
+ROUTINE set_status_s
+
+ENDROUTINE
+

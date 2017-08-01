@@ -1,0 +1,391 @@
+{******************************************************************************
+*
+* Module Name   : $PIMS_TAG_ANAL_EDIT
+*
+* Purpose       : PIMS Tag analysis definition
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+ENABLE WINDOWS
+SET NAME "DISPLAY/"
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_UTILS
+JOIN STANDARD_LIBRARY STD_VGL
+
+JOIN LIBRARY $LIB_LIST_CHOOSER
+JOIN LIBRARY $EXPLORER_UTILS
+JOIN LIBRARY $CRITERIA_CACHE
+JOIN LIBRARY $LIST_EDITOR
+JOIN LIBRARY $LABTABLIB
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+
+SET NOTPROTECTED
+
+DECLARE the_list_editor
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_exp_fld ( rmb , row , odb )
+
+{
+*
+*	Explorer action routine. Edits the fields for a tag.
+*
+********************************************************************************}
+
+	DECLARE pims_server, pims_tag
+
+	odb . set_first ()
+
+	pims_server = SELECT pims_tag . server               IN OBJECT odb . current
+	pims_tag    = SELECT pims_tag . tag                  IN OBJECT odb . current
+	
+	pims_tag_anal_edit ( pims_server, pims_tag )
+		
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE pims_tag_anal_edit ( VALUE pims_server ,
+                             VALUE pims_tag      ) 
+
+{
+*
+*	Edit analysis for a PIMS Tag
+*
+*
+*******************************************************************************}
+   
+	DECLARE prompt_details, answer, heading, copy_id, commit_it, identity
+	DECLARE server_length, tag_length
+
+	lib_grid_initialise ()
+
+	GET_FIELD_DETAILS pims_tag_analysis . pims_server , "FIELD_SIZE", server_length
+	GET_FIELD_DETAILS pims_tag_analysis . pims_tag    , "FIELD_SIZE", tag_length
+	
+	pims_server = PAD ( pims_server , " " , server_length )
+	pims_tag    = PAD ( pims_tag    , " " , tag_length    )
+	
+	identity = pims_server : pims_tag
+
+	copy_id = EMPTY
+
+	initialise ( prompt_details, heading )
+
+	list_editor_create_object ( the_list_editor )
+
+	the_list_editor . table         = "PIMS_TAG_ANALYSIS"
+	the_list_editor . header        = GET_USER_MESSAGE( "PIMS_LTE_TAG_TOP_LINE" ,1 )
+	the_list_editor . footer        = GET_USER_MESSAGE( "PIMS_LTE_TAG_BOT_LINE" ,1 )
+	the_list_editor . pre_insert    = "PRE_INSERT_ROUTINE"
+	the_list_editor . post_insert   = EMPTY
+	the_list_editor . check_move    = EMPTY
+	the_list_editor . delete        = EMPTY
+	the_list_editor . select        = EMPTY 
+	the_list_editor . library       = GLOBAL ( "CURRENT_LIBRARY" )
+	the_list_editor . compatability = PROMPT_DETAILS_310
+	the_list_editor . validation    = EMPTY
+	the_list_editor . data_read     = FALSE
+
+	the_list_editor . collection . remove_all ()
+
+	the_list_editor . setup_prompt_details ( prompt_details,
+	                                         heading       )
+
+	answer = the_list_editor . operation ( identity          ,
+	                                       copy_id           ,
+	                                       "READ_FOR_MODIFY" )
+
+	answer = the_list_editor . operation ( identity ,
+	                                       copy_id  ,
+	                                       "MODIFY" )
+
+	IF ( answer ) THEN
+
+		IF ( NOT transaction_is_write ( ) ) THEN
+
+			START WRITE TRANSACTION "Modify PIMS Tag Analysis"
+			commit_it = TRUE 
+
+		ELSE
+
+			commit_it = FALSE
+
+		ENDIF
+
+		answer = the_list_editor . operation ( identity ,
+		                                       copy_id  ,
+	        	                                 "SAVE" )
+
+		IF commit_it THEN
+
+			COMMIT 
+
+		ENDIF
+
+	ENDIF
+
+	RETURN ( answer ) 
+
+ENDROUTINE { other_option }
+
+{******************************************************************************}
+
+ROUTINE pre_insert_routine ( self        ,
+                             grid        ,
+                             cell_column ,
+                             cell_row    ,
+                             window      ,
+                             column      ,
+                             row         ,
+                             cell_width  ,
+                             cell_height ,
+                             new_value   )
+
+{ 
+* 
+*	Routine to insert a row. 
+*
+*
+*******************************************************************************}
+
+	PROMPT FOR new_value
+		ON LINE   row
+		FORMAT    pims_tag_analysis . analysis
+		FROM      column
+		TO        column + cell_width - 1
+		IN WINDOW window 
+
+ENDROUTINE { pre_insert }
+
+{******************************************************************************}
+
+ROUTINE initialise ( prompt_details  ,
+                     heading         )
+
+{ Initialise the Field List.
+*
+* Parameters   : Prompt_Details - The Details Array
+*                Heading        - The Heading Line.
+* Return Value : N/a
+*
+*******************************************************************************}
+
+	DECLARE head_count, col_head, count
+	ARRAY prompt_details ARRAY_SIZE ( 0 , 6 )
+
+	{***********************************************************************
+	* Set up the list of fields to be processed.
+	***********************************************************************}
+
+	count = 1
+	
+	prompt_details [ count , 1 ] = "Analysis"
+	prompt_details [ count , 2 ] = "DISPLAY"
+	prompt_details [ count , 3 ] = "PIMS_TAG_ANALYSIS"
+	prompt_details [ count , 4 ] = "ANALYSIS"
+	prompt_details [ count , 5 ] = 0
+	prompt_details [ count , 6 ] = 14
+
+	count = count + 1
+
+	prompt_details [ count , 1 ] = "Component"
+	prompt_details [ count , 2 ] = "ROUTINE"
+	prompt_details [ count , 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	prompt_details [ count , 4 ] = "pims_component_prompt"
+	prompt_details [ count , 5 ] = 0
+	prompt_details [ count , 6 ] = 35
+
+	count = count + 1
+
+	prompt_details [ count , 1 ] = "Units"
+	prompt_details [ count , 2 ] = "ROUTINE"
+	prompt_details [ count , 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+	prompt_details [ count , 4 ] = "pims_units_prompt"
+	prompt_details [ count , 5 ] = 0
+	prompt_details [ count , 6 ] = 10
+
+
+	{***********************************************************************
+	* Build up the Heading Line from the field list.  
+	***********************************************************************}
+
+	head_count = 1
+	heading    = ""
+
+	WHILE head_count <= count DO
+
+		col_head = PAD ( prompt_details [ head_count, 1 ], " ",
+		           prompt_details [ head_count, 6 ]       )
+
+		heading    = heading : col_head : " "
+		head_count = head_count + 1 
+
+	ENDWHILE
+
+ENDROUTINE { initialise }
+
+{******************************************************************************}
+
+ROUTINE pims_component_prompt (      self        ,
+                                     grid        ,
+                               VALUE cell_column ,
+                               VALUE cell_row    ,
+                               VALUE column      ,
+                               VALUE row         ,
+                               VALUE cell_width  ,
+                                     window      ,
+                               VALUE is_display  )
+  
+{
+*
+*	Prompt for an component
+*
+*******************************************************************************}
+
+	DECLARE component_name, anal_id, select_array
+	
+
+	SET DATE FORMAT "DD-MON-YYYY H24:MI:SS"
+
+	component_name = SELECT pims_tag_analysis . component IN OBJECT self 
+
+	IF is_display THEN
+	
+		DISPLAY component_name
+		    ON LINE   row
+		    FROM      column
+		    TO        column + cell_width - 1
+		    IN WINDOW window
+		    FORMAT    pims_tag_analysis . component
+		    
+	ELSE
+	
+		anal_id = SELECT pims_tag_analysis . analysis IN OBJECT self
+				
+		ARRAY select_array
+		
+		array_select_add ( select_array    ,
+		                   ARRAY_SELECT_EQ ,
+		                   "analysis"      ,
+		                   anal_id         )
+	
+		PROMPT FOR component_name
+		    ON LINE      row
+		    FROM         column
+		    TO           column + cell_width - 1
+		    IN WINDOW    window 
+		    FORMAT       pims_tag_analysis . component   
+		    WITH         ( mandatory_array = select_array )
+
+		IF  ( LASTKEY  <> "EXIT"  ) THEN		
+		
+			ASSIGN pims_tag_analysis . component 	IN OBJECT self = component_name
+			ASSIGN pims_tag_analysis . modified_on	IN OBJECT self = NOW
+			ASSIGN pims_tag_analysis . modified_by    IN OBJECT self = OPERATOR
+		
+		ENDIF
+	
+	ENDIF
+	
+	RESTORE DATE FORMAT
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE pims_units_prompt (      self        ,
+                                     grid        ,
+                               VALUE cell_column ,
+                               VALUE cell_row    ,
+                               VALUE column      ,
+                               VALUE row         ,
+                               VALUE cell_width  ,
+                                     window      ,
+                               VALUE is_display  )
+  
+{
+*
+*	Prompt for an unit
+*
+*******************************************************************************}
+
+	DECLARE units, anal_id, comp_name, select_array
+	
+	SET DATE FORMAT "DD-MON-YYYY H24:MI:SS"
+
+	comp_name = SELECT pims_tag_analysis . component IN OBJECT self 
+	units     = SELECT pims_tag_analysis . units     IN OBJECT self
+
+	IF is_display THEN
+	
+		DISPLAY units
+		    ON LINE   row
+		    FROM      column
+		    TO        column + cell_width - 1
+		    IN WINDOW window
+		    FORMAT    pims_tag_analysis . units
+		    
+	ELSE
+	
+		anal_id = SELECT pims_tag_analysis . analysis IN OBJECT self
+				
+		ARRAY select_array
+		
+		array_select_add ( select_array    ,
+		                   ARRAY_SELECT_EQ ,
+		                   "analysis"      ,
+		                   anal_id         )
+
+		array_select_add ( select_array    ,
+		                   ARRAY_SELECT_AND,
+		                   EMPTY           ,
+		                   EMPTY           )
+
+		array_select_add ( select_array    ,
+		                   ARRAY_SELECT_EQ,
+		                   "name"          ,
+		                   comp_name       )
+
+	
+		PROMPT FOR units
+		    ON LINE      row
+		    FROM         column
+		    TO           column + cell_width - 1
+		    IN WINDOW    window 
+		    FORMAT       pims_tag_analysis . units
+		    WITH         ( mandatory_array = select_array )
+
+		IF  ( LASTKEY  <> "EXIT"  ) THEN		
+		
+			ASSIGN pims_tag_analysis . units IN OBJECT self = units
+			ASSIGN pims_tag_analysis . modified_on	IN OBJECT self = NOW
+			ASSIGN pims_tag_analysis . modified_by    IN OBJECT self = OPERATOR
+		ENDIF
+	
+	ENDIF
+	
+	RESTORE DATE FORMAT
+	
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}
+

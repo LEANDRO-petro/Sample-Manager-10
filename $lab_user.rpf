@@ -1,0 +1,649 @@
+{******************************************************************************
+*
+* Module Name   : $LAB_USER
+*
+* Purpose       : Allow configuration of second pages of LTE's
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : VGSM 3.1
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+{*** IMPLEMENTAÇÃO THERMO / PETROBRAS ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	---	Adicionado Descrição da Analise na tela de seleção de testes
+002   29/09/2016  LLV	Inclusão da coluna 'Norma' na tela de seleção dos testes
+}
+
+JOIN STANDARD_LIBRARY std_array
+JOIN STANDARD_LIBRARY STD_GENERAL
+
+JOIN STANDARD_LIBRARY std_array_select
+
+SET NOTPROTECTED
+ENABLE WINDOWS
+
+GLOBAL
+
+ROUTINE lab_user_comp_list_header ( prompt_details )
+
+{
+* 	Allow configuration of the first page of the component list screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_comp_list_entry ( prompt_details )
+
+{
+* 	Allow configuration of the second page of the component list screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+{
+
+	DECLARE next_field
+
+	next_field = size_of_array ( prompt_details ) + 1
+
+	prompt_details [ next_field , 2 ] = "FORMAT"
+	prompt_details [ next_field , 3 ] = "VERSIONED_C_L_ENTRY"
+	prompt_details [ next_field , 4 ] = "DEFAULT_VALUE"
+       	prompt_details [ next_field , 5 ] =  get_user_message ( "COMP_LIST_DEFAULT_TITLE" ,1)
+	prompt_details [ next_field , 6 ] =  15
+
+	next_field = next_field + 1
+
+	prompt_details [ next_field , 2 ] = "FORMAT"
+	prompt_details [ next_field , 3 ] = "VERSIONED_C_L_ENTRY"
+	prompt_details [ next_field , 4 ] = "REPORTING_NAME"
+       	prompt_details [ next_field , 5 ] = "Reporting Name"
+	prompt_details [ next_field , 6 ] =  20
+
+	next_field = next_field + 1
+}
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_test_schedule ( prompt_details )
+
+{
+* 	Allow configuration of the test schedule screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+DECLARE NEXT_FIELD, i
+
+i = 4
+
+NEXT_FIELD = SIZE_OF_ARRAY(PROMPT_DETAILS)+1
+PROMPT_DETAILS [NEXT_FIELD, 2] = "ROUTINE"
+PROMPT_DETAILS [NEXT_FIELD, 3] = "$LAB_USER"
+PROMPT_DETAILS [NEXT_FIELD, 4] = "LAB_USER_ANALYSIS_DESCRIPTION"
+PROMPT_DETAILS [NEXT_FIELD, 5] = "Descrição da Análise"
+PROMPT_DETAILS [NEXT_FIELD, 6] = "30"
+
+{
+*
+*	Adding code to add a new required field for analysis type; also removing
+*	unwanted columns by user; written by Thiago Rebello 01-21-2014
+*
+*******************************************************************************}
+NEXT_FIELD = SIZE_OF_ARRAY(PROMPT_DETAILS)+1
+PROMPT_DETAILS [NEXT_FIELD, 2] = "ROUTINE"
+PROMPT_DETAILS [NEXT_FIELD, 3] = "$LAB_USER"
+PROMPT_DETAILS [NEXT_FIELD, 4] = "LAB_USER_ANALYSIS_TYPE"
+PROMPT_DETAILS [NEXT_FIELD, 5] = "Técnica"
+PROMPT_DETAILS [NEXT_FIELD, 6] = "30"
+
+
+{ \/ 	002	LLV	Begin
+*
+*	Adding code to add a new required field for 'Técnica'; also removing
+*	unwanted columns by user; written by Thiago Rebello 01-21-2014
+*
+*******************************************************************************}
+NEXT_FIELD = SIZE_OF_ARRAY(PROMPT_DETAILS)+1
+PROMPT_DETAILS [NEXT_FIELD, 2] = "ROUTINE"
+PROMPT_DETAILS [NEXT_FIELD, 3] = "$LAB_USER"
+PROMPT_DETAILS [NEXT_FIELD, 4] = "LAB_USER_NORMA"
+PROMPT_DETAILS [NEXT_FIELD, 5] = "Norma"
+PROMPT_DETAILS [NEXT_FIELD, 6] = "40"
+{ /\ 002	LLV	End	}
+
+WHILE (i <= 9) DO  {9 is the size of the array after the extra column above for "Método" is added; }
+{			  cannot use size_of_array here as that gets reset each time it runs throug the loop }
+	array_remove_slice(prompt_details, 1, 4)
+	i = i + 1
+ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE LAB_USER_ANALYSIS_DESCRIPTION (SELF			, 
+						   GRID			, 
+						   VALUE CELL_COLUMN	,
+						   VALUE CELL_ROW		,
+						   VALUE COLUMN		,
+						   VALUE LINE		, 
+						   VALUE WIDTH_1		,
+					         DISPLAY_ID		,	 
+						   VALUE IS_DISPLAY	)
+
+
+DECLARE ANALYSIS, ANALYSIS_DESC
+
+ANALYSIS_DESC = ""
+
+	IF (VARIABLE_IS_ASSIGNED (SELF)) AND (SELF <> EMPTY) THEN
+		ANALYSIS = SELECT TEST_SCHED_ENTRY.ANALYSIS_ID
+	ELSE
+		ANALYSIS = SELECT TEST.ANALYSIS
+	ENDIF
+
+IF (ANALYSIS <> EMPTY) AND (NOT BLANK(ANALYSIS)) THEN
+	ANALYSIS_DESC = SELECT ANALYSIS.DESCRIPTION WHERE IDENTITY = ANALYSIS
+ENDIF
+
+IF IS_DISPLAY THEN
+	DISPLAY ANALYSIS_DESC ON LINE LINE FROM COLUMN TO COLUMN + WIDTH_1 IN WINDOW DISPLAY_ID
+ELSE
+	PROMPT FOR ANALYSIS_DESC AT COLUMN, LINE IN WINDOW DISPLAY_ID FORMAT TEXT WITH (VALUE = ANALYSIS_DESC, DISPLAY_ONLY = TRUE)
+ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE LAB_USER_ANALYSIS_TYPE (SELF			, 
+						   GRID			, 
+						   VALUE CELL_COLUMN	,
+						   VALUE CELL_ROW		,
+						   VALUE COLUMN		,
+						   VALUE LINE		, 
+						   VALUE WIDTH_1		,
+					         DISPLAY_ID		,	 
+						   VALUE IS_DISPLAY	)
+
+
+DECLARE ANALYSIS, ANALYSIS_TYPE, PHRASE_DESC
+
+ANALYSIS_TYPE = ""
+
+	IF (VARIABLE_IS_ASSIGNED (SELF)) AND (SELF <> EMPTY) THEN
+		ANALYSIS = SELECT TEST_SCHED_ENTRY.ANALYSIS_ID
+	ELSE
+		ANALYSIS = SELECT TEST.ANALYSIS
+	ENDIF
+
+IF (ANALYSIS <> EMPTY) AND (NOT BLANK(ANALYSIS)) THEN
+	ANALYSIS_TYPE = SELECT ANALYSIS.ANALYSIS_TYPE WHERE IDENTITY = ANALYSIS
+ENDIF
+
+IF (ANALYSIS_TYPE <> EMPTY) AND (NOT BLANK(ANALYSIS_TYPE)) THEN
+	PHRASE_DESC = SELECT PHRASE.PHRASE_TEXT WHERE PHRASE_ID = ANALYSIS_TYPE
+ENDIF
+
+IF IS_DISPLAY THEN
+	DISPLAY PHRASE_DESC ON LINE LINE FROM COLUMN TO COLUMN + WIDTH_1 IN WINDOW DISPLAY_ID
+ELSE
+	PROMPT FOR PHRASE_DESC AT COLUMN, LINE IN WINDOW DISPLAY_ID FORMAT TEXT WITH (VALUE = PHRASE_DESC, DISPLAY_ONLY = TRUE)
+ENDIF
+
+ENDROUTINE
+
+
+{ \/ 	002	LLV	Begin
+{******************************************************************************}
+
+ROUTINE LAB_USER_NORMA (SELF			, 
+					   GRID			, 
+					   VALUE CELL_COLUMN	,
+					   VALUE CELL_ROW		,
+					   VALUE COLUMN		,
+					   VALUE LINE		, 
+					   VALUE WIDTH_1		,
+				         DISPLAY_ID		,	 
+					   VALUE IS_DISPLAY	)
+
+
+DECLARE ANALYSIS, NORMA
+
+NORMA = ""
+
+	IF (VARIABLE_IS_ASSIGNED (SELF)) AND (SELF <> EMPTY) THEN
+		ANALYSIS = SELECT TEST_SCHED_ENTRY.ANALYSIS_ID
+	ELSE
+		ANALYSIS = SELECT TEST.ANALYSIS
+	ENDIF
+
+IF (ANALYSIS <> EMPTY) AND (NOT BLANK(ANALYSIS)) THEN
+	NORMA = SELECT VERSIONED_ANALYSIS.NORMA WHERE IDENTITY = ANALYSIS
+ENDIF
+
+IF IS_DISPLAY THEN
+	DISPLAY NORMA ON LINE LINE FROM COLUMN TO COLUMN + WIDTH_1 IN WINDOW DISPLAY_ID
+ELSE
+	PROMPT FOR NORMA AT COLUMN, LINE IN WINDOW DISPLAY_ID FORMAT TEXT WITH (VALUE = NORMA, DISPLAY_ONLY = TRUE)
+ENDIF
+
+ENDROUTINE
+
+{ /\ 002	LLV	End	}
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_mlps_level ( prompt_details )
+
+{
+* 	Allow configuration of the levels page of the mlps screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_mlps_schedule ( prompt_details )
+
+{
+* 	Allow configuration of the schedule page of the mlps screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_mlps_analysis ( prompt_details )
+
+{
+* 	Allow configuration of the analysis page of the mlps screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_mlps_component ( prompt_details )
+
+{
+* 	Allow configuration of the component page of the mlps screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_standard_component ( prompt_details )
+
+{
+* 	Allow configuration of the component page of the standard version screen.
+*	Prompt_details is a standard list editor definition screen.
+*
+*
+*******************************************************************************}
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_work_profile (       prompt_details ,
+				      user_prompts   ,
+				VALUE class_name     )
+
+{
+* 	Allow configuration of a standard work profile.
+*	Prompt_details is a standard list editor definition screen.
+*	User prompts is an array of object of the class given in the parameter
+*	class_name.
+*
+*	For most user fields there is no need to alter the prompt details array
+*	an entry in the user_prompts array is all that is required - see the
+*	commented out example below to see how to setup the array.
+*
+*
+*******************************************************************************}
+
+	{
+
+	DECLARE object
+
+	CREATE OBJECT class_name , other
+
+	other . table    = "VERSIONED_C_L_ENTRY"
+	other . field    = "REPORTING_NAME"
+	other . title    = get_user_message ( "WORK_PROFILE_REPORT_NAME_TITLE" , 1 )
+        other . width    = 25
+	other . position = 10
+
+	other . prompt_on_component ()
+
+	user_prompts [ 1 ] = other
+
+
+	CREATE OBJECT class_name , other
+
+	other . table    = "VERSIONED_C_L_ENTRY"
+	other . field    = "DEFAULT_VALUE"
+	other . title    = get_user_message ( "WORK_PROFILE_DEFAULT_VALUE_TITLE" , 1 )
+        other . width    = 25
+	other . position = 11
+
+	other . prompt_on_component ()
+
+	user_prompts [ 2 ] = other
+
+	}
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_batch_work_profile (       prompt_details ,
+				            user_prompts   ,
+				      VALUE class_name     )
+
+{
+* 	Allow configuration of the work profile for a batch work profile.
+*	Prompt_details is a standard list editor definition screen.
+*	User prompts is an array of object of the class given in the parameter
+*	class_name.
+*
+*	For most user fields there is no need to alter the prompt details array
+*	an entry in the user_prompts array is all that is required - see the
+*	commented out example below to see how to setup the array.
+*
+*
+*******************************************************************************}
+
+	{
+	DECLARE object
+
+	CREATE OBJECT class_name , other
+
+	other . table    = "VERSIONED_C_L_ENTRY"
+	other . field    = "REPORTING_NAME"
+	other . title    = get_user_message ( "WORK_PROFILE_REPORT_NAME_TITLE" , 1 )
+        other . width    = 25
+	other . position = 11
+
+	other . prompt_on_component ()
+
+	user_prompts [ 1 ] = other
+
+	CREATE OBJECT class_name , other
+
+	other . table    = "VERSIONED_C_L_ENTRY"
+	other . field    = "DEFAULT_VALUE"
+	other . title    = get_user_message ( "WORK_PROFILE_DEFAULT_VALUE_TITLE" , 1 )
+        other . width    = 25
+	other . position = 12
+
+	other . prompt_on_component ()
+
+	user_prompts [ 2 ] = other
+        }
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_comp_edit_insert ( VALUE category         ,
+					  component_object )
+
+
+
+{
+*
+*
+******************************************************************************}
+
+	IF category <> EMPTY THEN
+
+		assign versioned_component . pql_calculation
+				IN OBJECT component_object = ""
+
+		assign versioned_component . result_type
+				IN OBJECT component_object = "N"
+
+		IF category = "CalChk" THEN
+
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_percent_error() "
+			assign versioned_component . units
+				IN OBJECT component_object = "%ERR"
+
+		ELSEIF category = "Control" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_control_recov() "
+			assign versioned_component . units
+				IN OBJECT component_object = "%REC"
+
+		ELSEIF category = "IndepChk" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_percent_error() "
+			assign versioned_component . units
+				IN OBJECT component_object = "%ERR"
+
+		ELSEIF category = "InitChk" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_percent_error() "
+			assign versioned_component . units
+				IN OBJECT component_object = "%ERR"
+
+		ELSEIF category = "InterfChk" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_percent_error() "
+			assign versioned_component . units
+				IN OBJECT component_object = "%ERR"
+
+		ELSEIF category = "Duplicate" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_dup_rpd () "
+			assign versioned_component . units
+				IN OBJECT component_object = "RPD"
+
+		ELSEIF category = "MS" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_ms_recov () "
+			assign versioned_component . units
+				IN OBJECT component_object = "%REC"
+
+		ELSEIF category = "MSD" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_msd_recov () "
+			assign versioned_component . units
+				IN OBJECT component_object = "%REC"
+
+		ELSEIF category = "RPD" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_msd_rpd() "
+
+			assign versioned_component . units
+				IN OBJECT component_object = "RPD"
+
+		ELSEIF category = "ByWeight" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_report () "
+			assign versioned_component . units
+				IN OBJECT component_object = "ug/kg"
+			assign versioned_component . pql_calculation
+				IN OBJECT component_object = "EQL_REPT"
+
+
+		ELSEIF category = "ByVolume" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_report () "
+			assign versioned_component . units
+				IN OBJECT component_object = "ug/l"
+			assign versioned_component . pql_calculation
+				IN OBJECT component_object = "EQL_REPT"
+
+		ELSEIF category = "ByWipe" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_report () "
+			assign versioned_component . units
+				IN OBJECT component_object = "ug/WIPE"
+			assign versioned_component . pql_calculation
+				IN OBJECT component_object = "EQL_REPT"
+
+		ELSEIF category = "ByFilter" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_report () "
+			assign versioned_component . units
+				IN OBJECT component_object = "ug/FILTER"
+			assign versioned_component . pql_calculation
+				IN OBJECT component_object = "EQL_REPT"
+
+		ELSEIF category = "Report" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_report () "
+			assign versioned_component . units
+				IN OBJECT component_object = "ug/l"
+			assign versioned_component . pql_calculation
+				IN OBJECT component_object = "EQL_REPT"
+
+		ELSEIF category = "Surrogate" THEN
+
+			assign versioned_component . result_type
+				IN OBJECT component_object = "K"
+			assign versioned_component . formula
+				IN OBJECT component_object = "qa_surr_recov () "
+			assign versioned_component . units
+				IN OBJECT component_object = "%REC"
+
+               ELSEIF category = "Blank" THEN
+
+                        assign versioned_component . result_type
+                                IN OBJECT component_object = "K"
+                        assign versioned_component . formula
+                                IN OBJECT component_object = "qa_blank () "
+                        assign versioned_component . units
+                                IN OBJECT component_object = ""
+
+		ELSEIF category = "Prep" THEN
+
+		ELSE
+
+			assign versioned_component . units
+				IN OBJECT component_object = "ug/l"
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE lab_user_validate_limit( limit_object )
+
+{
+*     Called after MLP limits have been modified in either MLP, Standards or
+*     Standard Versions screens. limit_object . component object is EMPTY
+*     unless this is called from MLP screen.
+*
+******************************************************************************}
+
+      DECLARE valid
+
+      valid = TRUE
+
+      RETURN( valid )
+
+ENDROUTINE
+
+

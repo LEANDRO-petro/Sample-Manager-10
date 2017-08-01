@@ -1,0 +1,61 @@
+{*******************************************************************************
+*
+* Module Name   : EP_RESTART.RPF
+*
+* Purpose       : Reinicia o serviço de background
+*
+*
+*******************************************************************************
+* Modification History
+*
+  >>> No.	Quem	Quando	Descrição
+
+}
+
+ENABLE WINDOWS
+
+SET FORMAT "9999999999.99"
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY std_utils
+JOIN LIBRARY $lib_utils
+SET NOTPROTECTED
+SET NAME "DISPLAY/"
+
+DECLARE status, instancia, incremento
+
+{ instancia = STRIP (GLOBAL ("INSTANCE")) }
+instancia   = "smptqvgsm_prd"
+
+IF ( GLOBAL ( "MODE" ) = "INTERACTIVE" ) THEN
+
+	incremento = "teste"
+	incremento = incremento
+	{incremento = GET_INCREMENT ("INSTRUMENT_EVENT","CILGAS0878")}
+	{SET_INCREMENT ("INSTRUMENT_EVENT","CILGAS0878","7")}
+
+	{ * Parando o background na base PROD }
+	SPAWN "net stop " : instancia, status QUIETLY
+
+	{* IF (status <> EMPTY) THEN                                                                          *}
+	{*	flash_message ( "Erro ao parar o serviço SMPBACK" : instancia, TRUE )                           *}
+	{* ELSE                                                                                               *}
+	{*	flash_message ( "ATENÇÃO! Serviço SMPBACK" : instancia : " parado com sucesso!", TRUE)          *}
+	{* ENDIF                                                                                              *}
+
+	SLEEP FOR INTERVAL("0000 00:00:05.00")
+	{ * Iniciando o background na base PROD }
+	SPAWN "net start " : instancia, status QUIETLY
+
+	{* IF (status <> EMPTY) THEN                                                                          *}
+	{*	flash_message ( "Erro ao iniciar o serviço SMPBACK" : instancia, TRUE )                         *}
+	{* ELSE                                                                                               *}
+	{* 	flash_message ( "ATENÇÃO! Serviço SMPBACK" : instancia : " iniciado com sucesso!", TRUE)        *}
+	{* ENDIF                                                                                              *}
+
+ENDIF
+
+
+
+
+

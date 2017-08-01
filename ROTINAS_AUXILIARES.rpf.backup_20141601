@@ -1,0 +1,860 @@
+{******************************************************************************
+*
+* Module Name   : BC_ROTINAS_AUXILIARE.RPF
+*
+* Purpose       : Conjunto de rotinas para consultas diversas no sistema.
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : Yes
+*
+*******************************************************************************}
+SET NAME "DEFER/"
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_VGL
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_WINDOW
+
+JOIN LIBRARY $BROWSE
+JOIN LIBRARY $LIB_BROWSER_MULTI
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $MRU_LIST_FIELD
+JOIN LIBRARY $MRU_LIST_COMMAND
+JOIN LIBRARY $PROMPT_IMPRINT
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN LIBRARY $lib_utils
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE ObjetivoSOT (column, row, win_name, disp_type)
+
+    	ENABLE WINDOWS
+    	SET NOTPROTECTED { required to update field }
+
+	declare Objetivo, Natureza, criteria_array, grd, objs, count
+
+	Objetivo = SELECT job_header . objetivo
+
+	Natureza  = SELECT job_header . natureza
+
+	IF NOT disp_type THEN
+		
+		ARRAY criteria_array
+
+		
+		IF ( Natureza = EMPTY ) OR ( BLANK ( Natureza ) ) THEN
+		flash_message ("Campo Natureza deve ser preenchido primeiro.",EMPTY)
+
+		PROMPT FOR grd USING "Objetivo: "
+		   IN WINDOW win_name
+		   AT column, row
+		   FORMAT mlp_header . identity
+		   WITH ( display_only = TRUE )
+		RETURN
+	ENDIF
+
+        Objs = SELECT mlp_family . mlp_id
+                    WHERE ( family_name = Natureza ) 
+
+        count = 1    
+
+        WHILE ( Objs <> EMPTY ) DO
+
+		IF ( count = 1 ) THEN
+			ARRAY_SELECT_ADD ( criteria_array    ,
+					   ARRAY_SELECT_PUSH ,
+					   EMPTY             ,
+					   EMPTY             )
+		ELSE
+			ARRAY_SELECT_ADD ( criteria_array  ,
+					   ARRAY_SELECT_OR ,
+					   EMPTY           ,
+					   EMPTY           )
+            	ENDIF
+
+		ARRAY_SELECT_ADD ( criteria_array  	,
+			ARRAY_SELECT_EQ        		,
+			"IDENTITY"      		,
+                	Objs 				)	
+
+	    	count = count + 1
+	
+            	NEXT mlp_family
+
+            Objs = SELECT mlp_family . mlp_id
+
+        ENDWHILE
+
+	IF ( count > 1 ) THEN
+	    
+	    ARRAY_SELECT_ADD ( criteria_array   ,
+			       ARRAY_SELECT_POP ,
+			       EMPTY            ,
+			       EMPTY            )
+	ELSE
+		ARRAY_SELECT_ADD ( criteria_array  	,
+			ARRAY_SELECT_EQ        		,
+			"IDENTITY"      		,
+                	"XXXX" 				)
+
+        ENDIF
+
+        PROMPT FOR Objetivo
+               IN WINDOW win_name
+               AT column, row
+               BROWSE ON mlp_header
+               WITH ( select_array = criteria_array )
+    ELSE
+        DISPLAY Objetivo
+            IN WINDOW win_name
+            AT column, row
+    ENDIF
+
+    ASSIGN job_header . objetivo = Objetivo
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE EMITENTE(column, row, win_name, disp_type)
+	
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare User, User1, criteria_array, grd, count
+
+	User1 = Operator
+
+	IF NOT disp_type THEN
+
+		ARRAY criteria_array
+
+		IF ( User1 = EMPTY ) OR ( BLANK ( User1 ) ) THEN
+		flash_message ("Problemas para selecionar o Usuario.",EMPTY)
+
+		PROMPT FOR grd USING "Usuario: "
+		   IN WINDOW win_name
+		   AT column, row
+		   FORMAT PERSONNEL . IDENTITY
+		   WITH ( display_only = TRUE )
+		RETURN
+	ENDIF
+
+	User = SELECT PERSONNEL . IDENTITY WHERE IDENTITY = OPERATOR
+
+	count = 1    
+
+	WHILE ( User <> EMPTY ) DO
+
+		IF ( count = 1 ) THEN
+			ARRAY_SELECT_ADD ( criteria_array    ,
+					   ARRAY_SELECT_PUSH ,
+					   EMPTY             ,
+					   EMPTY             )
+		ELSE
+			ARRAY_SELECT_ADD ( criteria_array  ,
+					   ARRAY_SELECT_OR ,
+					   EMPTY           ,
+					   EMPTY           )
+		ENDIF
+
+		ARRAY_SELECT_ADD ( criteria_array  	,
+			ARRAY_SELECT_EQ        		,
+			"IDENTITY"      		,
+			User 				)	
+
+		count = count + 1
+
+		NEXT PERSONNEL
+
+	    User = SELECT personnel . identity
+
+	ENDWHILE
+
+	IF ( count > 0 ) THEN
+
+	    ARRAY_SELECT_ADD ( criteria_array   ,
+			       ARRAY_SELECT_POP ,
+			       EMPTY            ,
+			       EMPTY            )
+	ENDIF
+
+	PROMPT FOR User1
+	       IN WINDOW win_name
+	       AT column, row
+	       BROWSE ON PERSONNEL
+	       WITH ( select_array = criteria_array )
+	ELSE
+	
+	DISPLAY User1
+	    IN WINDOW win_name
+	    AT column, row
+	ENDIF
+	
+	ASSIGN JOB_HEADER.SUBMITTER_OPER = USER1
+	
+ENDROUTINE
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE RAMAL(column, row, win_name, disp_type)
+	
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare User, RAM
+
+	User = SELECT JOB_HEADER.SOLICITANTE
+
+	RAM = SELECT PERSONNEL . PHONENUMBER WHERE IDENTITY = User
+
+	IF NOT disp_type THEN
+
+	PROMPT FOR RAM
+	       IN WINDOW win_name
+	       AT column, row
+	ELSE
+	
+	
+	DISPLAY RAM
+	    IN WINDOW win_name
+	    AT column, row
+	ENDIF
+	
+	IF (variable_is_assigned (RAM)=TRUE) THEN
+		ASSIGN JOB_HEADER.RAMAL = RAM
+	ENDIF
+    	
+ENDROUTINE
+
+GLOBAL ROUTINE PRAZOATENDIMENTO(column, row, win_name, disp_type)
+	
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	DECLARE LOGIN_DATE, START_DATE, HORAFINAL, month, year, day, prazo
+	
+	HORAFINAL = "19:00:00"
+		
+	LOGIN_DATE = SELECT SAMPLE.LOGIN_DATE
+	
+	SET DATE FORMAT "DZ/MZ/YYYY H24:MI:SS"
+	
+	start_date = string ( LOGIN_DATE )
+	
+	day = NUMERIC ( SUBSTRING (start_date, 1,2))
+	
+	month = NUMERIC ( SUBSTRING ( start_date , 4 , 2 ))
+	
+	year = NUMERIC ( SUBSTRING ( start_date , 7 , 4 ))
+	
+	
+	IF (MONTH = 1) OR (MONTH = 3) OR (MONTH = 5) OR (MONTH = 7) OR (MONTH = 8) OR (MONTH = 10) THEN
+	   IF (DAY = 31) THEN
+	   	DAY = 01
+	   	MONTH = MONTH + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ELSEIF (MONTH = 12) THEN
+	   IF DAY = 31 THEN
+	   	DAY = 01
+	   	MONTH = 1
+	   	year = year + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ELSEIF (MONTH = 2) THEN
+	   IF DAY = 28 THEN
+	   	DAY = 01
+	   	MONTH = MONTH + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ELSE
+	   IF (DAY = 30) THEN
+	   	DAY = 01
+	   	MONTH = MONTH + 1
+	   ELSE
+	   	DAY = DAY + 1
+	   ENDIF
+	ENDIF
+	
+	start_date = STRIP(NUMBER_TO_TEXT ( DAY , "99" )) : "/" : STRIP(NUMBER_TO_TEXT ( month , "99" )) : "/" : STRIP(NUMBER_TO_TEXT ( year , "9999" )) : " " : HORAFINAL
+	
+	prazo = date ( start_date )
+	
+	RESTORE DATE FORMAT
+
+	IF NOT disp_type THEN
+		PROMPT FOR prazo
+	       		IN WINDOW win_name
+	       		AT column, row
+	       	IF (variable_is_assigned (prazo)=TRUE) THEN
+			ASSIGN SAMPLE.DATERESREQ = prazo
+		ENDIF
+	ELSE
+		DISPLAY prazo
+	    	IN WINDOW win_name
+	    	AT column, row
+	ENDIF
+	
+ENDROUTINE
+
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE PRIORIDADE(column, row, win_name, disp_type)
+	
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare Objetivo, PRIO, criteria_array, grd, objs, count
+
+	Objetivo = SELECT job_header . objetivo
+	
+	PRIO = SELECT MLP_HEADER.PRIORITY WHERE IDENTITY = Objetivo
+
+	IF NOT disp_type THEN
+
+		ARRAY criteria_array
+
+
+		IF ( Objetivo = EMPTY ) OR ( BLANK ( Objetivo ) ) THEN
+			flash_message ("Campo Objetivo deve ser preenchido primeiro.",EMPTY)
+
+			PROMPT FOR grd USING "Objetivo: "
+					IN WINDOW win_name
+					AT column, row
+					FORMAT mlp_header . identity
+					WITH ( display_only = TRUE )
+
+			RETURN
+
+		ENDIF
+
+		Objs = SELECT mlp_header . priority WHERE ( identity = Objetivo ) 
+
+		count = 1    
+
+		WHILE ( Objs <> EMPTY ) DO
+
+			IF ( count = 1 ) THEN
+				ARRAY_SELECT_ADD ( 	criteria_array    ,
+							ARRAY_SELECT_PUSH ,
+							EMPTY             ,
+							EMPTY             )
+			ELSE
+				ARRAY_SELECT_ADD ( 	criteria_array  ,
+							ARRAY_SELECT_OR ,
+							EMPTY           ,
+							EMPTY           )
+			ENDIF
+
+			ARRAY_SELECT_ADD ( 	criteria_array  	,
+						ARRAY_SELECT_EQ        		,
+						"IDENTITY"      		,
+						Objs 				)	
+
+			count = count + 1
+
+			NEXT mlp_header
+
+			Objs = SELECT mlp_header . priority
+
+		ENDWHILE
+
+		IF ( count > 0 ) THEN
+
+			ARRAY_SELECT_ADD ( 	criteria_array   ,
+						ARRAY_SELECT_POP ,
+						EMPTY            ,
+						EMPTY            )
+		ENDIF
+
+		PROMPT FOR PRIO
+			IN WINDOW win_name
+			AT column, row
+			BROWSE ON mlp_header
+			WITH ( select_array = criteria_array )
+	ELSE
+	
+		DISPLAY PRIO
+			IN WINDOW win_name
+			AT column, row
+	ENDIF
+
+	ASSIGN JOB_HEADER.prioridade = PRIO
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE PTOAMOST_AMOSTRA (column, row, win_name, disp_type)
+
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare PTO, LOCAL, criteria_array, grd, PTOS, count
+
+	PTO = SELECT SAMPLE . SAMPLING_POINT
+
+	LOCAL  = SELECT SAMPLE . LOCATION_ID
+
+	IF NOT disp_type THEN
+
+		ARRAY criteria_array
+
+
+		IF ( LOCAL = EMPTY ) OR ( BLANK ( LOCAL ) ) THEN
+		flash_message ("Campo Local/Origem deve ser preenchido primeiro.",EMPTY)
+
+		PROMPT FOR grd USING "Ponto de Amostragem: "
+		   IN WINDOW win_name
+		   AT column, row
+		   FORMAT SAMPLE_POINT . identity
+		   WITH ( display_only = TRUE )
+		RETURN
+	ENDIF
+
+	PTOS = SELECT SAMPLE_POINT_LINK_LOCATION . SAMPLE_POINT
+		    WHERE ( LOCATION_ID = LOCAL ) 
+
+	count = 0  
+
+	WHILE ( PTOS <> EMPTY ) DO
+
+		IF ( count = 0 ) THEN
+			ARRAY_SELECT_ADD ( criteria_array    ,
+					   ARRAY_SELECT_PUSH ,
+					   EMPTY             ,
+					   EMPTY             )
+		ELSE
+			ARRAY_SELECT_ADD ( criteria_array  ,
+					   ARRAY_SELECT_OR ,
+					   EMPTY           ,
+					   EMPTY           )
+		ENDIF
+
+		ARRAY_SELECT_ADD ( criteria_array  	,
+			ARRAY_SELECT_EQ        		,
+			"IDENTITY"      		,
+			PTOS 				)	
+
+		count = count + 1
+
+		NEXT SAMPLE_POINT_LINK_LOCATION
+
+	    PTOS = SELECT SAMPLE_POINT_LINK_LOCATION . SAMPLE_POINT
+
+	ENDWHILE
+
+	IF ( count >= 1 ) THEN
+
+	    ARRAY_SELECT_ADD ( criteria_array   ,
+			       ARRAY_SELECT_POP ,
+			       EMPTY            ,
+			       EMPTY            )
+	ENDIF
+
+	if (count >= 1) then
+		PROMPT FOR PTO
+		       IN WINDOW win_name
+		       AT column, row
+		       BROWSE ON SAMPLE_POINT
+		       WITH ( select_array = criteria_array )
+	else
+		ARRAY_SELECT_ADD (	criteria_array	,
+					ARRAY_SELECT_EQ	,
+					"IDENTITY"	,
+					"ZZZMMMPPPTTT"	)
+		PROMPT FOR PTO
+		       IN WINDOW win_name
+		       AT column, row
+		       BROWSE ON SAMPLE_POINT
+		       WITH ( select_array = criteria_array )
+	endif
+	
+    ELSE
+	DISPLAY PTO
+	    IN WINDOW win_name
+	    AT column, row
+    ENDIF
+
+    ASSIGN SAMPLE . SAMPLING_POINT = PTO
+
+ENDROUTINE
+
+GLOBAL ROUTINE TOPO_AMOSTRA (column, row, win_name, disp_type)
+
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare LOC, CODIGOBIEP, criteria_array, TOPO, TOPO_AM, count
+	
+	ARRAY criteria_array ARRAYSIZE(0,2)
+
+	LOC = SELECT SAMPLE . LOCATION_ID
+	
+	CODIGOBIEP  = SELECT LOCATION . CODIGO_BIEP WHERE LOCATION . IDENTITY = STRIP(LOC) AND LOCATION_TYPE = "POCO"
+
+	SET FORMAT "000000.000"
+
+	IF NOT disp_type THEN
+
+		IF ( LOC = EMPTY ) OR ( BLANK ( LOC ) OR (codigobiep=EMPTY)) THEN
+			flash_message ("Campo Localizacao deve ser preenchido primeiro com um local do tipo poco.",EMPTY)
+			PROMPT FOR TOPO_AM 
+			AT COLUMN,ROW 
+			IN WINDOW WIN_NAME BOLD UNDERLINE 
+			WITH ( display_only = TRUE )
+			RETURN
+		ENDIF
+	
+		TOPO = SELECT VW_INTERVALO_POCO . INTE_MD_TOPO
+		    	WHERE ( POCO_CD_POCO = STRIP(CODIGOBIEP) ) 
+
+		count = 0
+
+		WHILE ( TOPO <> EMPTY ) DO
+			COUNT = COUNT + 1
+			criteria_array[count,1] = STRIP(TOPO)
+			criteria_array[count,2] = TOPO
+
+
+			NEXT VW_INTERVALO_POCO
+
+	    		TOPO = SELECT VW_INTERVALO_POCO . INTE_MD_TOPO
+
+		ENDWHILE
+			criteria_array[count+1,1] = "Sem valor"
+			criteria_array[count+1,2] = "Sem valor"
+		
+		PROMPT FOR TOPO_AM 
+			AT COLUMN,ROW 
+			IN WINDOW WIN_NAME BOLD UNDERLINE 
+			CHOOSE OUTOF CRITERIA_ARRAY
+
+		
+		IF TOPO_AM <> EMPTY THEN
+			ASSIGN SAMPLE . TOPO = TOPO_AM
+		ENDIF	
+
+    	ELSE
+    		TOPO = SELECT SAMPLE . TOPO
+    		
+		DISPLAY TOPO
+	    		IN WINDOW win_name
+	    		AT column, row
+			FORMAT SAMPLE . TOPO
+	ENDIF
+
+ENDROUTINE
+{*****************************************************************************}
+GLOBAL ROUTINE BASE_AMOSTRA (column, row, win_name, disp_type)
+
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare LOC, CODIGOBIEP, criteria_array, BASE, BASE_AM, count
+	
+	ARRAY criteria_array ARRAYSIZE(0,2)
+
+	LOC = SELECT SAMPLE . LOCATION_ID
+	BASE = ""
+
+	CODIGOBIEP  = SELECT LOCATION . CODIGO_BIEP WHERE LOCATION . IDENTITY = STRIP(LOC) AND LOCATION_TYPE = "POCO"
+
+	SET FORMAT "000000.000"
+
+	IF NOT disp_type THEN
+
+		IF ( LOC = EMPTY ) OR ( BLANK ( LOC )  OR (codigobiep=EMPTY)) THEN
+			flash_message ("Campo Localizacao deve ser preenchido primeiro com um local do tipo poco.",EMPTY)
+			prompt FOR BASE_AM 
+			AT COLUMN,ROW 
+			IN WINDOW WIN_NAME BOLD UNDERLINE 
+			WITH ( display_only = TRUE )
+			RETURN
+		ENDIF
+		
+		IF (CODIGOBIEP<>EMPTY) THEN
+			BASE= SELECT VW_INTERVALO_POCO . INTE_MD_BASE
+				WHERE ( POCO_CD_POCO = STRIP(CODIGOBIEP) ) 
+		ENDIF
+		
+		count = 0
+
+		WHILE ( BASE <> EMPTY ) DO
+			COUNT = COUNT + 1
+			criteria_array[count,1] = STRIP(BASE)
+			criteria_array[count,2] = BASE
+
+
+			NEXT VW_INTERVALO_POCO
+
+	    		BASE= SELECT VW_INTERVALO_POCO . INTE_MD_BASE
+
+		ENDWHILE
+
+			criteria_array[count+1,1] = "Sem valor"
+			criteria_array[count+1,2] = "Sem valor"
+
+		
+		PROMPT FOR BASE_AM 
+			AT COLUMN,ROW 
+			IN WINDOW WIN_NAME BOLD UNDERLINE 
+			CHOOSE OUTOF CRITERIA_ARRAY
+
+		IF BASE_AM <> EMPTY THEN
+			ASSIGN SAMPLE . BASE = BASE_AM
+		ENDIF
+
+    	ELSE
+    		BASE = SELECT SAMPLE . BASE
+    	
+		DISPLAY BASE
+	    		IN WINDOW win_name
+	    		AT column, row
+			FORMAT SAMPLE . BASE
+	ENDIF
+
+ENDROUTINE
+
+
+GLOBAL ROUTINE GRUPO_LOCAL(column, row, win_name, disp_type)
+
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare LOCAL, GRUPO, criteria_array, grd
+
+	LOCAL = SELECT job_header . origem
+
+	GRUPO = SELECT job_header . group_id
+		
+	IF (LENGTH(STRIP(GRUPO))=0) OR (GRUPO = "----------") THEN
+		GRUPO = SELECT LOCATION.GROUP_ID WHERE IDENTITY = LOCAL
+	ENDIF
+
+	GRUPO = SELECT LOCATION.GROUP_ID WHERE IDENTITY = LOCAL
+
+	IF NOT disp_type THEN
+
+		ARRAY criteria_array
+
+
+		IF ( LOCAL = EMPTY ) OR ( BLANK ( LOCAL ) ) THEN
+			flash_message ("Campo LOCAL deve ser preenchido primeiro.",EMPTY)
+
+			PROMPT FOR grd USING "LOCAL: "
+					IN WINDOW win_name
+					AT column, row
+					FORMAT LOCATION . IDENTITY
+					WITH ( display_only = TRUE )
+
+			RETURN
+
+		ENDIF
+
+		PROMPT FOR GRUPO
+			IN WINDOW win_name
+			AT column, row
+			BROWSE ON GROUP_HEADER.IDENTITY
+
+	ELSE
+		IF GRUPO <> EMPTY THEN
+			DISPLAY GRUPO
+			IN WINDOW win_name
+			AT column, row
+		ENDIF
+	ENDIF
+
+	ASSIGN job_header.GROUP_ID = GRUPO
+
+ENDROUTINE
+
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE ObjetivoAMOSTRA (column, row, win_name, disp_type)
+
+    	ENABLE WINDOWS
+    	SET NOTPROTECTED { required to update field }
+
+	declare Objetivo, Natureza, criteria_array, grd, objs, count
+
+	Objetivo = SELECT sample . objetivo
+
+	Natureza  = SELECT sample . natureza
+
+	IF NOT disp_type THEN
+		
+		ARRAY criteria_array
+
+		
+		IF ( Natureza = EMPTY ) OR ( BLANK ( Natureza ) ) THEN
+		flash_message ("Campo Natureza deve ser preenchido primeiro.",EMPTY)
+
+		PROMPT FOR grd USING "Objetivo: "
+		   IN WINDOW win_name
+		   AT column, row
+		   FORMAT mlp_header . identity
+		   WITH ( display_only = TRUE )
+		RETURN
+	ENDIF
+
+        Objs = SELECT mlp_family . mlp_id
+                    WHERE ( family_name = Natureza ) 
+
+        count = 1    
+
+        WHILE ( Objs <> EMPTY ) DO
+
+		IF ( count = 1 ) THEN
+			ARRAY_SELECT_ADD ( criteria_array    ,
+					   ARRAY_SELECT_PUSH ,
+					   EMPTY             ,
+					   EMPTY             )
+		ELSE
+			ARRAY_SELECT_ADD ( criteria_array  ,
+					   ARRAY_SELECT_OR ,
+					   EMPTY           ,
+					   EMPTY           )
+            	ENDIF
+
+		ARRAY_SELECT_ADD ( criteria_array  	,
+			ARRAY_SELECT_EQ        		,
+			"IDENTITY"      		,
+                	Objs 				)	
+
+	    	count = count + 1
+	
+            	NEXT mlp_family
+
+            Objs = SELECT mlp_family . mlp_id
+
+        ENDWHILE
+
+	IF ( count > 0 ) THEN
+	    
+	    ARRAY_SELECT_ADD ( criteria_array   ,
+			       ARRAY_SELECT_POP ,
+			       EMPTY            ,
+			       EMPTY            )
+        ENDIF
+
+        PROMPT FOR Objetivo
+               IN WINDOW win_name
+               AT column, row
+               BROWSE ON mlp_header
+               WITH ( select_array = criteria_array )
+    ELSE
+        DISPLAY Objetivo
+            IN WINDOW win_name
+            AT column, row
+    ENDIF
+
+    ASSIGN sample . objetivo = Objetivo
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+GLOBAL ROUTINE GERENCIA(column, row, win_name, disp_type)
+
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare User, ger
+
+	User = SELECT JOB_HEADER.SOLICITANTE
+
+	ger = SELECT PERSONNEL . GERENCIA WHERE IDENTITY = User
+
+	IF NOT disp_type THEN
+
+	PROMPT FOR ger
+	       IN WINDOW win_name
+	       AT column, row
+{ Incluido em 15/07/2013 Inicio }
+               BROWSE ON customer
+{ Incluido em 15/07/2013 Fim }
+	ELSE
+	
+	
+	DISPLAY ger
+	    IN WINDOW win_name
+	    AT column, row
+	ENDIF
+	
+	IF (variable_is_assigned (ger)=TRUE) THEN
+		ASSIGN JOB_HEADER.CUSTOMER = ger
+	ENDIF
+    	
+ENDROUTINE
+
+{*****************************************************************************}
+{*****************************************************************************}
+
+GLOBAL ROUTINE GRUPO_SOT(column, row, win_name, disp_type)
+
+	ENABLE WINDOWS
+	SET NOTPROTECTED { required to update field }
+
+	declare gerencia_solicitante, criteria_array, grd
+
+	gerencia_solicitante = SELECT job_header . customer
+		
+	IF NOT disp_type THEN
+
+		ARRAY criteria_array
+
+
+		IF ( gerencia_solicitante = EMPTY ) OR ( BLANK ( gerencia_solicitante ) ) THEN
+			flash_message ("O Solicitante deve ser preenchido ou não há gerência associada ao Solicitante.",EMPTY)
+
+			PROMPT FOR grd USING "Gerência: "
+					IN WINDOW win_name
+					AT column, row
+					FORMAT JOB_HEADER . CUSTOMER
+					WITH ( display_only = TRUE )
+
+			RETURN
+
+		ENDIF
+
+		PROMPT FOR gerencia_solicitante
+			IN WINDOW win_name
+			AT column, row
+			BROWSE ON GROUP_HEADER.IDENTITY
+
+	ELSE
+		IF gerencia_solicitante <> EMPTY THEN
+			DISPLAY gerencia_solicitante
+			IN WINDOW win_name
+			AT column, row
+		ENDIF
+	ENDIF
+
+	ASSIGN job_header.GROUP_ID = gerencia_solicitante
+
+ENDROUTINE
+
+
+{*****************************************************************************}
+
+

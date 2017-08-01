@@ -1,0 +1,200 @@
+{******************************************************************************
+*
+* Module Name   : $SAMPSTAT
+*
+* Purpose       : SMP report for user defined code which is called when a
+*                 sample changes status
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification : 
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : 
+* 
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	 08/01/2013	FD	Gerar COA após autorização
+002	 14/01/2014	LFR	Enviar email após autorização
+003  29/01/2014  LOX	Validar que grupo de Objetivo da SOT = 2-SLCE e a amostra é uma Amostra Original
+004  15/08/2014  LLV	Imprimir etiqueta após liberar amostra da espera
+
+}
+
+JOIN LIBRARY $LIB_UTILS
+
+JOIN LIBRARY $LIB_TEMP
+
+JOIN STANDARD_LIBRARY std_array 
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+
+ENABLE WINDOWS
+SET COMPILE_OPTION DECLARE
+SET NAME "/DEFER"
+SET NOTPROTECTED
+
+JOIN LIBRARY $CERTIFICATE
+
+ROUTINE set_status_a
+{001}	
+	DECLARE SMP,IDENTITY,VERSION,TYPE,TYPE_ID, ID_NUMERIC
+	DECLARE comp_date, product
+
+	ID_NUMERIC = SELECT SAMPLE.ID_NUMERIC
+	
+	IDENTITY = PAD("AMOSTRA"," ",10)
+	TYPE = PAD("SAMPLE"," ",10)
+	TYPE_ID = PAD(ID_NUMERIC," ",20)
+	VERSION = PAD(1," ",10)
+	
+	SMP = IDENTITY:TYPE:TYPE_ID:VERSION
+	
+	CALL_ROUTINE "create_print_certificate" IN LIBRARY "$CERTIFICATE" USING SMP
+{001}
+{002 \/}
+
+	{003 \/}
+
+		IF ( GLOBAL ( "ENVIA_NOTA_EMAIL" ) ) THEN
+
+			DECLARE SOT, OBJETIVO, GRUPO_OBJETIVO, AMOSTRA_ORIGINAL	
+
+			SOT = SELECT sample . job_name WHERE id_numeric = ID_NUMERIC
+
+			OBJETIVO = SELECT job_header . objetivo WHERE job_name = SOT
+
+			GRUPO_OBJETIVO = SELECT mlp_header . group_id WHERE identity = OBJETIVO
+
+			AMOSTRA_ORIGINAL = SELECT sample . original_sample WHERE id_numeric = ID_NUMERIC
+
+	
+				IF ( (STRIP(GRUPO_OBJETIVO) = "2-SLCE") AND ((AMOSTRA_ORIGINAL = EMPTY) OR (STRIP(AMOSTRA_ORIGINAL) = "0" )) ) THEN
+
+					CALL_ROUTINE "email_aviso_autorizada" IN LIBRARY "EP_ENVIO_EMAIL" USING ID_NUMERIC
+
+				ENDIF
+		ENDIF
+
+	{003 /\}
+
+{002 /\}
+{004 \/ Alteração de Local do Cilindro da Amostra ao autorizar}
+IF GLOBAL ("MODE") = "INTERACTIVE" THEN
+	DECLARE id_cil, local_cil, tmpl_sample, reativa
+
+	id_cil = SELECT SAMPLE . CILINDRO
+	reativa = SELECT SAMPLE . REATIVACAO 
+	tmpl_sample = SELECT SAMPLE . TEMPLATE_ID
+
+	IF (id_cil <> "")  THEN
+
+		IF ( (tmpl_sample = "SLCECROMAT") OR (tmpl_sample = "SLCEPVT") ) THEN
+
+			IF  (reativa = 0) THEN
+
+				IF TRANSACTION_IS_WRITE() = FALSE THEN
+				START WRITE TRANSACTION "Alterar local Cilindro"
+				ENDIF
+
+				local_cil = SELECT INSTRUMENT . LOCATION_ID FOR UPDATE WHERE IDENTITY = id_cil
+
+				IF (local_cil = "LABFLUIDOS")THEN
+
+					ASSIGN INSTRUMENT . LOCATION_ID = "SALALAVAGECIL"
+					UPDATE INSTRUMENT
+				
+				ENDIF
+			ENDIF
+		ENDIF
+	ENDIF
+
+	
+ENDIF
+
+
+{004 /\}
+ENDROUTINE
+
+ROUTINE set_status_i
+ENDROUTINE
+
+ROUTINE set_status_c
+ENDROUTINE
+
+ROUTINE set_status_h
+
+ENDROUTINE
+
+ROUTINE set_status_r
+ENDROUTINE
+
+ROUTINE set_status_s
+ENDROUTINE
+
+ROUTINE set_status_u
+{002 \/ Alteração de Local do Cilindro da Amostra no recebimento pelo LF }
+IF GLOBAL ("MODE") = "INTERACTIVE" THEN
+	DECLARE id_cil, local_cil, tmpl_sample, objetivo
+
+	id_cil = SELECT SAMPLE . CILINDRO 
+	objetivo = SELECT SAMPLE . PRODUCT
+	tmpl_sample = SELECT SAMPLE . TEMPLATE_ID
+	
+	IF (id_cil <> "") THEN
+
+		IF ( (tmpl_sample = "SLCECROMAT") OR (tmpl_sample = "SLCEPVT") ) THEN
+			
+			
+			IF TRANSACTION_IS_WRITE() = FALSE THEN
+				START WRITE TRANSACTION "Alterar local Cilindro"
+			ENDIF
+			
+			local_cil = SELECT INSTRUMENT . LOCATION_ID FOR UPDATE WHERE IDENTITY = id_cil
+
+			IF objetivo = "PETROLEO_PRESSURIZADO_08" THEN
+			
+				ASSIGN INSTRUMENT . LOCATION_ID = "CENPES"
+				UPDATE INSTRUMENT
+			ELSE
+				ASSIGN INSTRUMENT . LOCATION_ID = "LABFLUIDOS"
+				UPDATE INSTRUMENT
+			ENDIF
+			
+		ENDIF
+	ENDIF
+
+	{ 004 \/ - LLV - 12/08/14 - Begin }
+	{* DECLARE amostra, printer_id, wks_id, output, grupo, natureza                           *}
+
+	{* amostra    = SELECT sample . id_numeric                                                *}
+	{* printer_id = STRIP ( GLOBAL ( "LABEL_ID" ))                                            *}
+	{* wks_id     = EMPTY                                                                     *}
+
+	{* apenas amostras SLCE geram etiquetas quando disponíveis *}
+	{* natureza   = SELECT sample . product                                                   *}
+	{* grupo      = STRIP ( SELECT mlp_header . group_id WHERE identity = natureza )          *}
+
+	{* IF ( grupo = "2-SLCE" ) THEN                                                           *}
+	{*	CALL_ROUTINE "sample_label"                                                         *}
+	{*		IN LIBRARY "ep_samplabel"                                                     *}
+	{*		USING wks_id, amostra, printer_id                                             *}
+
+	{*	RETURNING output                                                                    *}
+	{* ENDIF                                                                                  *}
+	{ 004 /\ - LLV - 12/08/14	End   }
+ENDIF
+{002 /\}
+ENDROUTINE
+
+ROUTINE set_status_v
+ENDROUTINE
+
+ROUTINE set_status_w
+ENDROUTINE
+
+ROUTINE set_status_x
+ENDROUTINE

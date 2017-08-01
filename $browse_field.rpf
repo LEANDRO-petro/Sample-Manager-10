@@ -1,0 +1,1382 @@
+{******************************************************************************
+*
+* Module Name   : $BROWSE_FIELD.RPF
+*
+* Purpose       : Browse field class. This class defines the normal browse
+*                 screen behaviour. 
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : Yes
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Adicionado Hierarquia para selecão na tabela LOCATION
+}
+
+SET NAME "DEFER/"
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_BROWSE
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_GLOBAL
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_WINDOW
+
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN LIBRARY $PROMPT_TREE
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_GRID
+
+JOIN LIBRARY $QT_TREE
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $BROWSE_FORM
+JOIN LIBRARY $CRITERIA_LIB
+JOIN LIBRARY $CRITERIA_CACHE
+JOIN LIBRARY $CRITERIA_FIELD
+
+{* GLOBAL CONSTANTS ***********************************************************}
+
+GLOBAL CONSTANT BROWSE_FIELD_CLASS        = "STD_BROWSE_FIELD_FORM"
+GLOBAL CONSTANT BROWSE_FIELD_GRID_CLASS   = "STD_BROWSE_FIELD_GRID"
+GLOBAL CONSTANT BROWSE_FIELD_PROMPT_CLASS = "STD_BROWSE_FIELD_PROMPT"
+
+{* LOCAL CONSTANTS ************************************************************}
+
+CONSTANT BROWSE_FIELD_CONTENTS_CLASS = "STD_BROWSE_FIELD_CONTENTS"
+
+CONSTANT LIST_BROWSER_CLASS = "LIST_BROWSER" { Redefinition of class to prevent }
+                                             { compilation loops                }
+CONSTANT LIB_LIST_BROWSER          = "$LIB_LIST_BROWSER"
+CONSTANT DEFINE_LIST_BROWSER_CLASS = "DEFINE_LIST_BROWSER_CLASS"
+
+
+{* VARIABLES ******************************************************************}
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE browse_field_initialise
+
+{
+*	Initialise the library. Declare classes.
+*
+*******************************************************************************}
+
+	IF NOT ( GLOBAL ( "LIBRARY_INITIALISED" ) ) THEN
+
+		criteria_cache_initialise ( )
+		criteria_field_initialise ( )
+		browse_form_initialise ( )
+		std_browse_field_form_class_declare ( )
+		std_browse_field_grid_class_declare ( )
+		std_browse_field_prompt_class_declare ( )
+		std_browse_field_contents_class_declare ( )
+
+		SET GLOBAL "LIBRARY_INITIALISED" TO TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE browse_on_field ( prompt_object )
+
+{
+*	Browse on a table/field combination using the information provided
+*	in the prompt object. Use this information to fill properties on the
+*	prompt object. Return boolean indicating if an entry chosen.
+*
+*******************************************************************************}
+
+	DECLARE viewer ,
+	        mandatory_array
+
+	prompt_object . evaluate_select( )
+	
+	ARRAY_COPY ( mandatory_array, prompt_object . mandatory_array )
+
+	criteria_lib_get_table_implicit ( mandatory_array       ,
+	                                  prompt_object . table )
+	
+{001 \/}
+if (prompt_object . table = "LOCATION") THEN
+
+	DECLARE FORM
+	
+	CREATE OBJECT "STD_FORM" , form
+	
+	form . header = "Locais"
+	form . height = 15
+	form . width = 50
+	form . column = 10
+	form . row = 3
+
+	form . button_style = FORM_BUTTON_OK_CANCEL
+
+	SET NAME "DEFER/"
+	
+	ENABLE WINDOWS
+	
+	SET COMPILE_OPTION DECLARE
+	
+	Declare hierarchy_type, data_tree, array_of_ids, Loc, LocType, Count, LocTypeList, Cont, TYPED, IdLoc
+	
+	ARRAY hierarchy_type
+	
+	ARRAY array_of_ids
+	
+	hierarchy_type [1,1] = "LOCATION"
+	hierarchy_type[1,2] = "IDENTITY"
+	hierarchy_type[1,3] = "PARENT_LOCATION"
+	hierarchy_type[1,4] = "NAME"
+	hierarchy_type[1,5] = "NAME"
+	
+	hierarchy_type [2,1] = "LOCATION"
+	hierarchy_type[2,2] = "IDENTITY"
+	hierarchy_type[2,3] = "PARENT_LOCATION"
+	hierarchy_type[2,4] = "NAME"
+	hierarchy_type[2,5] = "NAME"
+	
+	hierarchy_type [3,1] = "LOCATION"
+	hierarchy_type[3,2] = "IDENTITY"
+	hierarchy_type[3,3] = "PARENT_LOCATION"
+	hierarchy_type[3,4] = "NAME"
+	hierarchy_type[3,5] = "NAME"
+	
+	hierarchy_type [4,1] = "LOCATION"
+	hierarchy_type[4,2] = "IDENTITY"
+	hierarchy_type[4,3] = "PARENT_LOCATION"
+	hierarchy_type[4,4] = "NAME"
+	hierarchy_type[4,5] = "NAME"
+	
+	hierarchy_type [5,1] = "LOCATION"
+	hierarchy_type[5,2] = "IDENTITY"
+	hierarchy_type[5,3] = "PARENT_LOCATION"
+	hierarchy_type[5,4] = "NAME"
+	hierarchy_type[5,5] = "NAME"
+
+	hierarchy_type [6,1] = "LOCATION"
+	hierarchy_type[6,2] = "IDENTITY"
+	hierarchy_type[6,3] = "PARENT_LOCATION"
+	hierarchy_type[6,4] = "NAME"
+	hierarchy_type[6,5] = "NAME"
+
+
+	hierarchy_type [7,1] = "LOCATION"
+	hierarchy_type[7,2] = "IDENTITY"
+	hierarchy_type[7,3] = "PARENT_LOCATION"
+	hierarchy_type[7,4] = "NAME"
+	hierarchy_type[7,5] = "NAME"
+
+	
+	
+	{IF NOTHING WAS TYPED}
+	
+	IF LENGTH(STRIP(PROMPT_OBJECT . TEXT)) = 0 THEN
+	
+		{LocType = SELECT LOCATION_TYPE.IDENTITY WHERE LOCATION_TYPE.REMOVEFLAG = "FALSE"
+	
+   		count = 0
+
+   		WHILE ( LocType  <> EMPTY ) DO
+			
+			count = count + 1
+
+			LocTypeList = SELECT LOCATION_TYPE_LIST.PARENT_LOCATION_TYPE WHERE LOCATION_TYPE = LocType
+			
+			if (LocTypeList = EMPTY) then
+
+				Loc = SELECT LOCATION . IDENTITY WHERE LOCATION_TYPE = LocType
+
+				CONT = 1
+
+				WHILE (LOC <> EMPTY) DO
+
+					array_of_ids [CONT] = LOC
+				
+					CONT = CONT +1
+
+					NEXT LOCATION
+
+					Loc = SELECT LOCATION . IDENTITY
+
+				ENDWHILE
+		
+			ENDIF
+		
+			NEXT LOCATION_TYPE
+		
+			LocType = SELECT LOCATION_TYPE.IDENTITY 
+	
+		ENDWHILE}
+		
+		IdLoc = SELECT LOCATION.IDENTITY WHERE PARENT_LOCATION = "" AND REMOVEFLAG = FALSE
+
+		CONT = 1
+		
+		WHILE (IdLoc <> EMPTY) do
+			
+			array_of_ids [CONT] =  idLoc
+	
+			CONT = CONT +1
+			
+			NEXT LOCATION
+			
+			IdLoc = SELECT LOCATION .IDENTITY
+			
+		ENDWHILE
+
+		
+	ELSE
+	
+		TYPED = PROMPT_OBJECT . TEXT
+		
+		IdLoc = SELECT LOCATION.IDENTITY WHERE LOCATION.NAME = TYPED AND REMOVEFLAG = FALSE
+
+		CONT = 1
+		
+		WHILE (IdLoc <> EMPTY) do
+			
+			array_of_ids [CONT] =  idLoc
+	
+			CONT = CONT +1
+			
+			NEXT LOCATION
+			
+			IdLoc = SELECT LOCATION .IDENTITY
+			
+		ENDWHILE
+		
+	ENDIF
+		
+	set_up_std_prompt_tree_class ()
+	
+	define_hierarchy_tree_class ()
+	define_audit_tree_userinfo_class ()
+	
+	CREATE OBJECT "HIERARCHY_TREE" , data_tree
+	
+	data_tree . row = 1
+	data_tree . column = 1
+	data_tree . width = form . width
+	data_tree . height = form . height
+	
+	data_tree . initialise ( hierarchy_type , "LOCATION" , array_of_ids , TRUE )
+	
+	data_tree . create_tree ()
+	
+	form . add_prompt ( data_tree )
+	
+	form . start_prompt ()
+
+	form . wait_prompt ()
+
+	form . end_prompt ()
+	
+	if form . last_key = 5 then
+		TYPED = PROMPT_OBJECT . TEXT
+		prompt_object . set_text ( TYPED )
+	else
+		prompt_object . set_text ( data_tree . get_text (data_tree . selected) )
+	endif
+	
+	return ( FALSE )
+
+ELSE
+{001 /\}
+	CALL_ROUTINE DEFINE_LIST_BROWSER_CLASS
+	  IN LIBRARY LIB_LIST_BROWSER
+
+
+	CREATE OBJECT LIST_BROWSER_CLASS, viewer
+
+	viewer . start_position = prompt_object . text
+	viewer . display_limit  = GLOBAL ( "BROWSE_MORE_AMOUNT" )
+
+	viewer . set_criteria( prompt_object . evaluated_array )
+	viewer . set_mandatory( mandatory_array )
+	
+	IF NOT OBJECT_CHECK_PROPERTY ( prompt_object, "NAME_FIELD" ) THEN
+		viewer . set_table ( prompt_object . table, prompt_object . field )
+	ELSE
+		IF BLANK ( prompt_object . name_field ) THEN
+			prompt_object . name_field = prompt_object . field
+		ENDIF
+
+		viewer . set_table ( prompt_object . table, prompt_object . name_field )
+	ENDIF
+
+	viewer . go ( ) 
+
+	IF viewer . value <> EMPTY THEN
+
+		prompt_object . set_text ( viewer . text )
+		
+	ENDIF
+
+	RETURN ( viewer . text <> EMPTY )
+	
+ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE browse_on_field_old ( prompt_object )
+
+{
+*	Browse on a table/field combination using the information provided
+*	in the prompt object. Use this information to fill properties on the
+*	prompt object. Return boolean indicating if an entry chosen.
+*
+*******************************************************************************}
+
+	DECLARE browse_form
+
+	browse_field_initialise ( )
+
+	CREATE OBJECT BROWSE_FIELD_CLASS , browse_form
+
+	browse_form . start_value  = prompt_object . text
+
+	array_copy ( browse_form . select_array      ,
+	             prompt_object . mandatory_array )
+
+	array_select_concat ( browse_form . select_array   ,
+	                      prompt_object . select_array )
+
+	browse_form . set_for_field ( prompt_object . table ,
+	                              prompt_object . field )
+
+	browse_form . set_criteria_flag (
+	         size_of_array ( prompt_object . select_array ) > 0 )
+
+	browse_form . start_prompt ( )
+
+	browse_form . wait_prompt ( )
+
+	IF ( browse_form . chose_an_entry ) THEN
+
+		prompt_object . set_text (
+		        SELECT ' prompt_object . table ' .
+		                           ' prompt_object . field '
+		               IN OBJECT browse_form .
+		                          browse_contents [ browse_form . grid .
+		                                                  current_row ] )
+
+	ENDIF
+
+	browse_form . end_prompt ( )
+
+	RETURN ( browse_form . chose_an_entry )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE browse_field_details ( VALUE table       ,
+	                               VALUE field       ,
+	                               VALUE max_width   ,
+	                                     field_names ,
+	                                     titles      ,
+	                                     widths      )
+
+{
+*	For the given table name fill in various details about browse.
+*	Will use the user's criteria and browse setup to decide on the fields
+*	for display, the width of columns and the titles for columns.
+*
+*	Parameters :
+*
+*	table                The table name
+*	field                The field name to use in the first column.
+*	                     If blank don't use it.
+*	                     If unique key of table replace with primary browse
+*	max_width            The width of the screen the details will be
+*	                     displayed in. Used to limit field widths sensibly.
+*	                     0 for don't care.
+*	field_names          Output array of field names.
+*	field_titles         Output array of titles. It is assumed this will be
+*	                     used by a grid therefore it is 2 dimensional.
+*	field_widths         Output array of field widths.
+*
+*******************************************************************************}
+
+	criteria_cache_browse_field_details ( table       ,
+	                                      field       ,
+	                                      max_width   ,
+	                                      field_names ,
+	                                      titles      ,
+	                                      widths      )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_class_declare
+
+{
+*	Declare the browse field class.
+*
+*******************************************************************************}
+
+	DEFINE CLASS BROWSE_FIELD_CLASS
+
+		INHERIT BROWSE_CLASS
+
+		PROPERTIES "START_VALUE"    ,
+		           "TABLE"          ,
+		           "FIELDS"         ,
+		           "SELECT_ARRAY"   ,
+		           "FIELDS_CHANGED" ,
+		           "VERSION_FIELD"  ,
+		           "USES_CRITERIA"  ,
+		           "DISTINCT"
+
+		ACTIONS "END_PROMPT"           ,
+		        "SET_FOR_FIELD"        ,
+		        "SET_CRITERIA_FLAG"    ,
+		        "BROWSE_ENTRY"         ,
+		        "GO_FULL_SCREEN"       ,
+		        "DISPLAY_CRITERIA"     ,
+		        "GET_FIRST"            ,
+		        "GET_NEXT"             ,
+		        "REQUIRES_DISTINCT"
+
+		INITIALISATION
+
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_class_initialisation ( self )
+
+{
+*	Initialisation routine for the browse field class. Ensure that
+*	properties are correctly set up.
+*
+*******************************************************************************}
+
+	ARRAY self . fields
+
+	CREATE OBJECT BROWSE_FIELD_GRID_CLASS , self . grid
+
+	self . prompt_objects [ 1 ] = self . grid
+
+	self . height = 2
+	self . row = self . row - 1
+	self . fields_changed = FALSE
+	self . grid . title_size_top = 1
+	self . grid . height = 2
+
+	self . field_control_buttons = TRUE
+
+	self . help_context = "$BROWSE_FIELD"
+	self . uses_criteria = FALSE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_end_prompt ( self )
+
+{
+*	End a prompt on a field grid.
+*
+*******************************************************************************}
+
+	IF self . fields_changed AND 
+	   NOT GLOBAL ( "COMMIT_VIEW_MODE" ) THEN
+
+		CALL_ROUTINE "BROWSE_FIELD_UPDATE_CONFIGURATION"
+		             IN LIBRARY "$BROWSE_FIELD"
+		             NEW TRANSACTION
+		             USING self
+
+	ENDIF
+
+	object_invoke_class ( self , BROWSE_CLASS , "END_PROMPT" )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_set_for_field (       self  ,
+	                                                     VALUE table ,
+	                                                     VALUE field )
+
+{
+*	Add the array of browse fields to a form. The parameters give the
+*	name of the table and field to browse on.
+*
+*******************************************************************************}
+
+	object_add_table_no_copy ( self , table )
+
+	self . table = table
+
+	browse_field_details ( table                        ,
+	                       field                        ,
+	                       self . grid . width          ,
+	                       self . fields                ,
+	                       self . grid . title_text_top ,
+	                       self . grid . column_size    )
+
+	IF size_of_array ( self . fields ) = 1 THEN
+
+		self . grid . fixed_columns_left = 0
+		self . grid . column_separator [ 1 ] = GRID_SEPARATOR_NONE
+
+	ENDIF
+
+	self . grid . cell_columns = size_of_array ( self . fields )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_set_criteria_flag
+	                                             (       self          ,
+	                                               VALUE uses_criteria )
+
+{
+*	Set the uses_criteria flag.
+*
+*******************************************************************************}
+
+	self . uses_criteria = uses_criteria
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_requires_distinct ( self )
+
+{
+*	Set the distinct property
+*
+*******************************************************************************}
+
+	DECLARE key0_fields, count
+
+	GET_TABLE_DETAILS ' self . table ' , "KEY0_FIELD" , key0_fields
+
+	self . distinct = FALSE
+
+	IF size_of_array ( key0_fields ) > 1 THEN
+
+		count = 1
+
+		WHILE count < size_of_array ( key0_fields ) DO
+
+			IF self . fields [ 1 ] = key0_fields [ count ] THEN
+
+				self . distinct = TRUE
+
+			ENDIF
+
+			count = count + 1
+
+		ENDWHILE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_get_first ( self )
+
+{
+*	Get first action for browse on table/field. Returns whether data has
+*	been returned.
+*
+*******************************************************************************}
+
+	DECLARE descending_flag , remove_field , select_type , last_char ,
+	        more_data , order_type , select_array , add_on_array ,
+	        field_type, found_approval, approval_field, count
+
+	array_copy ( select_array , self . select_array )
+
+	ARRAY add_on_array
+
+	{ Attempt to setup the search etc }
+
+	GET_FIELD_DETAILS ' self . table ' . ' self . fields [ 1 ] ' ,
+	                  "DESCENDING"                               ,
+	                  descending_flag
+
+	GET_FIELD_DETAILS ' self . table ' . ' self . fields [ 1 ] ' ,
+	                  "DATA_TYPE"                                ,
+	                  field_type
+
+	field_type = TOUPPER ( field_type )
+
+	GET_TABLE_DETAILS ' self . table ' ,
+	                  "VERSION_FIELD"  ,
+	                  self . version_field
+
+	IF NOT descending_flag THEN
+		descending_flag = ( self . version_field = self .fields [ 1 ] )
+	ENDIF
+
+	IF BLANK ( self . start_value ) THEN
+
+		select_type = ARRAY_SELECT_GE
+
+	ELSE
+
+		IF ( INDEX ( self . start_value , "%" ) <> 0 ) OR
+		   ( INDEX ( self . start_value , "*" ) <> 0 ) THEN
+			self . start_value = SUBSTITUTE ( self . start_value ,
+			                                  "*"                ,
+			                                  "%"                )
+
+			select_type = ARRAY_SELECT_LIKE
+		ELSEIF descending_flag THEN
+			select_type = ARRAY_SELECT_LE
+
+			IF field_type = "TEXT" THEN
+
+				self . start_value =
+				                   STRIP ( self . start_value )
+				last_char = RIGHTSTRING ( self . start_value ,
+				                          1                  )
+				self . start_value =
+				     LEFTSTRING (
+				          self . start_value                ,
+				          LENGTH ( self . start_value ) - 1 ) :
+				     ASCII ( ORD ( last_char ) + 1 )
+
+			ENDIF
+		ELSE
+			select_type = ARRAY_SELECT_GE
+		ENDIF
+
+	ENDIF
+
+	array_select_add ( add_on_array        ,
+	                   select_type         ,
+	                   self . fields [ 1 ] ,
+	                   self . start_value  )
+
+	{ Handle removed/active behaviour }
+
+	GET_TABLE_DETAILS ' self . table ' ,
+	                  "REMOVE_FIELD"   ,
+	                  remove_field
+
+	IF ( remove_field <> EMPTY ) AND
+	   GLOBAL ( "HIDE_DELETED" ) THEN
+
+		array_select_add ( add_on_array     ,
+		                   ARRAY_SELECT_AND ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+		array_select_add ( add_on_array                ,
+		                   ARRAY_SELECT_EQ             ,
+		                   remove_field                ,
+		                   GLOBAL ( "BROWSE_REMOVED" ) )
+
+	ENDIF
+
+	{ Add approval_status information - if required }
+
+        GET_TABLE_DETAILS 'self . table'    ,
+	                  "APPROVAL_STATUS" ,
+	                  approval_field
+
+	IF ( approval_field <> EMPTY ) AND ( self . version_field = EMPTY ) THEN
+	
+		{ Check if approval_field already used in select_array }
+		
+		found_approval = FALSE
+		count = 1
+
+		WHILE count <= size_of_array ( select_array ) DO
+		
+			IF found_approval THEN
+			
+			ELSEIF select_array [ count, 2 ] = approval_field THEN
+			
+				found_approval = TRUE
+				
+			ENDIF
+			
+			count = count + 1
+			
+		ENDWHILE
+		
+		{ If its not in the select_array - only allow approved records }
+
+		IF NOT found_approval THEN
+		
+			array_select_add ( add_on_array     ,
+					   ARRAY_SELECT_AND ,
+					   EMPTY            ,
+					   EMPTY            )
+
+			array_select_add ( add_on_array    ,
+					   ARRAY_SELECT_EQ ,
+					   approval_field  ,
+					   "A"             )
+
+		ENDIF			
+
+	ENDIF                
+
+	{ Handle ordering }
+
+	IF descending_flag THEN
+		order_type = ARRAY_SELECT_DESCENDING
+	ELSE
+		order_type = ARRAY_SELECT_ASCENDING
+	ENDIF
+
+	array_select_add ( add_on_array        ,
+	                   ARRAY_SELECT_ORDER  ,
+	                   self . fields [ 1 ] ,
+	                   order_type          )
+
+	IF ( self . version_field <> EMPTY )              AND
+	   ( self . version_field <> self .fields [ 1 ] ) THEN
+
+		array_select_add ( add_on_array            ,
+		                   ARRAY_SELECT_ORDER      ,
+		                   self . version_field    ,
+		                   ARRAY_SELECT_DESCENDING )
+
+	ENDIF
+
+	self . requires_distinct ( )
+
+	array_select_concat ( select_array , add_on_array )
+
+	array_select_in_object ( self         ,
+	                         self . table ,
+	                         FALSE        ,
+	                         select_array )
+
+	more_data = ( SELECT ' self . table ' . ' self . fields [ 1 ] '
+	                     IN OBJECT self ) <> EMPTY
+
+	IF ( more_data ) THEN
+		self . browse_entry ( )
+	ELSEIF NOT ( blank ( self . start_value ) ) AND
+	       ( select_type <> ARRAY_SELECT_LIKE ) THEN
+		self . start_value = ""
+		more_data = self . get_first ( )
+	ENDIF
+
+	IF select_type = ARRAY_SELECT_LIKE THEN
+		self . have_first_entry = TRUE
+	ELSE
+		self . have_first_entry = blank ( self . start_value )
+		self . start_value = ""
+	ENDIF
+
+	RETURN ( more_data )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_get_next ( self )
+
+{
+*	Get next action for a browse table. Returns whether data has been
+*	returned.
+*
+*******************************************************************************}
+
+	DECLARE more_data, current_value
+
+	IF self . distinct THEN
+
+		current_value = SELECT ' self . table ' . 
+		                       ' self . fields [ 1 ] '
+		                       IN OBJECT self
+
+		REPEAT
+
+			NEXT ' self . table ' IN OBJECT self
+
+		UNTIL (( SELECT ' self . table ' . 
+		                ' self . fields [ 1 ] '
+		                IN OBJECT self ) <> current_value )
+
+	ELSE
+
+		NEXT ' self . table ' IN OBJECT self
+
+	ENDIF
+
+	more_data = ( SELECT ' self . table ' . ' self . fields [ 1 ] '
+	              IN OBJECT self ) <> EMPTY
+
+	IF ( more_data ) THEN
+		self . browse_entry ( )
+	ENDIF
+
+	RETURN ( more_data )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_browse_entry ( self )
+
+{
+*	Action code to add an entry to a browse table.
+*
+*******************************************************************************}
+
+	DECLARE new_object
+
+	CREATE OBJECT BROWSE_FIELD_CONTENTS_CLASS , new_object
+
+	self . browse_contents [ self . grid . cell_rows + 1 ] = new_object
+
+	object_add_table_from_object ( new_object   ,
+	                               self         ,
+	                               self . table )
+
+	IF self . started THEN
+		self . grid . insert_row ( self . grid . cell_rows + 1 ,
+		                           1                           ,
+		                           GRID_SEPARATOR_NONE         )
+	ELSE
+		self . grid . cell_rows = self . grid . cell_rows + 1
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_go_full_screen ( self )
+
+{
+*	Action code to send the browse form to full screen mode.
+*
+*******************************************************************************}
+
+	DECLARE title , table_title
+
+	self . grid . title_separator_top = GRID_SEPARATOR_BOTH
+
+	IF self . uses_criteria THEN
+		message_fetch ( "SMP_PROMPT_BROWSE_CRITERIA_TITLE" , title )
+	ELSE
+		message_fetch ( "SMP_PROMPT_BROWSE_TITLE" , title )
+	ENDIF
+
+	table_title = criteria_cache_table_title ( self . table )
+
+	message_add_parameter ( title , table_title )
+
+	self . header = message_get_text ( title , 1 )
+
+	object_invoke_class ( self , BROWSE_CLASS , "GO_FULL_SCREEN" )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_form_action_display_criteria ( self )
+
+{
+*	Action to display the select criteria used to create the browse.
+*
+*******************************************************************************}
+
+	criteria_lib_display ( self . select_array              ,
+	                       self . table                     ,
+	                       "$BROWSE_FIELD_CRITERIA_HEADER"  ,
+	                       "$BROWSE_FIELD_NO_CRITERIA"      ,
+	                       "$BROWSE_FIELD_DISPLAY_CRITERIA" )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_grid_class_declare
+
+{
+*	Declare the browse field grid class.
+*
+*******************************************************************************}
+
+	DEFINE CLASS BROWSE_FIELD_GRID_CLASS
+
+		INHERIT BROWSE_GRID_CLASS
+
+		ACTIONS "PROMPT_CELL"  ,
+		        "DISPLAY_CELL" ,
+		        "INSERT"       ,
+		        "REMOVE"
+
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_grid_action_prompt_cell (       self        ,
+	                                                   VALUE cell_column ,
+	                                                   VALUE cell_row    ,
+	                                                         window      ,
+	                                                   VALUE column      ,
+	                                                   VALUE row         ,
+	                                                   VALUE cell_width  ,
+	                                                   VALUE cell_height )
+
+{
+*	Prompt for a cell in the browse grid.
+*
+*******************************************************************************}
+
+	DECLARE table , field , object , val , key0_val , key0_fields
+
+	table = self . parent_prompt . table
+	field = self . parent_prompt . fields [ cell_column ]
+	object = self . parent_prompt . browse_contents [ cell_row ]
+
+	val = SELECT ' table ' . ' field '
+	             IN OBJECT object
+
+	GET_TABLE_DETAILS ' table ' , "KEY0_FIELD" , key0_fields
+
+	key0_val = SELECT ' table ' . ' key0_fields [ 1 ] '
+	                  IN OBJECT object
+
+	PROMPT FOR val
+	       AT column , row
+	       IN WINDOW window
+	       CLASS BROWSE_FIELD_PROMPT_CLASS
+	       WITH ( width         = cell_width           ,
+	              length        = LENGTH ( val )       ,
+	              display_only  = TRUE                 ,
+	              table         = table                ,
+	              field         = field                ,
+	              key0          = key0_val             ,
+	              parent_prompt = self . parent_prompt )
+
+	IF ( LASTKEY = "RETURN" ) THEN
+		SET GLOBAL "LASTKEY" TO "DO"
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_grid_action_display_cell (       self        ,
+	                                                    VALUE cell_column ,
+	                                                    VALUE cell_row    ,
+	                                                          window      ,
+	                                                    VALUE column      ,
+	                                                    VALUE row         ,
+	                                                    VALUE cell_width  ,
+	                                                    VALUE cell_height )
+
+{
+*	Display a cell in the browse grid.
+*
+*******************************************************************************}
+
+	DECLARE table , field , object , val
+
+	table = self . parent_prompt . table
+	field = self . parent_prompt . fields [ cell_column ]
+	object = self . parent_prompt . browse_contents [ cell_row ]
+
+	val = SELECT ' table ' . ' field '
+	             IN OBJECT object
+
+	DISPLAY val
+	       AT column , row
+	       TO column + cell_width - 1
+	       IN WINDOW window
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE browse_field_insert_prompt ( self  ,
+	                                     field )
+
+{
+*	Prompt for the field name to insert.
+*
+*******************************************************************************}
+
+	DECLARE form , the_prompt , window_width , prompt_message ,
+	        header_message , footer_message , chose_one , the_display
+
+	prompt_message = GET_USER_MESSAGE ( "$BROWSE_FIELD_INSERT_PROMPT" , 1 )
+	header_message = GET_USER_MESSAGE ( "$BROWSE_FIELD_INSERT_HEADER" , 1 )
+	footer_message = GET_USER_MESSAGE ( "$BROWSE_FIELD_INSERT_FOOTER" , 1 )
+
+	window_width = LENGTH ( prompt_message ) + 21
+	window_width = find_max_number ( window_width              ,
+	                                 LENGTH ( header_message ) )
+	window_width = find_max_number ( window_width              ,
+	                                 LENGTH ( footer_message ) )
+
+	PROMPT OBJECT form
+	       CLASS PROMPT_CLASS_FORM
+	       WITH ( column       = ( GLOBAL ( "SCREEN_WIDTH" ) -
+	                                                 window_width ) / 2 ,
+	              row          = GLOBAL ( "SCREEN_HEIGHT" ) / 2         ,
+	              width        = window_width                           ,
+	              height       = 1                                      ,
+	              border       = TRUE                                   ,
+	              header       = header_message                         ,
+	              footer       = footer_message                         ,
+		      proportional = TRUE				    ,
+	              help_context = "$BROWSE_FIELD_INSERT"                 )
+
+	PROMPT OBJECT the_display
+		FORMAT TEXT
+		WITH ( row    = 1	                  ,
+		       column = 1	                  ,
+		       width  = LENGTH ( prompt_message ) ,
+		       value  = prompt_message            )
+
+	form . add_display ( the_display )
+
+	PROMPT OBJECT the_prompt
+	       CLASS CRITERIA_FIELD_CLASS
+	       AT LENGTH ( prompt_message ) + 2 , 1
+	       TO window_width - 1
+	       WITH ( always_validate = TRUE                             ,
+	              table           = self . parent_prompt . table     )
+
+	form . add_prompt ( the_prompt )
+
+	IF global ( "TERMTYPE" ) = "GUI" THEN
+
+		form . width = 36 { About enough room for the buttons and title}
+		form . height = 2
+
+		the_display . column = 2
+		the_display . bold = TRUE
+
+		the_prompt . column = 2
+		the_prompt . row = 2
+		the_prompt . width = 30
+
+                form . add_frame ( "" , 1 , 1 , 2 , form . width ) 
+		
+	ENDIF
+
+	form . start_prompt ( )
+	form . wait_prompt ( )
+
+	IF ( form . get_lastkey ( ) <> "EXIT" ) AND
+	   ( NOT blank ( the_prompt . value ) ) THEN
+
+		field = the_prompt . value
+		chose_one = TRUE
+
+	ELSE
+
+		chose_one = FALSE
+
+	ENDIF
+
+	form . end_prompt ( )
+
+	RETURN ( chose_one )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE browse_field_update_configuration ( self )
+
+{
+*	Update the configuration record holding the columns to browse on.
+*	Called in a new report context to preserve locks.
+*
+*******************************************************************************}
+
+	DECLARE new_list , loop , status
+
+	new_list = ""
+	loop = 1
+	WHILE loop <= size_of_array ( self . fields ) DO
+
+		new_list = new_list : STRIP ( self . fields [ loop ] ) : " "
+		loop = loop + 1
+
+	ENDWHILE
+
+	new_list = STRIP ( new_list )
+
+	ROLLBACK
+
+	START WRITE TRANSACTION "Update browse configuration"
+
+	status = global_write ( "BROWSE_" : self . table , new_list )
+
+	COMMIT
+
+	IF status <> EMPTY THEN
+		flash_message ( status , TRUE )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_grid_action_insert ( self )
+
+{
+*	The insert key has been pressed on the grid. Allow user to add a column.
+*
+*******************************************************************************}
+
+	DECLARE new_field , form , column , col_width , max_width
+
+	IF ( browse_field_insert_prompt ( self , new_field ) ) THEN
+
+		form = self . parent_prompt
+		column = self . current_column + 1
+
+		array_insert_slice ( form . fields , 1 , column )
+		form . fields [ column ] = new_field
+
+		col_width = criteria_cache_field_width ( form . table ,
+		                                         new_field    )
+
+		max_width = self . width - self . column_size [ 1 ] - 1
+
+		IF col_width > max_width THEN
+			col_width = max_width
+		ENDIF
+
+		self . insert_column ( column               ,
+		                       col_width            ,
+		                       GRID_SEPARATOR_BLANK )
+
+		self . title_text_top [ column , 1 ] =
+		                   criteria_cache_field_title ( form . table ,
+		                                                new_field    )
+
+		self . redisplay_title_top ( column )
+
+		IF ( self . cell_columns = 2 ) THEN
+			self . fixed_columns_left = 1
+			self . column_separator [ 1 ] = GRID_SEPARATOR_BOTH
+			self . column_separator [ 2 ] = GRID_SEPARATOR_BLANK
+			screen_begin_update ( )
+			self . rebuild ( )
+			screen_end_update ( )
+		ENDIF
+
+		self . set_position ( column , self . current_row )
+
+		form . fields_changed = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_grid_action_remove ( self )
+
+{
+*	The remove key has been pressed on the grid. Remove a column.
+*
+*******************************************************************************}
+
+	DECLARE form , column
+
+	IF ( self . current_column > self . fixed_columns_left ) AND
+	   ( self . cell_columns > 1 )                           THEN
+
+		IF ( confirm_with_message ( "$BROWSE_FIELD_REMOVE" ) ) THEN
+
+			form = self . parent_prompt
+			column = self . current_column
+
+			array_remove_slice ( form . fields , 1 , column )
+			self . remove_column ( column )
+
+			IF ( self . cell_columns = 1 ) THEN
+				self . fixed_columns_left = 0
+				self . column_separator [ 1 ] =
+				                          GRID_SEPARATOR_NONE
+				screen_begin_update ( )
+				self . rebuild ( )
+				screen_end_update ( )
+			ENDIF
+			form . fields_changed = TRUE
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_prompt_class_declare
+
+{
+*	Declare the browse field prompt class. This is inherited from the
+*	browse prompt class and the field prompt class to allow for
+*	assynchronous loading as well as use of the F9 key.
+*
+*******************************************************************************}
+
+	DEFINE CLASS BROWSE_FIELD_PROMPT_CLASS
+
+		INHERIT BROWSE_PROMPT_CLASS , PROMPT_CLASS_FIELD
+
+		PROPERTIES "KEY0"
+
+		ACTIONS "BUILD"    ,
+		        "CRITERIA"
+
+		INITIALISATION
+
+	END CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_prompt_class_initialisation ( self )
+
+{
+*	Initialisation routine for the browse field prompt class. Ensure that
+*	properties are correctly set up.
+*
+*******************************************************************************}
+
+	self . other_class = BROWSE_PROMPT_CLASS
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_prompt_action_build ( self )
+
+{
+*	Build key action for a prompt for value in a browse field form.
+*	Ensure that table and field are set to useful values.
+*
+*******************************************************************************}
+
+	DECLARE link_table , link_field , key0_array , old_text , old_table ,
+	        old_field , old_display_mode
+
+	old_table = self . table
+	old_field = self . field
+
+	GET_FIELD_DETAILS ' self . table ' . ' self . field ' ,
+	                  "LINK_TABLE"                        ,
+	                  link_table
+
+	GET_FIELD_DETAILS ' self . table ' . ' self . field ' ,
+	                  "LINK_FIELD"                        ,
+	                  link_field
+
+	GET_TABLE_DETAILS ' self . table ' , "KEY0_FIELD" , key0_array
+
+	old_display_mode = GLOBAL ( "DISPLAY_MODE" )
+
+	SET DISPLAY TRUE
+
+	IF ( link_field <> EMPTY ) THEN
+		self . table = link_table
+		self . field = link_field
+
+		object_invoke_class ( self               ,
+		                      PROMPT_CLASS_FIELD ,
+		                      "BUILD"            )
+	ELSE
+		self . field = key0_array [ 1 ]
+		window_begin_update ( self . window )
+
+		old_text = self . text
+		self . text = self . key0
+
+		object_invoke_class ( self               ,
+		                      PROMPT_CLASS_FIELD ,
+		                      "BUILD"            )
+
+		self . text = old_text
+
+		self . repaste ( )
+		window_end_update ( self . window )
+
+	ENDIF
+
+	SET DISPLAY old_display_mode
+
+	self . table = old_table
+	self . field = old_field
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_prompt_action_criteria ( self )
+
+{
+*	Criteria key action for the prompt. Display the criteria used for the
+*	browse.
+*
+*******************************************************************************}
+
+	self . parent_prompt . display_criteria ( )
+
+	self . repaste ( )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE std_browse_field_contents_class_declare
+
+{
+*	Declare the browse field contents class. This is simply used to hold
+*	a record from the database.
+*
+*******************************************************************************}
+
+	DEFINE CLASS BROWSE_FIELD_CONTENTS_CLASS
+
+	END CLASS
+
+ENDROUTINE

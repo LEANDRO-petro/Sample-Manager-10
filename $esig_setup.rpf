@@ -1,0 +1,5668 @@
+{*******************************************************************************
+*
+* Module Name   : $ESIG_SETUP
+*
+* Purpose       : Customise Electronic Signature Options
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_BROWSE
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_GLOBAL
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_WINDOW
+JOIN STANDARD_LIBRARY STD_USER_LOGIN
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $PROMPT_TREE
+JOIN LIBRARY $PROMPT_LIST
+JOIN LIBRARY $PROMPT_SPLIT
+JOIN LIBRARY $OPTION_CONFIG
+JOIN LIBRARY $ESIG_ACCESS_LOG
+JOIN LIBRARY $ESIG_SIGNING_LOG
+JOIN LIBRARY $USER_IMAGE_LIST
+JOIN LIBRARY $LIB_LIST_CHOOSER
+
+SET NOTPROTECTED
+SET NAME "DEFER/"
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+
+{* Global Constants ***********************************************************}
+
+GLOBAL CONSTANT IP_ADDRESS_AUTH_CLASS         = "IP_AUTH"
+GLOBAL CONSTANT IP_PROMPT_CLASS               = "IP_PROMPT"
+
+GLOBAL CONSTANT MENU_EDITOR_CLASS             = "MENU_EDITOR"
+GLOBAL CONSTANT MENU_ITEM_CLASS               = "MENU_ITEM"
+GLOBAL CONSTANT MENU_COLLECTION_CLASS         = "MENU_COLLECTION"
+
+GLOBAL CONSTANT TABLE_ESIG_CLASS              = "TABLE_ESIG_EDITOR"
+GLOBAL CONSTANT TABLE_ESIG_LIST_CHOOSER_CLASS = "TABLE_ESIG_LIST_CHOOSER"
+
+GLOBAL CONSTANT TIMEOUT_CLASS                 = "TIMEOUT"
+
+GLOBAL CONSTANT PASSWORD_CLASS                = "PASSWORD"
+GLOBAL CONSTANT EXP_INTERVAL_CLASS            = "EXP_INTERVAL"
+
+GLOBAL CONSTANT AUTHORISE_CLASS               = "ESIG_AUTHORISE"
+GLOBAL CONSTANT AUTHORISE_LIST_CHOOSER_CLASS  = "ESIG_AUTHORISE_LIST_CHOOSER"
+
+GLOBAL CONSTANT LAYOUT_CLASS                  = "ESIG_LAYOUT"
+GLOBAL CONSTANT LAYOUT_LIST_CHOOSER_CLASS     = "ESIG_LAYOUT_LIST_CHOOSER"
+
+GLOBAL CONSTANT PROXY_LOGIN_CLASS             = "PROXY_LOGIN"
+
+{* Local Constants ************************************************************}
+
+{ Menu Editor }
+CONSTANT ESIG_SETUP_BASE_MENU = "SYSTEM"
+CONSTANT NOTHING              = ""
+CONSTANT SEPARATOR_TEXT       = "--------------------"
+
+{ IP Prompt / IP Auth }
+CONSTANT IP_PROMPT_HEIGHT = 4
+CONSTANT IP_PROMPT_WIDTH  = 45
+CONSTANT DOT              = "."
+CONSTANT BUTTON_COLUMN    = 35
+CONSTANT BUTTON_WIDTH     = 10
+
+CONSTANT SYSTEM_IP_CONFIG_ITEM = "SYSTEM_IP_ADDRESS"
+
+{ Authorize }
+CONSTANT ESIG_GLOBAL_PREFIX = "ESIG_AUTH_"
+CONSTANT ESIG_REASON_PREFIX = "ESIG_AUTH_R_"
+
+{ Timeout }
+CONSTANT TIMEOUT_MINIMUM  = 0
+CONSTANT TIMEOUT_MAXIMUM  = 3600
+
+{ Checksum fields }
+CONSTANT CHECKSUM_ICON    = 9
+CONSTANT CHECKSUM_NO_ICON = 200
+
+{ Tab order }
+
+CONSTANT TAB_IP_AUTH            = 1
+CONSTANT TAB_MENU_EDITOR        = 2
+CONSTANT TAB_TABLE_ESIG_EDITOR  = 3
+CONSTANT TAB_AUTHORISE_EDITOR   = 4
+CONSTANT TAB_TIMEOUT            = 5
+CONSTANT TAB_PASSWORD           = 6
+
+{* Main Code ******************************************************************}
+
+IF ( GLOBAL ( "TERMTYPE" ) = "GUI" ) THEN
+        setup_esigs ( )
+ELSE
+        fatal_error ( "$ESIG_SETUP : " : get_user_message ( "SMP_SERVER_NOT_CONNECTED" , 1 ))
+ENDIF
+
+EXIT
+
+{* Start Of Routines **********************************************************}
+
+{******************************************************************************}
+
+        ROUTINE setup_esigs
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE options ,
+	        ip_auth ,
+	        menu_editor ,
+	        table_esig_editor ,
+	        authorise_editor ,
+	        timeout ,
+	        password ,
+	        layout ,
+	        proxy ,
+	        button
+
+	set_up_std_prompt_list_class ( )
+        set_up_std_prompt_split_class ( )
+        set_up_std_prompt_tree_class ( )
+	set_up_std_user_image_list_class ( )
+	define_list_chooser_class ( )
+
+        set_up_option_configure_class ( )
+        CREATE OBJECT OPTION_CONFIGURE_CLASS , options
+
+        options . header = get_user_message ( "ESIG_SETUP_HEADER" , 1 )
+
+
+ 	set_up_ip_auth_class ( )
+        CREATE OBJECT IP_ADDRESS_AUTH_CLASS , ip_auth
+        options . tab . set_size ( ip_auth )
+        options . tab . add_form ( ip_auth )
+
+        set_up_menu_editor_class ( )
+        CREATE OBJECT MENU_EDITOR_CLASS , menu_editor
+        options . tab . set_size ( menu_editor )
+        options . tab . add_form ( menu_editor )
+
+        set_up_table_esig_class ( )
+        CREATE OBJECT TABLE_ESIG_CLASS , table_esig_editor
+        options . tab . set_size ( table_esig_editor )
+        options . tab . add_form ( table_esig_editor )
+
+        set_up_authorise_class ( )
+        CREATE OBJECT AUTHORISE_CLASS , authorise_editor
+        options . tab . set_size ( authorise_editor )
+        options . tab . add_form ( authorise_editor )
+
+        set_up_timeout_class ( )
+        CREATE OBJECT TIMEOUT_CLASS , timeout
+        options . tab . set_size ( timeout )
+        options . tab . add_form ( timeout )
+
+        set_up_password_class ( )
+        CREATE OBJECT PASSWORD_CLASS , password
+        options . tab . set_size ( password )
+        options . tab . add_form ( password )
+
+        set_up_layout_class ( )
+        CREATE OBJECT LAYOUT_CLASS , layout
+        options . tab . set_size ( layout )
+        options . tab . add_form ( layout )
+
+	set_up_proxy_login_class ( )
+        CREATE OBJECT PROXY_LOGIN_CLASS , proxy
+        options . tab . set_size ( proxy )
+        options . tab . add_form ( proxy )
+
+        CREATE OBJECT "STD_PROMPT_BUTTON" , button
+        button . row                 = options . height - 1
+        button . column              = 2
+        button . mouse_click_routine = "launch_access_log"
+        button . caption             = get_user_message ( "ESIG_SETUP_LOG" , 1 )
+        button . width               = length ( button . caption )
+
+        options . add_prompt ( button )
+
+        CREATE OBJECT "STD_PROMPT_BUTTON" , button
+        button . row                 = options . height - 1
+        button . column              = 3 + length ( get_user_message ( "ESIG_SETUP_LOG" , 1 ))
+        button . mouse_click_routine = "launch_signing_log"
+        button . caption             = get_user_message ( "ESIG_SETUP_SIGNING_LOG" , 1 )
+        button . width               = length ( button . caption )
+
+        options . add_prompt ( button )
+
+        options . start_prompt ( )
+
+	options . tab . forms [ TAB_IP_AUTH  ] . read_ip_addresses ( )
+        options . tab . forms [ TAB_PASSWORD ] . read_expiry_dates ( )
+
+        IF options . wait_and_end_prompt ( ) THEN
+	        global_flush ( )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE launch_access_log ( button )
+
+{
+*
+*
+*******************************************************************************}
+
+        view_access_log ( )
+
+        { Global routine in $ESIG_ACCESS_LOG }
+
+ENDROUTINE { launch_access_log }
+
+{******************************************************************************}
+
+        ROUTINE launch_signing_log ( button )
+
+{
+*
+*
+*******************************************************************************}
+
+        esig_signing_log_viewer ( )
+
+        { Global routine in $ESIG_SIGNING_LOG }
+
+ENDROUTINE { launch_access_log }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_ip_auth_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS IP_ADDRESS_AUTH_CLASS
+
+        INHERIT OPTION_TAB_FORM_CLASS
+        INITIALISATION
+
+        PROPERTIES
+                "auth_list"          , { The List of authorised IP addresses   }
+                "unauth_list"        , { The List of unauthorised IP addresses }
+                "address_list"       , { Array holding IP addresses            }
+                "system_ip_prompt"   , { The number of the system ip prompt    }
+                "icon_list"            { List of icons used for IP lists       }
+        ACTIONS
+                "add_ip_address"     , { Add an ip address to one of the lists }
+                "edit_ip_address"    , { Edit an ip address                    }
+                "remove_ip_address"  , { Remove an ip address                  }
+                "swap_ip_address"    , { More the ip to the other list         }
+                "read_ip_addresses"  , { Read the ip address information       }
+                "get_ip_array_number", { Find the ip address in the array      }
+                "commit"               { Commit form data to database          } 
+
+        END CLASS { Ip Address Authorisation Class }
+
+ENDROUTINE { set_up_ip_auth_class }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_class_initialisation ( ip_auth )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE button_details , button_prompt , count , message_text ,
+                system_ip_address
+
+        ARRAY button_details ARRAYSIZE ( 6 , 4 )
+
+        button_details [ 1 , 1 ] = "add_ip_address"
+        button_details [ 2 , 1 ] = "edit_ip_address"
+        button_details [ 3 , 1 ] = "remove_ip_address"
+        button_details [ 4 , 1 ] = "add_ip_address"
+        button_details [ 5 , 1 ] = "edit_ip_address"
+        button_details [ 6 , 1 ] = "remove_ip_address"
+        button_details [ 1 , 2 ] = 1
+        button_details [ 2 , 2 ] = 1
+        button_details [ 3 , 2 ] = 1
+        button_details [ 4 , 2 ] = 2
+        button_details [ 5 , 2 ] = 2
+        button_details [ 6 , 2 ] = 2
+        button_details [ 1 , 3 ] = 5
+        button_details [ 2 , 3 ] = 20
+        button_details [ 3 , 3 ] = 35
+        button_details [ 4 , 3 ] = 55
+        button_details [ 5 , 3 ] = 70
+        button_details [ 6 , 3 ] = 85
+        button_details [ 1 , 4 ] = get_user_message ( "ESIG_SETUP_ADD" , 1 )
+        button_details [ 2 , 4 ] = get_user_message ( "ESIG_SETUP_EDIT" , 1 )
+        button_details [ 3 , 4 ] = get_user_message ( "ESIG_SETUP_REMOVE" , 1 )
+        button_details [ 4 , 4 ] = get_user_message ( "ESIG_SETUP_ADD" , 1 )
+        button_details [ 5 , 4 ] = get_user_message ( "ESIG_SETUP_EDIT" , 1 )
+        button_details [ 6 , 4 ] = get_user_message ( "ESIG_SETUP_REMOVE" , 1 )
+
+        ip_auth . header = get_user_message ( "ESIG_SETUP_IP_ADDRESS" , 1 )
+
+        ip_auth . add_frame ( "", 1, 3, 10, 49 )
+
+        CREATE OBJECT USER_IMAGE_LIST_CLASS, ip_auth . icon_list
+
+        ip_auth . icon_list . Add_Resource ( "Icon\computer.ico" )
+        ip_auth . icon_list . Add_Resource_Overlay ( "Icon\computer.ico"       ,
+                                                     "Icon\cancel_overlay.ico" )
+
+        CREATE OBJECT PROMPT_LIST_CLASS, ip_auth . auth_list
+
+        ip_auth . auth_list . row                  = 3
+        ip_auth . auth_list . column               = 2
+        ip_auth . auth_list . width                = 47
+        ip_auth . auth_list . height               = 8
+        ip_auth . auth_list . user_info            = 1
+        ip_auth . auth_list . right_mouse_routine  = "ip_auth_list_right_mouse"
+        ip_auth . auth_list . double_click_routine = "ip_auth_list_double_click"
+        ip_auth . auth_list . style                = ip_auth . auth_list . style + LIST_STYLE_SINGLESEL
+
+        ip_auth . auth_list . add_column ( get_user_message ( "ESIG_SETUP_IP_AUTH"     , 1 ) , 21 )
+        ip_auth . auth_list . add_column ( get_user_message ( "ESIG_SETUP_IP_SESSIONS" , 1 ) ,  8 )
+
+        ip_auth . auth_list . set_image_resource ( ip_auth . icon_list . GetListID ( ), 0 )
+
+        ip_auth . add_prompt ( ip_auth . auth_list )
+
+        ip_auth . add_frame ( "", 51, 3, 10, 49 )
+
+        CREATE OBJECT PROMPT_LIST_CLASS , ip_auth . unauth_list
+
+        ip_auth . unauth_list . row                  = 3
+        ip_auth . unauth_list . column               = 52
+        ip_auth . unauth_list . width                = 47
+        ip_auth . unauth_list . height               = 8
+        ip_auth . unauth_list . user_info            = 2
+        ip_auth . unauth_list . right_mouse_routine  = "ip_auth_list_right_mouse"
+        ip_auth . unauth_list . double_click_routine = "ip_auth_list_double_click"
+        ip_auth . unauth_list . style                = ip_auth . unauth_list . style + LIST_STYLE_SINGLESEL
+
+        ip_auth . unauth_list . add_column ( get_user_message ( "ESIG_SETUP_IP_UNAUTH" , 1 ) , 21 )
+
+        ip_auth . unauth_list . set_image_resource ( ip_auth . icon_list . GetListID ( ), 0 )
+
+        ip_auth . add_prompt ( ip_auth . unauth_list )
+
+        count = 0
+        REPEAT
+                count = count + 1
+
+                CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+                        button_prompt . row                 = 12.2
+                        button_prompt . width               = BUTTON_WIDTH
+                        button_prompt . mouse_click_routine = button_details [ count , 1 ]
+                        button_prompt . user_info           = button_details [ count , 2 ]
+                        button_prompt . column              = button_details [ count , 3 ]
+                        button_prompt . caption             = button_details [ count , 4 ]
+                        button_prompt . character_sized     = TRUE
+
+                ip_auth . add_prompt ( button_prompt )
+
+        UNTIL count = 6
+
+        message_text = get_user_message ( "ESIG_SETUP_IP_SYSTEM_ALWAYS" , 1 )
+
+        {ip_auth . add_frame ( "", 1, 0, 0, 99 )        }
+                
+        ip_auth . add_display ( message_text            ,
+                                2                       ,
+                                0.7                     ,
+                                PROMPT_RENDITION_NORMAL )
+
+        PROMPT OBJECT system_ip_address
+                BROWSE ON DISPLAY
+                WITH ( value   = GLOBAL ( SYSTEM_IP_CONFIG_ITEM ),
+                       row     = 0.7                             ,
+                       column  = 2 + length ( message_text )     ,
+                       width   = 15                              ,
+                       lowered = TRUE                            )
+
+        ip_auth . system_ip_prompt = ip_auth . add_prompt ( system_ip_address )
+
+        CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+        
+        button_prompt . row                 = 0.7
+        button_prompt . column              = 19 + length ( message_text )
+        button_prompt . mouse_click_routine = "edit_system_ip_address"
+        button_prompt . user_info           = ip_auth . system_ip_prompt
+
+        message_text = get_user_message ( "ESIG_SETUP_IP_CHANGE_SYSTEM" , 1 )
+
+        button_prompt . width               = length ( message_text ) + 2
+        button_prompt . caption             = message_text
+
+        ip_auth . add_prompt ( button_prompt )
+
+        ARRAY ip_auth . address_list ARRAYSIZE ( 0 , 4 )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_read_ip_addresses ( ip_auth )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE ip_address , allowed , max_sessions , count
+        count = 0
+
+        ip_auth . auth_list . removeallitems ( )
+        ip_auth . unauth_list . removeallitems ( )
+
+        ip_address = SELECT client_access . ip_address
+                     WHERE ip_address <> EMPTY
+
+        WHILE ( ip_address <> EMPTY ) DO
+
+                allowed = SELECT client_access . access_mode
+                max_sessions = SELECT client_access . max_sessions
+
+                count = count + 1
+                ip_auth . address_list [ count , 1 ] = ip_address
+                ip_auth . address_list [ count , 2 ] = allowed
+                ip_auth . address_list [ count , 3 ] = max_sessions
+
+                IF allowed THEN
+
+                        ip_auth . auth_list . insert_item ( ip_address , 0 )
+                        ip_auth . auth_list . set_item ( 2 , max_sessions )
+                ELSE
+                        ip_auth . unauth_list . insert_item ( ip_address , 1 )
+                ENDIF
+
+                NEXT client_access
+
+                ip_address = SELECT client_access . ip_address
+
+        ENDWHILE
+
+ENDROUTINE { read_ip_addresses }
+
+{******************************************************************************}
+
+        ROUTINE add_ip_address ( add_button )
+
+{
+*
+*
+*******************************************************************************}
+        
+        add_button . parent_prompt . add_ip_address ( add_button . user_info )
+
+ENDROUTINE { add_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_add_ip_address ( ip_auth , list_number )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE ip_address_info ,
+                add_pos ,
+                the_list ,
+                array_num ,
+                worked,
+                icon_num
+
+        ARRAY ip_address_info ARRAYSIZE ( 2 )
+
+        IF list_number = 1 THEN
+
+                worked = prompt_for_ip ( ip_address_info, "" , 0 )
+                the_list = ip_auth . auth_list
+                icon_num = 0
+
+        ELSE
+
+                worked = prompt_for_ip ( ip_address_info, "" , -1 )
+                the_list = ip_auth . unauth_list
+                icon_num = 1
+
+        ENDIF
+
+        IF worked THEN
+
+                array_num = ip_auth . get_ip_array_number ( ip_address_info [ 1 ] )
+                
+                IF array_num <> 0 THEN
+                
+                        IF ip_auth . address_list [ array_num , 4 ] <> "DELETED" THEN
+
+                                flash_message ( get_user_message ( "ESIG_SETUP_IP_ALREADY" , 1 ),
+                                                TRUE                                            )
+                                ip_address_info [ 1 ] = EMPTY
+                                
+                        ENDIF
+
+                ENDIF
+
+                IF ( ip_address_info [ 1 ] <> EMPTY ) THEN
+
+                        the_list . insert_item ( ip_address_info [ 1 ] , icon_num )
+
+                        IF ip_address_info [ 2 ] <> EMPTY THEN
+
+                                the_list . set_item ( 2 , ip_address_info [ 2 ] )
+
+                        ENDIF
+
+                        add_pos = size_of_array ( ip_auth . address_list ) + 1
+
+                        ip_auth . address_list [ add_pos , 1 ] = ip_address_info [ 1 ]
+
+                        IF list_number = 1 THEN
+
+                                ip_auth . address_list [ add_pos , 2 ] = TRUE
+                                ip_auth . address_list [ add_pos , 3 ] = ip_address_info [ 2 ]
+
+                        ELSE
+
+                                ip_auth . address_list [ add_pos , 2 ] = FALSE
+                                ip_auth . address_list [ add_pos , 3 ] = -1
+
+                        ENDIF
+
+                        IF ip_auth . address_list [ add_pos , 4 ] = EMPTY THEN
+                                ip_auth . address_list [ add_pos , 4 ] = "ADDED"
+                        ELSE
+                                ip_auth . address_list [ add_pos , 4 ] = 
+                                     ip_auth . address_list [ add_pos , 1 ]
+                        ENDIF
+                        
+                        ip_auth . is_altered = TRUE
+
+                ENDIF
+
+        ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE edit_system_ip_address ( edit_button )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE system_ip_address, ip_address_info
+
+        system_ip_address = edit_button .
+                             parent_prompt .
+                              prompt_objects [ edit_button . user_info ] .
+                               value
+
+        IF prompt_for_ip ( ip_address_info, system_ip_address , -1 ) THEN
+        
+                IF ip_address_info [ 1 ] <> EMPTY THEN
+        
+                        edit_button .
+                         parent_prompt .
+                          prompt_objects [ edit_button . user_info ] .
+                           set_text ( ip_address_info [ 1 ] )
+                           
+                        edit_button . parent_prompt . is_altered = TRUE
+
+                ELSE
+                
+                        flash_message ( "BAD_IP_ADDRESS" , TRUE )
+                        
+                ENDIF
+                   
+        ENDIF
+        
+ENDROUTINE { edit_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE edit_ip_address ( edit_button )
+
+{
+*
+*
+*******************************************************************************}
+
+        edit_button . parent_prompt . edit_ip_address ( edit_button . user_info )
+
+ENDROUTINE { edit_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_edit_ip_address ( ip_auth , list_number )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE the_list ,
+                temp ,
+                item ,
+                array_num ,
+                orig_array_num ,
+                sessions ,
+                ip_address_info ,
+                continue ,
+                changes_made
+
+        ARRAY ip_address_info ARRAYSIZE ( 2 )
+
+        IF list_number = 1 THEN
+
+                the_list = ip_auth . auth_list
+
+        ELSE
+                the_list = ip_auth . unauth_list
+
+        ENDIF
+
+        item = the_list . get_first_selected ( temp )
+
+        IF item <> EMPTY THEN
+
+                IF list_number = 1 THEN
+
+                        sessions = the_list . get_item ( item , 1 )
+
+                ENDIF
+
+                the_list . current_item = item
+
+                orig_array_num = ip_auth . get_ip_array_number ( temp )
+
+                IF list_number = 1 THEN
+
+                        continue = prompt_for_ip ( ip_address_info, temp , sessions )
+
+                ELSE
+
+                        continue = prompt_for_ip ( ip_address_info, temp , -1 )
+
+                ENDIF
+
+                IF continue THEN
+
+                        changes_made = FALSE
+
+                        { check for duplicates }
+                        array_num = ip_auth . get_ip_array_number ( ip_address_info [ 1 ] )
+
+                        IF ( ip_address_info [ 1 ] = EMPTY ) THEN
+
+                                flash_message ( get_user_message ( "ESIG_SETUP_IP_INVALID" , 1 ) , TRUE )
+                                list_number = 0
+
+                        ELSEIF ( array_num <> 0 ) THEN
+
+                                IF array_num <> orig_array_num THEN
+
+                                        flash_message ( get_user_message ( "ESIG_SETUP_IP_ALREADY" , 1 ) , TRUE )
+                                        list_number = 0
+
+                                ENDIF
+
+                        ELSE
+
+                                the_list . set_item ( 1 , ip_address_info [ 1 ] )
+                                ip_auth . address_list [ orig_array_num , 1 ] = ip_address_info [ 1 ]
+
+                                IF ip_auth . address_list [ orig_array_num , 4 ] = EMPTY THEN
+
+                                        ip_auth . address_list [ orig_array_num , 4 ] = temp
+
+                                ENDIF
+
+                                changes_made = TRUE
+                                ip_auth . is_altered = TRUE
+
+                        ENDIF
+
+                        IF list_number = 1 THEN
+
+                                ip_address_info [ 2 ] = NUMBER_TO_TEXT ( ip_address_info [ 2 ] , "9999" ) 
+
+                                IF ip_auth . address_list [ orig_array_num, 3 ] <> ip_address_info [ 2 ] THEN
+
+                                        the_list . set_item ( 2, ip_address_info [ 2 ] )
+                                        ip_auth . address_list [ orig_array_num , 3 ] = ip_address_info [ 2 ]
+
+                                        IF ip_auth . address_list [ orig_array_num , 4 ] = EMPTY THEN
+
+                                                ip_auth . address_list [ orig_array_num , 4 ] = temp
+
+                                        ENDIF
+
+                                        changes_made = TRUE
+                                        ip_auth . is_altered = TRUE
+
+                                ENDIF
+
+                        ENDIF
+
+                        IF changes_made THEN
+                                the_list . rebuild ( )
+                        ENDIF
+
+                ENDIF
+
+        ELSE
+
+                flash_message ( get_user_message ( "ESIG_SETUP_IP_NO_SEL" , 1 ) , TRUE )
+
+        ENDIF
+
+ENDROUTINE { ip_auth_action_edit_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE remove_ip_address ( remove_button )
+
+{
+*
+*
+*******************************************************************************}
+        
+        remove_button . parent_prompt . remove_ip_address ( remove_button . user_info )
+
+ENDROUTINE { remove_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_remove_ip_address ( ip_auth , list_number )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE the_list , temp , item , array_num , warn_user , count
+
+        IF list_number = 1 THEN
+
+                the_list = ip_auth . auth_list
+
+        ELSE
+
+                the_list = ip_auth . unauth_list
+
+        ENDIF
+
+        item = the_list . get_first_selected ( temp )   
+
+        IF item <> EMPTY THEN
+
+                array_num = ip_auth . get_ip_array_number ( temp )
+
+                the_list . remove_item ( item )
+
+                IF ip_auth . address_list [ array_num , 4 ] = "ADDED" THEN
+
+                        array_remove_slice ( ip_auth . address_list , 1 , array_num )
+
+                ELSE
+
+                        ip_auth . address_list [ array_num , 4 ] = "DELETED"
+                        ip_auth . is_altered = TRUE
+
+                ENDIF
+
+                IF list_number = 1 THEN
+                
+                        warn_user = TRUE
+                        count = 1
+
+                        WHILE count <= size_of_array ( ip_auth . address_list ) DO
+
+                                IF ( ip_auth . address_list [ count , 4 ] <> "DELETED" )THEN
+                                        warn_user = FALSE
+                                ENDIF
+
+                                count = count + 1
+
+                        ENDWHILE
+
+                        IF warn_user THEN
+                                flash_message ( get_user_message ( "ESIG_SETUP_IP_ALLOW_ALL" , 1 ) , TRUE )
+                        ENDIF
+                        
+                ENDIF
+
+        ELSE
+                flash_message ( get_user_message ( "ESIG_SETUP_IP_NO_SEL" , 1 ) , TRUE )
+        ENDIF
+
+ENDROUTINE { ip_auth_action_remove_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_swap_ip_address ( ip_auth , list_number )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE this_list  ,
+                other_list ,
+                temp       ,
+                item       ,
+                array_num  ,
+                icon_num
+
+        IF list_number = 1 THEN
+
+                this_list  = ip_auth . auth_list
+                other_list = ip_auth . unauth_list
+                icon_num   = 1
+
+        ELSE
+
+                this_list  = ip_auth . unauth_list
+                other_list = ip_auth . auth_list
+                icon_num   = 0
+
+        ENDIF
+
+        item = this_list . get_first_selected ( temp )  
+
+        IF item <> EMPTY THEN
+
+                array_num = ip_auth . get_ip_array_number ( temp )
+
+                this_list . remove_item ( item )
+
+                other_list . insert_item ( ip_auth . address_list [ array_num , 1 ] ,
+                                           icon_num                                 )
+
+                IF list_number = 2 THEN
+
+                        ip_auth . address_list [ array_num , 2 ] = FALSE
+                        ip_auth . address_list [ array_num , 3 ] = -1
+                        other_list . set_item ( 2 , ip_auth . address_list [ array_num , 2 ] )
+                        
+                ELSE
+
+                        ip_auth . address_list [ array_num , 2 ] = TRUE
+                        ip_auth . address_list [ array_num , 3 ] = 0
+
+                ENDIF
+
+                IF ip_auth . address_list [ array_num , 4 ] = EMPTY THEN
+
+                        ip_auth . address_list [ array_num , 4 ] =
+                             ip_auth . address_list [ array_num , 1 ]
+
+                ENDIF
+
+                ip_auth . is_altered = TRUE
+
+        ENDIF
+
+ENDROUTINE { ip_auth_action_swap_ip_address }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_get_ip_array_number ( ip_auth , ip_address )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , array_index
+
+        array_index = 0
+
+        count = 0
+        REPEAT
+                count = count + 1
+                IF ip_auth . address_list [ count , 1 ] = ip_address THEN
+                        array_index = count
+                ENDIF
+        UNTIL count = size_of_array ( ip_auth . address_list )
+
+        RETURN ( array_index )  
+
+ENDROUTINE { get_ip_array_number }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_list_right_mouse ( list )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE temp , item , menu , result
+
+        ARRAY menu
+
+        item = list . get_first_selected ( temp )
+
+        menu [ 1 ] = get_user_message ( "ESIG_SETUP_ADD" , 1 )
+
+        IF item <> EMPTY THEN
+
+                menu [ 2 ] = get_user_message ( "ESIG_SETUP_EDIT" , 1 )
+                menu [ 3 ] = ""
+                menu [ 4 ] = get_user_message ( "ESIG_SETUP_REMOVE" , 1 )
+                
+                IF list . user_info = 1 THEN
+                        menu [ 5 ] = get_user_message ( "ESIG_SETUP_DISABLE" , 1 )
+                ELSE
+                        menu [ 5 ] = get_user_message ( "ESIG_SETUP_ENABLE" , 1 )
+                ENDIF
+
+        ENDIF
+
+        result = lib_utils_popup_menu ( menu )
+
+        IF result = 1 THEN
+
+                list . parent_prompt . add_ip_address ( list . user_info )
+
+        ELSEIF ( result = 2 ) AND ( item <> EMPTY ) THEN
+
+                list . parent_prompt . edit_ip_address ( list . user_info )
+
+        ELSEIF ( result = 4 ) AND ( item <> EMPTY ) THEN
+        
+                list . parent_prompt . remove_ip_address ( list . user_info )
+
+        ELSEIF ( result = 5 ) THEN
+        
+                list . parent_prompt . swap_ip_address ( list . user_info )
+
+        ENDIF
+
+ENDROUTINE { ip_auth_list_right_mouse }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_list_double_click ( list )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE temp , item 
+
+        item = list . get_first_selected ( temp )
+
+        IF item <> EMPTY THEN
+
+                list . parent_prompt . edit_ip_address ( list . user_info )
+
+        ELSE
+                list . parent_prompt . add_ip_address ( list . user_info )
+
+        ENDIF
+
+ENDROUTINE { ip_auth_list_double_click }
+
+{******************************************************************************}
+
+        ROUTINE ip_auth_action_commit ( ip_auth )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count ,
+                temp ,
+                needs_rollback ,
+                needs_update ,
+                system_ip_address ,
+                config_item
+
+        needs_rollback = FALSE
+
+        count = 0
+        
+        START WRITE TRANSACTION get_user_message ( "ESIG_SETUP_IP_TRANSACTION", 1 )
+
+        REPEAT
+
+                needs_update = FALSE
+                count = count + 1
+
+                IF ip_auth . address_list [ count , 4 ] = "ADDED" THEN
+
+                        RESERVE ENTRY client_access , ip_auth . address_list [ count , 1 ], temp
+
+                        IF temp = EMPTY THEN
+
+                                ASSIGN client_access . access_mode = ip_auth . address_list [ count , 2 ]
+                                ASSIGN client_access . max_sessions = ip_auth . address_list [ count , 3 ]
+
+                                needs_update = TRUE
+
+                        ENDIF
+
+                ELSEIF ip_auth . address_list [ count , 4 ] = "DELETED" THEN
+
+                        temp = SELECT client_access . ip_address
+                               FOR UPDATE
+                               WHERE ip_address = ip_auth . address_list [ count , 1 ]
+
+                        IF temp = ip_auth . address_list [ count , 1 ] THEN
+                                DELETE client_access
+                        ELSE
+                                needs_rollback = TRUE
+                        ENDIF
+
+                ELSEIF ( ip_auth . address_list [ count , 4 ] <> EMPTY     ) THEN
+
+                        temp = SELECT client_access . ip_address
+                               FOR UPDATE
+                               WHERE ip_address = ip_auth . address_list [ count , 4 ]
+
+                        IF temp = ip_auth . address_list [ count , 4 ] THEN
+
+                                IF ip_auth . address_list [ count , 1 ] <>
+                                   ip_auth . address_list [ count , 4 ] THEN
+
+                                        DELETE client_access
+
+                                        RESERVE ENTRY client_access ,
+                                                      ip_auth . address_list [ count , 1 ],
+                                                      temp
+
+                                        IF temp = EMPTY THEN
+                                                temp = ip_auth . address_list [ count , 1 ]
+                                        ENDIF
+
+                                ENDIF
+
+                        ENDIF
+
+                        IF temp = ip_auth . address_list [ count , 1 ] THEN
+
+                                ASSIGN client_access . access_mode = ip_auth . address_list [ count , 2 ]
+                                ASSIGN client_access . max_sessions = ip_auth . address_list [ count , 3 ]
+
+                                needs_update = TRUE
+
+                        ELSE
+                                needs_rollback = TRUE
+                        ENDIF
+
+                ENDIF
+
+                IF NOT needs_rollback AND needs_update THEN
+                        UPDATE client_access
+                ENDIF
+
+        UNTIL (( count = size_of_array ( ip_auth . address_list )) OR needs_rollback )
+
+        IF NOT needs_rollback THEN
+
+                system_ip_address = ip_auth . prompt_objects [
+                                        ip_auth . system_ip_prompt ] .
+                                            value
+
+                config_item = SELECT config_header . identity
+                              FOR UPDATE
+                              WHERE identity = SYSTEM_IP_CONFIG_ITEM
+
+                IF config_item = SYSTEM_IP_CONFIG_ITEM THEN
+
+                        IF STRIP ( SELECT config_header . value ) <>
+                           system_ip_address THEN
+
+                                ASSIGN config_header . value = system_ip_address
+                                UPDATE config_header
+
+                        ENDIF
+
+                ENDIF
+
+        ENDIF
+
+        IF NOT needs_rollback THEN
+                COMMIT
+        ELSE
+                ROLLBACK
+                FLASH_MESSAGE ( get_user_message ( "ESIG_SETUP_IP_UPDATE_FAILURE", 1 ) , TRUE )
+        ENDIF
+
+ENDROUTINE { ip_auth_action_commit }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_ip_prompt_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS IP_PROMPT_CLASS
+
+        INHERIT "STD_FORM"
+        INITIALISATION
+
+        ACTIONS
+                "validate_ip_number" ,
+                "parse_ip_string"
+
+        END CLASS { Ip Prompt Class }
+
+ENDROUTINE { set_up_ip_prompt_class }
+
+{******************************************************************************}
+
+        ROUTINE ip_prompt_class_initialisation ( ip_prompt )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , ip_box , ok_button , cancel_button 
+        
+        ip_prompt . header           = get_user_message ( "ESIG_SETUP_PROMPT_IP" , 1 )
+        ip_prompt . height           = 4
+        ip_prompt . width            = 45
+        ip_prompt . column           = ( GLOBAL ( "GUI_WIDTH" ) -
+                                         ip_prompt . width     ) / 2
+        ip_prompt . row              = ( GLOBAL ( "GUI_HEIGHT" ) -
+                                         ip_prompt . height     ) / 2
+        ip_prompt . return_behaviour = FORM_RETURN_STAY
+        ip_prompt . button_style     = FORM_BUTTON_NONE
+
+        ip_prompt . add_display ( get_user_message ( "ESIG_SETUP_ENTER_IP" , 1 ) ,
+                                2                     ,
+                                1                     ,
+                                PROMPT_RENDITION_BOLD )
+
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+        
+                PROMPT OBJECT ip_box
+                        CLASS "STD_PROMPT_TEXT"
+                        AT ( 7 * count ) - 4 , 2
+                        WITH ( validation_routine = "ip_box_validation" ,
+                               user_info          = count               ,
+                               width = 4                                )
+
+                ip_prompt . add_prompt ( ip_box )
+
+                IF count < 4 THEN
+                        ip_prompt . add_display ( DOT                   ,
+                                                ( 7 * count ) + 1     ,
+                                                2                     ,
+                                                PROMPT_RENDITION_BOLD )
+                ENDIF
+
+        UNTIL count = 4
+
+        PROMPT OBJECT ok_button
+                CLASS "STD_PROMPT_BUTTON"
+                WITH (  caption      = get_user_message (
+                                       "SMP_PROMPT_BUTTON_OK" , 1 ) ,
+                        width        = BUTTON_WIDTH                 ,
+                        column       = BUTTON_COLUMN                ,
+                        row          = 1                            ,
+                        send_lastkey = "DO"                         )
+
+        ip_prompt . add_prompt ( ok_button )
+
+        PROMPT OBJECT cancel_button
+                CLASS "STD_PROMPT_BUTTON"
+                WITH (  caption      = get_user_message (
+                                       "SMP_PROMPT_BUTTON_CANCEL" , 1 ) , 
+                        width        = BUTTON_WIDTH                     ,
+                        column       = BUTTON_COLUMN                    ,
+                        row          = 3                                ,
+                        send_lastkey = "EXIT"                           )
+
+        ip_prompt . add_prompt ( cancel_button )
+
+ENDROUTINE {  }
+
+{******************************************************************************}
+
+        ROUTINE prompt_for_ip (       ip_address_info ,
+                                VALUE ip_string       ,
+                                VALUE max_sessions    )
+
+{
+* Returns either a valid ip address as a string or empty if entered ip address
+* was invalid.
+*
+*******************************************************************************}
+
+        DECLARE valid_address ,
+                ip_prompt ,
+                count ,
+                max_session_prompt ,
+                ret_value ,
+                mess_text
+
+        ret_value     = TRUE
+        valid_address = TRUE
+
+        ARRAY ip_address_info ARRAYSIZE ( 2 )
+
+        ip_address_info [ 1 ] = ""
+
+        set_up_ip_prompt_class ( )
+        CREATE OBJECT IP_PROMPT_CLASS , ip_prompt
+
+        IF max_sessions >= 0 THEN
+
+                mess_text = get_user_message ( "ESIG_SETUP_IP_SESSIONS" , 1 )
+
+                ip_prompt. height = ip_prompt . height + 1
+
+                PROMPT OBJECT max_session_prompt
+                        BROWSE ON INTEGER
+                        WITH ( minimum = 0                        ,
+                               maximum = 9999                     ,
+                               row     = 4                        ,
+                               column  = 5 + length ( mess_text ) ,
+                               value   = max_sessions             )
+
+                ip_prompt . add_prompt ( max_session_prompt )
+
+                ip_prompt . add_display ( mess_text               ,
+                                          3                       ,
+                                          4                       ,
+                                          PROMPT_RENDITION_NORMAL )
+
+
+        ENDIF
+
+        ip_prompt . start_prompt ( )
+
+        IF NOT ( BLANK ( ip_string ) ) THEN
+                valid_address = ip_prompt . parse_ip_string ( ip_string )
+        ENDIF
+
+        IF valid_address THEN
+
+                ip_prompt . wait_prompt ( )
+                ip_prompt . end_prompt ( )
+
+                IF ip_prompt . get_lastkey ( ) = "DO" THEN
+
+                        count = 0
+
+                        REPEAT
+
+                                count = count + 1
+
+                                IF NOT ( ip_prompt . validate_ip_number ( count ) ) THEN
+                                        valid_address = FALSE
+                                ENDIF
+
+                                ip_address_info [ 1 ] = ip_address_info [ 1 ] :
+                                             STRIP ( ip_prompt . prompt_objects [ count ] . value )
+
+                                IF count < 4 THEN
+                                        ip_address_info [ 1 ] = ip_address_info [ 1 ] : DOT
+                                ENDIF
+
+                        UNTIL count = 4
+
+                        IF max_sessions >= 0 THEN
+
+                                ip_address_info [ 2 ] = ip_prompt . prompt_objects [ 7 ] . value
+
+                        ELSE
+
+                                ip_address_info [ 2 ] = -1
+
+                        ENDIF
+
+                ELSEIF ip_prompt . get_lastkey ( ) = "EXIT" THEN
+                        ret_value = FALSE
+                ENDIF
+
+        ENDIF
+
+        IF NOT ( valid_address ) THEN
+                ip_address_info [ 1 ] = EMPTY
+        ENDIF
+
+        RETURN ( ret_value )
+
+ENDROUTINE { prompt_for_ip }
+
+{******************************************************************************}
+
+        ROUTINE ip_prompt_action_validate_ip_number ( ip_prompt , box_number )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE valid_ip , the_num
+
+        valid_ip = FALSE
+
+        the_num = STRIP ( ip_prompt . prompt_objects [ box_number ] . value )
+
+        IF the_num = "" THEN
+
+                valid_ip = FALSE
+
+        ELSEIF NUMTEXT ( the_num )
+
+                IF ( NUMERIC ( the_num ) >= 0   ) AND 
+                   ( NUMERIC ( the_num ) <= 255 ) THEN
+
+                        valid_ip = TRUE
+
+                ENDIF
+
+        ELSE
+
+                IF the_num = "*" THEN
+
+                        valid_ip = TRUE
+                ENDIF
+
+        ENDIF
+
+        RETURN ( valid_ip )
+
+ENDROUTINE { validate_ip_num }
+
+{******************************************************************************}
+
+        ROUTINE ip_box_validation ( ip_box )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE valid_value
+
+        valid_value = ip_box . parent_prompt . validate_ip_number ( ip_box . user_info )
+
+        IF NOT ( valid_value ) THEN
+
+                flash_message ( get_user_message ( "ESIG_SETUP_INVALID" , 1 )       :
+                                STRIP ( ip_box . value ) ,
+                                TRUE                     )
+
+        ENDIF
+
+        RETURN ( valid_value )
+        
+ENDROUTINE { validation_routine }
+
+{******************************************************************************}
+
+        ROUTINE ip_prompt_action_parse_ip_string (       ip_prompt ,
+                                                   VALUE ip_string )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , ip_num , valid_value
+
+        valid_value = TRUE
+        ip_string = STRIP ( ip_string )
+
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+                IF count < 4 THEN
+                        ip_num = LEFTSTRING ( ip_string                     ,
+                                              INDEX ( ip_string , DOT ) - 1 )
+                ELSE
+                        ip_num = ip_string
+                ENDIF
+
+                ip_num = STRIP ( ip_num )
+
+                ip_prompt . prompt_objects [ count ] . set_text ( ip_num )
+
+                IF NOT ( ip_prompt . validate_ip_number ( count ) ) THEN
+                        valid_value = FALSE
+                ENDIF
+
+                ip_string = RIGHTSTRING ( ip_string               ,
+                                          LENGTH ( ip_string )    -
+                                          INDEX ( ip_string , DOT ) )
+
+        UNTIL count = 4
+
+        RETURN ( valid_value )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        GLOBAL 
+
+        ROUTINE set_up_menu_editor_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS MENU_EDITOR_CLASS
+
+        INHERIT OPTION_TAB_FORM_CLASS
+        INITIALISATION
+        
+        PROPERTIES
+                "tree"               , { The Tree Item.                        }
+                "list"               , { The List Item.                        }
+                "menu_collection"    , { The Menu Collection.                  }
+                "split"              , { The Split Explorer Item               }
+                "tree_form"          , { The form for the tree Item            }
+                "list_form"          , { The form for the list Item            }
+                "esig_id_array"      , { Array built from phrase table ids     }
+                "esig_text_array"    , { Array built from phrase table text    }
+                "icon_list"          , { Image list for menu list              }
+                "initialised"          { Has the form been started yet         }
+        ACTIONS
+                "build_tree"         , { Build a Tree from the Menu Items      }
+                "show_details"       , { Show the Tree Element Details.        }
+                "commit"             , { Commit form data to database          }
+                "level_to_icon"        { Return the image number for a level   }
+
+        END CLASS { Menu Editor Class }
+
+
+
+        DEFINE CLASS MENU_COLLECTION_CLASS
+
+        INHERIT "STD_COLLECTION"
+        ACTIONS
+                "load_menu"             { Load a Menu.                         }
+
+        END CLASS { Menu Collection Class }
+
+
+
+        DEFINE CLASS MENU_ITEM_CLASS
+    
+        INHERIT "STD_COLLECTED"
+
+        PROPERTIES
+                "key"               , { The Identity of the SMW menu Item      }
+                "parent"            , { Parent item number                     }
+                "procedure"         , { The Procedure Number to Call           }
+                "item_number"       , { Menu toolbar item number               }
+		"order_number"      , { Position in the SMW menu               }
+                "mnemonic"          , { The Character Cell Shortcut.           }
+                "editor"            , { Link to the Main Editor Object.        }
+                "name"              , { Description.                           }
+                "esig_level"        , { The electronic signature setting       }
+                "esig_reason"       , { Reason for signing                     }
+                "is_altered"        , { Boolean - have menu details changed?   }
+                "begin_group"         { Add a separator before this item       }
+        TABLES
+                MENU_TOOLBAR        ,
+                MASTER_MENU     
+
+        END CLASS { Menu Item Class }
+
+ENDROUTINE { set_up_menu_editor_class }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_class_initialisation ( menu_editor )
+{
+*
+*
+*******************************************************************************}
+              
+        DECLARE count , e_sig
+
+        menu_editor . height           = 15
+        menu_editor . width            = 100
+        menu_editor . column           = 3
+        menu_editor . row              = 2
+        menu_editor . header           = get_user_message ( "ESIG_SETUP_MENU_HEADER" , 1 )
+        menu_editor . button_style     = FORM_BUTTON_NONE
+        menu_editor . return_behaviour = FORM_RETURN_STAY
+        menu_editor . confirm_required = FALSE
+        menu_editor . is_altered       = FALSE
+
+        menu_editor . enter_prompt_routine = "menu_editor_enter_prompt_form"
+	menu_editor . initialised          = FALSE
+
+        CREATE OBJECT PROMPT_SPLIT_CLASS , menu_editor . split
+
+        menu_editor . split . height   = menu_editor . height - 4
+        menu_editor . split . width    = menu_editor . width  - 3
+        menu_editor . split . row      = 0.7
+        menu_editor . split . column   = 1
+        menu_editor . split . set_size ( 2 , 1 )
+        menu_editor . split . set_column_width ( 1 , 25 )
+
+        menu_editor . add_prompt ( menu_editor . split )
+
+        CREATE OBJECT "STD_FORM" , menu_editor . tree_form
+
+        menu_editor . tree_form . height = 1
+        menu_editor . tree_form . width  = 1
+        menu_editor . tree_form . return_behaviour = FORM_RETURN_STAY
+
+        CREATE OBJECT PROMPT_TREE_CLASS , menu_editor . tree
+
+        menu_editor . tree . row         = 0
+        menu_editor . tree . column      = 0
+        menu_editor . tree . width       = 1
+        menu_editor . tree . height      = 1
+        menu_editor . tree . full_screen = TRUE
+        menu_editor . tree . use_images ( EMPTY, 0 )
+        menu_editor . tree . selected_routine = "menu_editor_tree_selected"
+
+        menu_editor . tree_form . add_prompt ( menu_editor . tree )
+
+        menu_editor . split . add_form ( 1 , 1 , menu_editor . tree_form )
+
+        CREATE OBJECT "STD_FORM" , menu_editor . list_form
+
+        menu_editor . list_form . height = 1
+        menu_editor . list_form . width  = 1
+        menu_editor . list_form . return_behaviour = FORM_RETURN_STAY
+
+        CREATE OBJECT PROMPT_LIST_CLASS , menu_editor . list
+
+        menu_editor . list . full_screen = TRUE
+        menu_editor . list . row    = 0
+        menu_editor . list . column = 0
+        menu_editor . list . width  = 1
+        menu_editor . list . height = 1
+        menu_editor . list . right_mouse_routine = "menu_editor_list_right_mouse"
+        menu_editor . list . double_click_routine = "menu_editor_list_right_mouse"
+
+        menu_editor . list . clear_columns ( )
+
+        menu_editor . list . add_column ( get_user_message ( "ESIG_SETUP_MENU_MNEMONIC" , 1 ) , 6 )
+        menu_editor . list . add_column ( get_user_message ( "ESIG_SETUP_MENU_DESC"     , 1 ), 11 )
+        menu_editor . list . add_column ( get_user_message ( "ESIG_SETUP_MENU_ESIG"     , 1 ), 11 )
+        menu_editor . list . add_column ( get_user_message ( "ESIG_SETUP_MENU_REASON"   , 1 ), 13 )
+
+        menu_editor . list_form . add_prompt ( menu_editor . list )
+
+        menu_editor . split . add_form ( 2 , 1 , menu_editor . list_form )
+
+        ARRAY menu_editor . list . user_info { No array size - used for list of items }
+
+        ARRAY menu_editor . esig_id_array   ARRAYSIZE ( 0 )
+        ARRAY menu_editor . esig_text_array
+
+        CREATE OBJECT USER_IMAGE_LIST_CLASS, menu_editor . icon_list
+
+        count = 0
+
+        e_sig = SELECT phrase . phrase_id
+                WHERE phrase_type = "ESIG_LEVEL"
+                ORDER ON order_num
+
+        WHILE ( e_sig <> EMPTY ) DO
+
+		e_sig = STRIP ( e_sig )
+
+                count = count + 1
+
+                menu_editor . esig_id_array   [ count ] = e_sig
+                menu_editor . esig_text_array [ count ] = STRIP ( SELECT phrase . phrase_text )
+
+                menu_editor . icon_list . Add_Resource ( "Icon\" : e_sig : ".ico" )
+
+                NEXT phrase
+                e_sig = SELECT phrase . phrase_id
+
+        ENDWHILE
+
+        menu_editor . list . set_image_resource ( menu_editor . icon_list . GetListID ( ), 0 )
+
+        menu_editor . esig_text_array [ count + 1 ] = NOTHING
+        menu_editor . esig_text_array [ count + 2 ] =
+                         get_user_message ( "ESIG_SETUP_MENU_CHANGE_REASON" , 1 )
+        menu_editor . esig_text_array [ count + 3 ] =
+                         get_user_message ( "ESIG_SETUP_MENU_NO_ESIG" , 1 )
+
+        CREATE OBJECT MENU_COLLECTION_CLASS , menu_editor . menu_collection
+
+ENDROUTINE { menu_editor_class_initialisation }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_enter_prompt_form ( menu_editor )
+{
+*
+*
+*******************************************************************************}
+
+	IF NOT menu_editor . initialised THEN
+
+		window_set_status ( get_user_message ( "ESIG_SETUP_MENU_LOADING" , 1 ))
+
+		menu_editor . menu_collection . load_menu ( menu_editor )
+		menu_editor_tree_selected ( menu_editor . tree , 1 )
+
+		menu_editor . initialised = TRUE
+
+		window_set_status ( "" )
+
+	ENDIF
+
+ENDROUTINE { menu_editor_enter_prompt_form }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_action_build_tree (       menu_editor , 
+                                                VALUE parent      , 
+                                                VALUE menu_name   ,
+                                                VALUE key         )
+{
+* Build the Tree, Load into the Parent using the Supplied Key.
+*
+*******************************************************************************}
+
+        DECLARE item ,
+                new_parent ,
+                expand ,
+                pointer ,
+                child_item
+
+        expand = EMPTY
+
+        IF parent = 0 THEN
+
+                CREATE OBJECT MENU_ITEM_CLASS , item
+
+		item . key = PACKED_DECIMAL ( 0 ) : PACKED_DECIMAL ( 0 )
+
+                item . item_number  = PACKED_DECIMAL ( 0 )
+		item . parent       = PACKED_DECIMAL ( 0 )
+                item . procedure    = PACKED_DECIMAL ( 10 )
+                object_assign_uncounted ( item . editor, menu_editor )
+                item . mnemonic     = ""
+                item . esig_level   = NOTHING
+		item . esig_reason  = ""
+                item . is_altered   = FALSE
+		item . begin_group  = FALSE
+		item . name         = STRIP ( SELECT menu_toolbar . item_name )
+
+                parent = menu_editor . tree . insert_item ( menu_name          ,
+                                                            parent             ,
+                                                            TREE_INSERT_LAST   ,
+                                                            TREE_CLOSED_FOLDER ,
+                                                            TREE_OPEN_FOLDER   ,
+                                                            item               )
+
+                expand = parent
+
+        ENDIF
+
+	pointer = menu_editor. menu_collection . find_index_ge (
+		          "KEY" , key )
+
+	IF pointer = 0 THEN
+		item = EMPTY
+		FLASH_MESSAGE ( get_user_message ( "ESIG_SETUP_MENU_BAD_MENU_NUMBER", 1 ) :
+		                " " : key, TRUE                                           )
+	ELSE
+	        menu_editor. menu_collection . set_by_index_number ( "KEY", pointer )
+	        item    = menu_editor . menu_collection . current
+	        pointer = menu_editor . menu_collection . current_position
+	ENDIF
+
+        WHILE ( item <> EMPTY                                             ) AND
+              ( MIDSTRING ( item . key , 1 , 10 ) = PACKED_DECIMAL ( key )) DO
+
+                child_item = menu_editor . menu_collection . find_index ( "PARENT", item . item_number )
+
+                IF ( child_item <> 0 ) THEN
+
+                        new_parent = menu_editor . tree .
+                                        insert_item ( item . name        ,
+                                                      parent             , 
+                                                      TREE_INSERT_LAST   ,
+                                                      TREE_CLOSED_FOLDER ,
+                                                      TREE_OPEN_FOLDER   ,
+                                                      item               )
+
+                        menu_editor . build_tree ( new_parent         ,
+                                                   menu_name          ,
+                                                   item . item_number )
+ 
+                ENDIF
+
+	        menu_editor. menu_collection . set_by_index_number ( "KEY", pointer )
+
+		menu_editor. menu_collection . set_next ( )
+	        item    = menu_editor . menu_collection . current
+	        pointer = menu_editor . menu_collection . current_position
+
+        ENDWHILE
+
+        IF expand <> EMPTY THEN
+
+                menu_editor . tree . expand ( expand , TREE_EXPAND )
+
+        ENDIF
+
+ENDROUTINE { menu_editor_action_build_tree }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_action_level_to_icon (       menu_editor  ,
+                                                   VALUE level_id     ,
+                                                         icon_id      ,
+                                                         level_string )
+{
+*
+*	Return the icon number based on the Esig level id
+*
+*******************************************************************************}
+
+	DECLARE num_items,
+	        icon_num,
+	        searching
+
+	icon_id = 200
+	level_string = ""
+
+	IF NOT BLANK ( level_id ) THEN
+
+		num_items = size_of_array ( menu_editor . esig_id_array )
+
+		icon_num  = 1
+		searching = TRUE
+
+		WHILE searching DO
+
+			IF icon_num > num_items THEN
+
+				searching = FALSE
+
+			ELSEIF menu_editor . esig_id_array [ icon_num ] = level_id THEN
+
+				level_string = menu_editor . esig_text_array [ icon_num ]
+				icon_id = icon_num - 1
+				searching = FALSE
+
+			ELSE
+
+				icon_num = icon_num + 1
+
+			ENDIF
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( icon_id )
+
+ENDROUTINE { menu_editor_action_level_to_icon }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_action_show_details ( menu_editor , item  )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE pointer ,
+                key,
+                icon_num,
+                esig_string,
+                row_num
+
+        key = item . item_number
+        
+        menu_editor . list . removeallitems ( )
+
+	pointer = menu_editor. menu_collection . find_index_ge ( "KEY" , key )
+
+	IF pointer = 0 THEN
+		item = EMPTY
+	ELSE
+		item = menu_editor. menu_collection . get_by_index_number ( "KEY", pointer )
+	ENDIF
+
+	row_num = 0
+
+        WHILE ( item <> EMPTY                       ) AND 
+              ( LEFTSTRING ( item . key, 10 ) = key ) DO
+
+                IF ( item . begin_group ) THEN
+
+	                menu_editor . list . insert_item ( "", 200 )
+	                menu_editor . list . set_item    ( 2 , SEPARATOR_TEXT )
+                	menu_editor . list . set_item    ( 3 , "" )
+                	menu_editor . list . set_item    ( 4 , "" )
+
+			menu_editor . list . user_info [ row_num ] = EMPTY
+			row_num = row_num + 1
+
+		ENDIF
+
+                menu_editor . level_to_icon ( item . esig_level ,
+                                              icon_num          ,
+                                              esig_string       )
+
+                menu_editor . list . insert_item ( STRIP ( item . mnemonic ), icon_num )
+                menu_editor . list . set_item    ( 2 , STRIP ( item . name        ))
+                menu_editor . list . set_item    ( 3 , STRIP ( esig_string        ))
+                menu_editor . list . set_item    ( 4 , STRIP ( item . esig_reason ))
+
+		menu_editor . list . user_info [ row_num ] = item
+		row_num = row_num + 1
+
+		pointer = pointer + 1
+
+	        item = menu_editor. menu_collection . get_by_index_number ( "KEY", pointer )
+
+        ENDWHILE
+
+        menu_editor . list . rebuild ( ) 
+
+ENDROUTINE { menu_editor_action_show_details }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_tree_selected (       tree ,
+                                            VALUE item )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE node_info
+ 
+        node_info = tree . get_user_info ( item )
+
+        IF node_info <> EMPTY THEN
+
+                node_info . editor . show_details ( node_info )  
+
+        ENDIF
+
+ENDROUTINE { menu_editor_tree_selected }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_get_reason ( reason )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE reason_form, caption, caption_length, reason_prompt
+
+	CREATE OBJECT "STD_FORM", reason_form
+
+	caption        = STRIP ( get_user_message ( "ESIG_SETUP_REASON_PROMPT", 1 ))
+	caption_length = length ( caption )
+
+	reason_form . header  = get_user_message ( "ESIG_SETUP_REASON_HEADER" , 1 )
+	reason_form . height  = 1
+	reason_form . width   = caption_length + 47
+	reason_form . column  = ( GLOBAL ( "GUI_WIDTH" ) -
+	                          reason_form . width     ) / 2
+	reason_form . row     = ( GLOBAL ( "GUI_HEIGHT" ) -
+	                          reason_form . height     ) / 2
+
+	reason_form . add_display ( caption                 ,
+	                            2                       ,
+	                            1                       ,
+	                            PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT reason_prompt
+	       CLASS "STD_PROMPT_TEXT"
+	       ON LINE 1 FROM  3 + caption_length
+	                 TO   43 + caption_length
+	       WITH ( value = reason )
+
+	reason_form . add_prompt ( reason_prompt )
+
+	reason_form . start_prompt ( )
+	reason_form . wait_prompt ( )
+	reason_form . end_prompt ( )
+
+	IF reason_form . get_last_key( ) = "DO" THEN
+		reason = reason_prompt . value
+	ENDIF
+
+	return ( reason_form . get_last_key( ) = "DO" )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_list_right_mouse ( list )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE result ,
+                item ,
+                temp ,
+                row_num ,
+                menu_editor ,
+                original_level ,
+                searching ,
+                reason,
+                esig_string,
+                icon_num ,
+                continue
+
+        continue = TRUE
+
+        menu_editor = list . parent_prompt . parent_prompt
+
+        row_num = list . get_first_selected ( temp )
+
+        searching = ( row_num <> EMPTY )
+
+        WHILE searching DO
+
+                item = list . user_info [ row_num ]
+
+                IF ( item <> EMPTY ) THEN
+                        searching = FALSE
+                ELSE
+                        row_num = list . get_next_selected ( temp )
+                        IF row_num = EMPTY THEN
+                                searching = FALSE
+                        ENDIF
+                ENDIF
+
+        ENDWHILE
+
+        IF row_num <> EMPTY THEN
+                result = lib_utils_popup_menu ( menu_editor . esig_text_array )
+                
+                continue = ( result <> 0 )
+        ELSE
+                continue = FALSE
+        ENDIF
+
+        IF ( continue ) THEN
+
+                IF result = size_of_array ( menu_editor . esig_text_array ) THEN
+                        { if menu option is 'No esig' }
+                        
+                        reason = ""
+                ELSE
+                        reason = item . esig_reason
+                        continue = menu_editor_get_reason ( reason )
+                ENDIF
+
+        ENDIF
+
+        IF continue THEN
+
+                WHILE row_num <> EMPTY DO
+
+                        item = list . user_info [ row_num ]
+
+                        IF ( item <> EMPTY ) THEN
+
+	                        original_level = item . esig_level
+
+                                IF result = size_of_array ( menu_editor . esig_text_array ) THEN
+
+                                        item . esig_level = NOTHING
+
+                                        IF NOT ( original_level = NOTHING ) THEN
+                                                item . is_altered = TRUE
+                                        ENDIF
+
+                                ELSEIF result = ( size_of_array ( menu_editor . esig_text_array ) - 1 ) THEN
+
+                                        { Do nothing to level - just change the reason }
+
+                                ELSE
+
+                                        item . esig_level = menu_editor . esig_id_array [ result ]
+
+                                        IF item . esig_level <> original_level THEN
+                                                item . is_altered = TRUE
+                                        ENDIF
+
+                                ENDIF
+
+                                IF item . esig_reason <> reason THEN
+                                        item . esig_reason = reason
+                                        item . is_altered  = TRUE
+                                ENDIF
+
+                                IF item . is_altered THEN
+                                        menu_editor . is_altered = TRUE
+                                ENDIF
+
+                                menu_editor . level_to_icon ( item . esig_level ,
+                                                              icon_num          ,
+                                                              esig_string       )
+
+                                list . set_image ( icon_num )
+
+                                list . set_item ( 3 , esig_string        )
+                                list . set_item ( 4 , item . esig_reason )
+
+                        ENDIF
+
+                        row_num = list . get_next_selected ( temp )
+
+                ENDWHILE
+                        
+        ENDIF
+
+ENDROUTINE { menu_editor_list_right_mouse }
+
+{******************************************************************************}
+
+        ROUTINE menu_editor_action_commit ( menu_editor )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , collection_size , item , e_sig , needs_rollback
+
+        needs_rollback = FALSE
+
+        collection_size = menu_editor . menu_collection . size ( )
+
+        START WRITE TRANSACTION get_user_message ( "ESIG_SETUP_MENU_TRANSACTION" , 1 )
+
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+                item = menu_editor . menu_collection . get_by_number ( count )
+
+                IF item . is_altered THEN
+
+                        e_sig = SELECT master_menu . procedure_num
+                                FOR UPDATE
+                                WHERE procedure_num = item . procedure
+
+                        IF e_sig = item . procedure THEN
+                                ASSIGN master_menu . esig_level  = item . esig_level
+                                ASSIGN master_menu . esig_reason = item . esig_reason
+                                UPDATE master_menu
+                        ELSE
+                                needs_rollback = TRUE
+                        ENDIF
+
+                ENDIF
+
+        UNTIL (( count = collection_size ) OR ( needs_rollback ))
+
+        IF needs_rollback THEN
+                ROLLBACK
+                flash_message ( get_user_message ( "ESIG_SETUP_MENU_UPDATE_FAILURE" , 1 ) , TRUE )
+        ELSE
+                COMMIT
+        ENDIF
+
+ENDROUTINE { menu_editor_action_commit }
+
+{******************************************************************************}
+
+        ROUTINE menu_collection_action_load_menu ( menu_collection ,
+                                                   menu_editor     )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE item , parent , menu_name , base_menu
+
+        parent = 0
+        menu_collection . add_index ( "KEY" )
+        menu_collection . add_index ( "PARENT" )
+
+        menu_name = SELECT menu_toolbar . toolbar_name
+                    WHERE toolbar_name = ESIG_SETUP_BASE_MENU 
+                    ORDER ON item_number
+
+        IF menu_name = EMPTY THEN
+                flash_message ( "ESIG_SETUP_MENU_NEEDS_SYSTEM", TRUE )
+        ENDIF
+
+	base_menu = menu_name
+
+        WHILE menu_name <> EMPTY DO
+
+                CREATE OBJECT MENU_ITEM_CLASS , item
+
+                item . key = PACKED_DECIMAL ( SELECT menu_toolbar . parent_number ) :
+		             PACKED_DECIMAL ( SELECT menu_toolbar . item_number )
+
+		item . item_number  = PACKED_DECIMAL ( SELECT menu_toolbar . item_number )
+		item . parent       = PACKED_DECIMAL ( SELECT menu_toolbar . parent_number )
+                item . procedure    = SELECT menu_toolbar . procedure_num
+                object_assign_uncounted ( item . editor, menu_editor )
+                item . mnemonic     = ""
+                item . esig_level   = NOTHING
+		item . esig_reason  = ""
+                item . is_altered   = FALSE
+
+		item . begin_group  = SELECT menu_toolbar . begin_group
+		item . name         = STRIP ( SELECT menu_toolbar . item_name )
+
+		menu_name = SELECT master_menu . procedure_num
+			    WHERE  procedure_num = item . procedure
+
+		IF menu_name <> EMPTY THEN
+
+			item . mnemonic = SELECT master_menu . mnemonic
+
+			IF ( EMPTY <> SELECT master_menu . esig_level 
+				      WHERE procedure_num = item . procedure ) THEN
+				item . esig_level  = SELECT master_menu . esig_level 
+				item . esig_reason = STRIP ( SELECT master_menu . esig_reason )
+			ENDIF
+
+	                menu_collection . add ( item )
+
+		ELSEIF (( SELECT menu_toolbar . internal_item_name ) = "USER_MENU" ) THEN
+		
+	                menu_collection . add ( item )
+
+		ENDIF
+
+                NEXT menu_toolbar
+	        menu_name = SELECT menu_toolbar . toolbar_name
+
+        ENDWHILE
+
+	menu_editor . build_tree ( parent               ,
+	                           base_menu            ,
+	                           PACKED_DECIMAL ( 0 ) )
+
+        RETURN ( menu_collection . size ( ) <> 0 )
+
+ENDROUTINE { menu_collection_action_load_menu }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_table_esig_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS TABLE_ESIG_CLASS
+
+        INHERIT OPTION_TAB_FORM_CLASS
+        INITIALISATION
+
+        PROPERTIES
+	        "table_form"    ,
+	        "table_list"    ,
+	        "list_form"     ,
+	        "list_chooser"  ,
+	        "split"         ,
+	        "current_table" ,
+	        "field_odb"     ,
+	        "initialised"
+
+	ACTIONS
+	        "load_field_odb" ,
+	        "commit"
+
+        END CLASS { Table Esig Class }
+
+	DEFINE CLASS TABLE_ESIG_LIST_CHOOSER_CLASS
+
+		INHERIT LIST_CHOOSER_CLASS
+
+		ACTIONS "stop_prompt" ,
+		        "set_fields_for_table"
+
+	END CLASS { table esig list chooser Class }
+
+ENDROUTINE { set_up_table_esig_class }
+
+{******************************************************************************}
+
+        ROUTINE table_esig_editor_class_initialisation ( table_esig_editor )
+{
+*
+*
+*******************************************************************************}
+
+	table_esig_editor . current_table = EMPTY
+
+	table_esig_editor . header = get_user_message ( "ESIG_SETUP_TABLES_HEADER" , 1 )
+	table_esig_editor . height = 15
+	table_esig_editor . width  = 100
+	table_esig_editor . button_style     = FORM_BUTTON_NONE
+	table_esig_editor . return_behaviour = FORM_RETURN_STAY
+	table_esig_editor . confirm_required = FALSE
+
+	table_esig_editor . enter_prompt_routine = "table_esig_editor_enter_prompt_form"
+	table_esig_editor . initialised          = FALSE
+
+	{ Add the splitter }
+
+        CREATE OBJECT PROMPT_SPLIT_CLASS , table_esig_editor . split
+
+        table_esig_editor . split . height   = table_esig_editor . height - 4
+        table_esig_editor . split . width    = table_esig_editor . width  - 3
+        table_esig_editor . split . row      = 0.7
+        table_esig_editor . split . column   = 1
+        table_esig_editor . split . set_size ( 2 , 1 )
+        table_esig_editor . split . set_column_width ( 1 , 30 )
+
+        table_esig_editor . add_prompt ( table_esig_editor . split )
+
+	{ Add the table prompt }
+
+	CREATE OBJECT "STD_FORM" , table_esig_editor . table_form
+
+	table_esig_editor . table_form . height = 1
+	table_esig_editor . table_form . width  = 1
+	table_esig_editor . table_form . return_behaviour = FORM_RETURN_STAY
+
+	CREATE OBJECT PROMPT_LIST_CLASS, table_esig_editor . table_list
+
+	table_esig_editor . table_list . row                 = 0
+	table_esig_editor . table_list . column              = 0
+	table_esig_editor . table_list . width               = 1
+	table_esig_editor . table_list . height              = 1
+	table_esig_editor . table_list . full_screen         = TRUE
+	table_esig_editor . table_list . selected_routine    = "table_esig_editor_select_table"
+	table_esig_editor . table_list . right_mouse_routine = "table_esig_editor_rmb_table"
+	table_esig_editor . table_list . style               = LIST_STYLE_REPORT +
+	                                                       LIST_STYLE_SHOWSELALWAYS +
+	                                                       LIST_STYLE_AUTOARRANGE +
+	                                                       LIST_STYLE_FULLROWSELECT +
+	                                                       LIST_STYLE_SINGLESEL
+
+	table_esig_editor . table_list . add_column (
+	        get_user_message ( "ESIG_SETUP_TABLES_TABLES" , 1 ) , LIST_COLUMN_AUTOSIZE )
+
+	table_esig_editor . table_list . set_image_resource ( 0, 0 )
+
+
+	table_esig_editor . table_form . add_prompt ( table_esig_editor . table_list )
+
+	table_esig_editor . split . add_form ( 1 , 1 , table_esig_editor . table_form )
+
+	{ Add a chooser screen }
+
+	CREATE OBJECT "STD_FORM" , table_esig_editor . list_form
+
+	table_esig_editor . list_form . height = 1
+	table_esig_editor . list_form . width  = 1
+	table_esig_editor . list_form . return_behaviour = FORM_RETURN_STAY
+
+	CREATE OBJECT TABLE_ESIG_LIST_CHOOSER_CLASS, table_esig_editor . list_chooser
+
+	table_esig_editor . list_chooser . header = ""
+
+	table_esig_editor . list_chooser . row         = 0
+	table_esig_editor . list_chooser . column      = 0
+	table_esig_editor . list_chooser . width       = 1
+	table_esig_editor . list_chooser . height      = 1
+	table_esig_editor . list_chooser . full_screen = TRUE
+
+	table_esig_editor . list_chooser . create_list ( )
+
+	table_esig_editor . list_form . add_prompt ( table_esig_editor . list_chooser )
+
+	table_esig_editor . split . add_form ( 2 , 1 , table_esig_editor . list_form )
+
+	{ Set the field_odb to empty until populated }
+
+	table_esig_editor . field_odb = EMPTY
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE table_esig_editor_enter_prompt_form ( table_esig_editor )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE count ,
+	        table_names,
+	        field_rec,
+	        icon
+
+	IF NOT table_esig_editor . initialised THEN
+
+		window_set_status ( get_user_message ( "ESIG_SETUP_TABLES_LOADING" , 1 ))
+
+		table_esig_editor . load_field_odb ( )
+
+		{ Build an array of table names }
+
+		count = 1
+
+		ARRAY table_names ARRAYSIZE ( 0 , 2 )
+
+		get_table_names ( table_names )
+
+		table_esig_editor . table_list . removeallitems ( )
+		table_esig_editor . table_list . start_rebuild ( )
+
+		WHILE ( count <= size_of_array ( table_names )) DO
+
+			field_rec = table_esig_editor .
+			              field_odb .
+			                get_by_index ( "KEY0" ,
+			                               table_names [ count, 1 ] )
+
+			IF ( field_rec = EMPTY ) OR 
+			   BLANK ( SELECT esig_checksum_fields . checksum_fields
+			                  IN OBJECT field_rec                    ) THEN
+				icon = CHECKSUM_NO_ICON
+			ELSE
+				icon = CHECKSUM_ICON
+			ENDIF
+
+			table_esig_editor .
+			  table_list .
+			    insert_item ( table_names [ count, 1 ], icon)
+
+			count = count + 1
+
+		ENDWHILE
+
+		table_esig_editor . table_list . rebuild ( )
+		table_esig_editor . initialised = TRUE
+
+		window_set_status ( "" )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE table_esig_editor_action_load_field_odb ( table_esig_editor )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE select_array
+
+	IF table_esig_editor . field_odb = EMPTY THEN
+
+		{ Build an object database for field lists }
+
+		CREATE OBJECT "STD_OBJECT_DATABASE", table_esig_editor . field_odb
+
+		table_esig_editor . field_odb . initialise ( "ESIG_CHECKSUM_FIELDS" )
+
+		ARRAY select_array
+
+		array_select_add ( select_array           ,
+		                   ARRAY_SELECT_NE        ,
+		                   "TABLE_NAME"           ,
+		                   ""                     )
+		array_select_add ( select_array           ,
+		                   ARRAY_SELECT_ORDER     ,
+		                   "TABLE_NAME"           ,
+		                   ARRAY_SELECT_ASCENDING )
+
+		table_esig_editor . field_odb . select ( select_array )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE table_esig_editor_action_commit ( table_esig_editor )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE num_records,
+	        status,
+	        count,
+	        field_rec,
+	        rec,
+	        checksum_fields
+
+	{ Save to database }
+
+	START WRITE TRANSACTION GET_USER_MESSAGE ( "ESIG_SETUP_TABLES_TRANSACTION", 1 )
+
+	num_records = table_esig_editor . field_odb . size ( )
+
+	status = EMPTY
+	count = 1
+
+	WHILE ( count <= num_records ) AND ( status = EMPTY ) DO
+
+		field_rec = table_esig_editor .
+		              field_odb .
+		                get_by_index_number ( "KEY0" ,
+		                                      count  )
+
+		IF field_rec <> EMPTY THEN
+
+			rec = SELECT esig_checksum_fields . table_name FOR UPDATE
+			             WHERE table_name = SELECT esig_checksum_fields . table_name
+			                                       IN OBJECT field_rec
+
+			IF rec = EMPTY THEN
+
+				RESERVE ENTRY esig_checksum_fields,
+				              SELECT esig_checksum_fields . table_name
+				                     IN OBJECT field_rec , status
+
+			ELSEIF rec = LOCKED THEN
+				status = GET_USER_MESSAGE ( "ESIG_SETUP_TABLES_LOCKED", 1 )
+			ENDIF
+
+			IF status = EMPTY THEN
+
+				checksum_fields = SELECT esig_checksum_fields . checksum_fields
+				                         IN OBJECT field_rec
+
+				IF NOT BLANK ( checksum_fields ) THEN
+
+					ASSIGN esig_checksum_fields . checksum_fields =
+					          SELECT esig_checksum_fields . checksum_fields
+					                 IN OBJECT field_rec
+
+					UPDATE esig_checksum_fields
+
+				ELSEIF NOT field_rec . new THEN
+
+					DELETE esig_checksum_fields
+
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	IF status = EMPTY THEN
+		COMMIT
+	ELSE
+		ROLLBACK
+		FLASH_MESSAGE ( status, TRUE )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE table_esig_editor_select_table ( table_list )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE item_name,
+	        new_count,
+	        count,
+	        num_fields,
+	        field_array,
+	        item,
+	        table_esig_editor,
+	        field_rec
+
+	table_list . get_first_selected ( item_name )
+
+	table_esig_editor = table_list . parent_prompt . parent_prompt
+
+	IF item_name <> table_esig_editor . current_table THEN
+
+		{ Reset the chooser }
+
+		table_esig_editor . list_chooser . data . remove_all ( )
+
+		table_esig_editor . current_table = item_name
+
+		{ Load the chooser with the data from the array }
+
+		get_field_names ( item_name, field_array )
+
+		count = 1
+		new_count = 1
+		num_fields = size_of_array ( field_array )
+
+		WHILE count <= num_fields DO
+
+			IF NOT field_array [ count, 2] THEN
+
+				CREATE OBJECT LIST_CHOOSER_ITEM_CLASS, item
+
+				item . value       = field_array [ count, 1 ]
+				item . checked     = FALSE
+				item . icon        = EMPTY
+				item . description = EMPTY
+				item . position    = new_count
+
+				new_count = new_count + 1
+
+				table_esig_editor . list_chooser . data . add ( item )
+
+			ENDIF
+
+			count = count + 1
+
+		ENDWHILE
+
+		{ Reload the chooser }
+
+		table_esig_editor . list_chooser . remove_all_items ( )
+
+		table_esig_editor . list_chooser . load_data ( )
+
+		field_rec = table_esig_editor .
+		              field_odb .
+		                get_by_index ( "KEY0" ,
+		                               table_esig_editor . current_table )
+
+		IF field_rec <> EMPTY THEN
+
+			table_esig_editor .
+			  list_chooser .
+			    read_csv ( SELECT esig_checksum_fields . checksum_fields
+			                      IN OBJECT field_rec                    )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE table_esig_editor_rmb_table ( table_list )
+{
+*
+*
+*******************************************************************************}
+
+
+	DECLARE item_name,
+	        menu,
+	        result,
+	        table_esig_editor,
+	        field_array,
+	        count,
+	        new_count,
+	        num_fields,
+	        item
+
+	table_list . get_first_selected ( item_name )
+
+	ARRAY menu
+
+	IF item_name <> EMPTY THEN
+
+		menu [ 1 ] = get_user_message ( "ESIG_SETUP_TABLES_CHECKSUM"   , 1 )
+		menu [ 2 ] = get_user_message ( "ESIG_SETUP_TABLES_NOCHECKSUM" , 1 )
+
+		result = lib_utils_popup_menu ( menu )
+
+		IF result > 0 THEN
+
+			table_esig_editor = table_list . parent_prompt . parent_prompt
+
+			{ Reset the chooser }
+
+			table_esig_editor . list_chooser . data . remove_all ( )
+
+			item_name = table_esig_editor . current_table
+
+			{ Load the chooser with the data from the array }
+
+			get_field_names ( item_name, field_array )
+
+			count = 1
+			new_count = 1
+			num_fields = size_of_array ( field_array )
+
+			WHILE count <= num_fields DO
+
+				IF NOT field_array [ count, 2] THEN
+
+					CREATE OBJECT LIST_CHOOSER_ITEM_CLASS, item
+
+					item . value       = field_array [ count, 1 ]
+					item . checked     = ( result = 1 )
+					item . icon        = EMPTY
+					item . description = EMPTY
+					item . position    = new_count
+
+					new_count = new_count + 1
+
+					table_esig_editor . list_chooser . data . add ( item )
+
+				ENDIF
+
+				count = count + 1
+
+			ENDWHILE
+
+			{ Reload the chooser }
+
+			table_esig_editor . list_chooser . remove_all_items ( )
+
+			table_esig_editor . list_chooser . load_data ( )
+
+			table_esig_editor . list_chooser . read_csv ( "" )
+
+			table_esig_editor . list_chooser . set_fields_for_table (
+			     item_name                                       ,
+			     table_esig_editor . list_chooser . build_csv ( ))
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE { table_esig_editor_rmb_table }
+
+{******************************************************************************}
+
+        ROUTINE table_esig_list_chooser_action_stop_prompt ( field_list )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE table_esig_editor
+
+	table_esig_editor = field_list . parent_prompt . parent_prompt
+
+	field_list . set_fields_for_table ( table_esig_editor . current_table ,
+	                                    field_list . build_csv ( )        )
+
+	object_invoke_class ( field_list         ,
+	                      LIST_CHOOSER_CLASS ,
+	                      "STOP_PROMPT"       )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE table_esig_list_chooser_action_set_fields_for_table
+	                                               (       field_list ,
+	                                                 VALUE tab_name   ,
+	                                                 VALUE field_csv  )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE field_rec ,
+	        table_esig_editor
+
+	table_esig_editor = field_list . parent_prompt . parent_prompt
+
+	field_rec = table_esig_editor .
+	                field_odb . get_by_index ( "KEY0" , tab_name )
+
+	IF ( field_rec = EMPTY ) AND NOT BLANK ( field_csv ) THEN
+
+		CREATE OBJECT "STD_OBJECT_RECORD", field_rec
+
+		field_rec . new   = TRUE
+		field_rec . table = "ESIG_CHECKSUM_FIELDS"
+
+		RESERVE ENTRY esig_checksum_fields,
+		              table_esig_editor . current_table
+
+		OBJECT_ADD_TABLE ( field_rec, "ESIG_CHECKSUM_FIELDS" )
+		table_esig_editor . field_odb . add ( field_rec )
+
+		ASSIGN esig_checksum_fields . checksum_fields
+		       IN OBJECT field_rec = field_csv
+
+		table_esig_editor . is_altered = TRUE
+
+	ELSEIF ( field_rec <> EMPTY ) THEN
+
+		ASSIGN esig_checksum_fields . checksum_fields
+		       IN OBJECT field_rec = field_csv
+
+		table_esig_editor . is_altered = TRUE
+
+	ENDIF
+
+	IF BLANK ( field_csv ) THEN
+		table_esig_editor . table_list . set_image ( CHECKSUM_NO_ICON )
+	ELSE
+		table_esig_editor . table_list . set_image ( CHECKSUM_ICON )
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_authorise_class
+{
+*
+*
+*******************************************************************************}
+
+	DEFINE CLASS AUTHORISE_CLASS
+
+	INHERIT OPTION_TAB_FORM_CLASS
+
+	INITIALISATION
+
+	PROPERTIES
+		"current_table"         , { table to set authorise settings on       }
+		"table_list"            , { list of allowed tables                   }
+		"associated_tables"     , { tables to sign at the same time          }
+		"table_settings"        , { Associated tables array                  }
+		"number_of_tables"      , { Number of tables in message              }
+		"current_table_num"     , { Position of current table in array       }
+		"needs_esig"            , { Checkbox to set Esig for table           }
+		"reason"                , { Reason text to dipslay on signing screen }
+		"reason_strings"          { Array of reason strings                  }
+
+	ACTIONS
+		"load_settings"         , { Load the current values                  }
+		"load_associated"       , { Load the associated_tables prompt        }
+		"remove_user_values"    , { Delete any authorisation user values     }
+		"set_is_altered"        , { Set the is_altered flag appropriately    }
+		"commit"                  { Commit form data to database             }
+
+	END CLASS { authorise Class }
+
+	DEFINE CLASS AUTHORISE_LIST_CHOOSER_CLASS
+
+		INHERIT LIST_CHOOSER_CLASS
+
+		ACTIONS "stop_prompt"
+
+	END CLASS { authorise list chooser Class }
+
+ENDROUTINE { set_up_authorise_class }
+
+{******************************************************************************}
+
+	ROUTINE esig_authorise_class_initialisation ( authorise )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE button_prompt,
+	        message_text ,
+	        message      ,
+	        count
+
+	authorise . load_settings ( )
+
+	authorise . header = get_user_message ( "ESIG_SETUP_AUTHORISE_HEADER" , 1 )
+	authorise . help_context = "not gonna find it"
+	authorise . width  = 99
+
+	authorise . leave_prompt_routine = "authorise_editor_leave_prompt_form"
+
+	{ Allow the user to select a table from the allowed list }
+
+	message_text = get_user_message ( "ESIG_SETUP_AUTHORISE_TABLE" , 1 )
+
+	authorise . add_display ( message_text            ,
+	                          5                       ,
+	                          1                       ,
+	                          PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT authorise . current_table
+	       CHOOSE OUTOF authorise . table_list
+	       WITH ( row                  = 1                               ,
+	              column               = LENGTH ( message_text ) + 1     ,
+	              width                = 20                              ,
+	              value                = authorise . table_list [ 1, 2 ] ,
+	              enter_prompt_routine = "authorise_prompt_change"       ,
+	              leave_prompt_routine = "authorise_prompt_change"       ,
+	              selected_routine     = "authorise_table_change"        )
+
+	authorise . add_prompt ( authorise . current_table )
+
+	{ Add a check box to set Esig for table }
+
+	authorise . add_frame ( get_user_message ( "ESIG_SETUP_AUTHORISE_CHECKSUM_TABLES", 1 ),
+	                        4, 3, 7, 42 )
+
+	{ Display a chooser for associated tables }
+
+	CREATE OBJECT AUTHORISE_LIST_CHOOSER_CLASS, authorise . associated_tables
+
+	authorise . associated_tables . row               = 3.5
+	authorise . associated_tables . column            = 5
+	authorise . associated_tables . width             = 40
+	authorise . associated_tables . height            = 4
+
+	authorise . associated_tables . create_list ( )
+
+	authorise . add_prompt ( authorise . associated_tables )
+
+	{ Add some buttons }
+
+	CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+
+	button_prompt . row                 = 8.8
+	button_prompt . column              = 6
+	button_prompt . width               = BUTTON_WIDTH
+	button_prompt . mouse_click_routine = "authorise_button_routine"
+	button_prompt . user_info           = 1
+	button_prompt . caption             = get_user_message ( "ESIG_SETUP_SELECT_ALL" , 1 )
+	button_prompt . character_sized     = TRUE
+
+	authorise . add_prompt ( button_prompt )
+
+	CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+
+	button_prompt . row                 = 8.8
+	button_prompt . column              = 9 + BUTTON_WIDTH
+	button_prompt . width               = BUTTON_WIDTH
+	button_prompt . mouse_click_routine = "authorise_button_routine"
+	button_prompt . user_info           = 2
+	button_prompt . caption             = get_user_message ( "ESIG_SETUP_CLEAR_ALL" , 1 )
+	button_prompt . character_sized     = TRUE
+
+	authorise . add_prompt ( button_prompt )
+
+	CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+
+	button_prompt . row                 = 8.8
+	button_prompt . column              = 12 + ( 2 * BUTTON_WIDTH )
+	button_prompt . width               = BUTTON_WIDTH
+	button_prompt . mouse_click_routine = "authorise_button_routine"
+	button_prompt . user_info           = 3
+	button_prompt . caption             = get_user_message ( "ESIG_SETUP_TOGGLE" , 1 )
+	button_prompt . character_sized     = TRUE
+
+	authorise . add_prompt ( button_prompt )
+
+	{ Specify a reason }
+
+	message_text = get_user_message ( "ESIG_SETUP_AUTHORISE_REASON" , 1 )
+
+	authorise . add_display ( message_text            ,
+	                          5                       ,
+	                          11                      ,
+	                          PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT authorise . reason
+	       FORMAT TEXT
+	       WITH ( row                  = 12                              ,
+	              column               = 5                               ,
+	              width                = 40                              ,
+	              leave_prompt_routine = "reason_leave_prompt"           )
+
+	authorise . add_prompt ( authorise . reason )
+
+	{ Display help text - helps fill the screen }
+
+	message_fetch ( "ESIG_SETUP_AUTHORISE_HELP" , message )
+	count = 0
+
+	REPEAT
+
+		count = count + 1
+
+		authorise . add_display ( message_get_text ( message , count ) ,
+		                          50                                   ,
+		                          count                                ,
+		                          PROMPT_RENDITION_NORMAL              )
+
+	UNTIL count = message_get_lines ( message )
+
+	authorise . add_panel ( 50                     ,
+	                        1                      ,
+	                        count                  ,
+	                        authorise . width + 50 ,
+	                        0                      )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE authorise_editor_leave_prompt_form ( authorise )
+
+{
+*
+*	Cross check against the field_odb from the checksum tab
+*
+*******************************************************************************}
+
+	DECLARE table_esig_editor ,
+	        count             ,
+	        warn              ,
+	        test_string       ,
+	        id                ,
+	        field_rec         ,
+	        warn_pos          ,
+	        warn_array        ,
+	        message
+
+	{ Make sure the field_odb is loaded }
+
+	table_esig_editor = authorise . parent_prompt . tab . forms [ TAB_TABLE_ESIG_EDITOR ]
+
+	table_esig_editor . load_field_odb ( )
+
+	count = 1
+
+	ARRAY warn_array
+
+	WHILE count <= authorise . number_of_tables DO
+
+		IF NOT BLANK ( authorise . table_settings [ count, 1 ] ) THEN
+
+			test_string = authorise . table_settings [ count, 1 ]
+
+			WHILE NOT BLANK ( test_string ) DO
+
+				id = get_token ( test_string, "," )
+
+				field_rec = table_esig_editor .
+				              field_odb .
+				                get_by_index ( "KEY0" , id )
+
+				IF field_rec = EMPTY THEN
+
+					warn = TRUE
+
+				ELSEIF BLANK ( SELECT esig_checksum_fields . checksum_fields
+				                      IN OBJECT field_rec                    ) THEN
+
+					warn = TRUE
+
+				ELSE
+
+					warn = FALSE
+
+				ENDIF
+
+				IF warn THEN
+
+					warn_pos = 1
+
+					WHILE ( warn_pos <= size_of_array ( warn_array )) AND
+					      ( id <> warn_array [ warn_pos ]           ) DO
+
+						warn_pos = warn_pos + 1
+
+					ENDWHILE
+
+					IF ( warn_pos > size_of_array ( warn_array )) THEN
+
+						warn_array [ warn_pos ] = id
+
+					ENDIF
+
+				ENDIF
+
+			ENDWHILE
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	IF size_of_array ( warn_array ) > 0 THEN
+
+		warn_pos = 1
+		test_string = warn_array [ warn_pos ]
+
+		WHILE ( warn_pos < size_of_array ( warn_array )) DO
+
+			warn_pos = warn_pos + 1
+			test_string = test_string : ", " : warn_array [ warn_pos ]
+
+		ENDWHILE
+
+		message_fetch ( "ESIG_SETUP_AUTHORISE_WARN", message )
+		message_add_parameter ( message, test_string )
+		message = message_get_text ( message , 1 )
+
+		FLASH_MESSAGE ( message , TRUE )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE authorise_prompt_change ( authorise_table )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE authorise
+
+	authorise = authorise_table . parent_prompt
+
+	IF authorise . current_table_num <> authorise_table . choose_index THEN
+		authorise . load_associated ( authorise_table . choose_index )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE authorise_table_change ( authorise_table )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE authorise,
+	        table_num
+
+	table_num = authorise_table . choose_index
+
+	authorise = authorise_table . parent_prompt
+
+	{ Load the associated table list }
+
+	authorise . load_associated ( table_num )
+
+ENDROUTINE { authorise_table_change }
+
+{******************************************************************************}
+
+        ROUTINE authorise_button_routine ( button )
+{
+*
+*
+*******************************************************************************}
+
+	IF button . user_info = 1 THEN
+
+		button . parent_prompt . associated_tables .toggle ( TRUE )
+
+	ELSEIF button . user_info = 2 THEN
+
+		button . parent_prompt . associated_tables .toggle ( FALSE )
+
+	ELSE
+
+		button . parent_prompt . associated_tables .set_checks ( TRUE )
+
+	ENDIF
+
+	button . parent_prompt . set_is_altered ( )
+
+ENDROUTINE { authorise_button_routine }
+
+{******************************************************************************}
+
+        ROUTINE reason_leave_prompt ( reason )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE authorise
+
+	authorise = reason . parent_prompt
+
+	authorise . reason_strings [ authorise . current_table_num, 1 ] =
+	                       reason . text
+
+	IF authorise . reason_strings [ authorise . current_table_num, 1 ] <>
+	   authorise . reason_strings [ authorise . current_table_num, 2 ] THEN
+
+		authorise . is_altered = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE esig_authorise_list_chooser_action_stop_prompt ( associated_tables )
+{
+*
+*
+*******************************************************************************}
+
+	associated_tables . parent_prompt . set_is_altered ( )
+
+	object_invoke_class ( associated_tables  ,
+	                      LIST_CHOOSER_CLASS ,
+	                      "STOP_PROMPT"       )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE esig_authorise_action_set_is_altered ( authorise )
+{
+*
+*
+*******************************************************************************}
+
+	{ Store the new field list }
+
+	authorise . table_settings [ authorise . current_table_num, 1 ] =
+	                       authorise . associated_tables . build_csv ( )
+
+	IF authorise . table_settings [ authorise . current_table_num, 1 ] <>
+	   authorise . table_settings [ authorise . current_table_num, 2 ] THEN
+
+		authorise . is_altered = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE esig_authorise_action_load_associated (       authorise ,
+	                                                VALUE table_num )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE count,
+	        item
+
+	{ Reset the chooser }
+
+	authorise . associated_tables . data . remove_all ( )
+
+	count = table_num
+
+	WHILE count <= authorise . number_of_tables DO
+
+		CREATE OBJECT LIST_CHOOSER_ITEM_CLASS, item
+
+		item . value       = authorise . table_list [ count, 1 ]
+		item . checked     = FALSE
+		item . icon        = EMPTY
+		item . description = EMPTY
+		item . position    = count
+
+		count = count + 1
+
+		authorise . associated_tables . data . add ( item )
+
+	ENDWHILE
+
+	{ Reload the chooser }
+
+	authorise . associated_tables . remove_all_items ( )
+
+	authorise . associated_tables . load_data ( )
+
+	authorise . associated_tables . read_csv (
+	              authorise . table_settings [ table_num, 1 ] )
+
+	authorise . current_table_num = table_num
+
+	{ Reload reason string }
+
+	authorise . reason . set_text ( authorise . reason_strings [ table_num, 1 ] )
+
+ENDROUTINE { esig_authorise_action_load_associated }
+
+{******************************************************************************}
+
+        ROUTINE esig_authorise_action_load_settings ( authorise )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE message ,
+	        count
+
+	ARRAY authorise . table_list     ARRAYSIZE ( 0, 2 )
+	ARRAY authorise . table_settings ARRAYSIZE ( 0, 2 ) = ""
+	ARRAY authorise . reason_strings ARRAYSIZE ( 0, 2 ) = ""
+
+	authorise . current_table_num = 0
+
+	{ Load the allowed tables from the message file }
+
+	message_fetch ( "ESIG_SETUP_AUTHORISE_ALLOWED" , message )
+
+	authorise . number_of_tables = message_get_lines ( message )
+
+	count = 1
+
+	WHILE count <= authorise . number_of_tables DO
+
+		authorise . table_list [ count, 1 ] = message_get_text ( message , count )
+		authorise . table_list [ count, 2 ] =
+		                   capitalise ( authorise . table_list [ count, 1 ])
+
+		count = count + 1
+
+	ENDWHILE
+
+	{ Load any existing configs }
+
+	count = 1
+
+	WHILE count <= authorise . number_of_tables DO
+
+		IF global_exists ( ESIG_GLOBAL_PREFIX :
+		                   STRIP ( authorise . table_list [ count, 1 ] )) THEN
+
+			authorise . table_settings [ count, 1 ] =
+			      GLOBAL ( ESIG_GLOBAL_PREFIX :
+			               STRIP ( authorise . table_list [ count, 1 ] ))
+
+			authorise . table_settings [ count, 2 ] =
+			      authorise . table_settings [ count, 1 ]
+
+		ENDIF
+
+		IF global_exists ( ESIG_REASON_PREFIX :
+		                   STRIP ( authorise . table_list [ count, 1 ] )) THEN
+
+			authorise . reason_strings [ count, 1 ] =
+			      GLOBAL ( ESIG_REASON_PREFIX :
+			               STRIP ( authorise . table_list [ count, 1 ] ))
+
+			authorise . reason_strings [ count, 2 ] =
+			      authorise . reason_strings [ count, 1 ]
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+ENDROUTINE { esig_authorise_action_load_settings }
+
+{******************************************************************************}
+
+        ROUTINE esig_authorise_action_commit ( authorise )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE count,
+	        needs_rollback,
+	        config_name,
+	        config_item
+
+	{ Store any changed configs }
+
+	needs_rollback = FALSE
+
+	START WRITE TRANSACTION get_user_message ( "ESIG_SETUP_AUTHORISE_TRANSACTION" , 1 )
+
+	count = 1
+
+	WHILE count <= authorise . number_of_tables DO
+
+		IF authorise . table_settings [ count, 2 ] <>
+		        authorise . table_settings [ count, 1 ] THEN
+
+			config_name = ESIG_GLOBAL_PREFIX :
+			              STRIP ( authorise . table_list [ count, 1 ] )
+
+			config_item = SELECT config_header . identity
+			              FOR UPDATE
+			              WHERE identity = config_name
+
+			IF config_item = config_name THEN
+
+				ASSIGN config_header . value =
+				          authorise . table_settings [ count, 1 ]
+				UPDATE config_header
+
+			ELSE
+
+				needs_rollback = TRUE
+
+			ENDIF
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	count = 1
+
+	WHILE count <= authorise . number_of_tables DO
+
+		IF authorise . reason_strings [ count, 2 ] <>
+		        authorise . reason_strings [ count, 1 ] THEN
+
+			config_name = ESIG_REASON_PREFIX :
+			              STRIP ( authorise . table_list [ count, 1 ] )
+
+			config_item = SELECT config_header . identity
+			              FOR UPDATE
+			              WHERE identity = config_name
+
+			IF config_item = config_name THEN
+
+				ASSIGN config_header . value =
+				          authorise . reason_strings [ count, 1 ]
+				UPDATE config_header
+
+			ELSE
+
+				needs_rollback = TRUE
+
+			ENDIF
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	IF needs_rollback THEN
+		ROLLBACK
+		flash_message (
+		  get_user_message ( "ESIG_SETUP_AUTHORISE_UPDATE_FAILURE" , 1 ),
+		  TRUE                                                          )
+	ELSE
+		authorise . remove_user_values ( )
+		COMMIT
+	ENDIF
+
+ENDROUTINE { esig_authorise_action_commit }
+
+{******************************************************************************}
+
+        ROUTINE esig_authorise_action_remove_user_values ( authorise )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE config_item ,
+	        config_name ,
+	        count
+
+	count = 1
+
+	WHILE count <= authorise . number_of_tables DO
+
+		config_name = ESIG_GLOBAL_PREFIX :
+		              STRIP ( authorise . table_list [ count, 1 ] )
+
+		config_item = SELECT config_item . identity
+		              FOR UPDATE
+		              WHERE identity = config_name
+
+		WHILE config_item = config_name DO
+
+			DELETE config_item
+			NEXT config_item
+
+			config_item = SELECT config_item . identity
+
+		ENDWHILE
+
+		config_name = ESIG_REASON_PREFIX :
+		              STRIP ( authorise . table_list [ count, 1 ] )
+
+		config_item = SELECT config_item . identity
+		              FOR UPDATE
+		              WHERE identity = config_name
+
+		WHILE config_item = config_name DO
+
+			DELETE config_item
+			NEXT config_item
+
+			config_item = SELECT config_item . identity
+
+		ENDWHILE
+
+		count = count + 1
+
+	ENDWHILE
+
+ENDROUTINE { esig_authorise_action_remove_user_values }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_timeout_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS TIMEOUT_CLASS
+
+        INHERIT OPTION_TAB_FORM_CLASS
+        INITIALISATION
+
+        PROPERTIES
+                "default_timeout"     , { Timeout on parent window              }
+                "active_timeout"      , { Timeout on child windows              }
+                "esig_active_timeout" , { Timeout on child windows with Esig    }
+                "timeout_timeout"     , { Timeout on timeout window             }
+		"config_list"           { Array of initial timeout values       }
+
+        ACTIONS
+		"load_timeouts"       , { Load the current values               }
+                "commit"              , { Commit form data to database          }
+                "remove_user_values"    { Delete all user level timeout globals }
+
+        END CLASS { Timeout Class }
+
+ENDROUTINE { set_up_timeout_class }
+
+{******************************************************************************}
+
+        ROUTINE timeout_class_initialisation ( timeout )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , message
+
+	timeout . load_timeouts ( )
+
+        timeout . header = get_user_message ( "ESIG_SETUP_TIMEOUT_HEADER" , 1 )
+        timeout . help_context = "not gonna find it"
+        timeout . width  = 99
+
+	{ Line at the bottom }
+
+        timeout . add_frame (
+                ""                  ,
+                1                   ,
+                12                  ,
+                0                   ,
+                timeout . width     )
+
+	{ Timeout Timeout frame }
+
+        timeout . add_frame (
+                get_user_message ( "ESIG_SETUP_TIMEOUT_TIMEOUT" , 1 )   ,
+                1                   ,
+                9                   ,
+                0                   ,
+                timeout . width     )
+
+	{ Esig Active Timeout frame }
+
+        timeout . add_frame (
+                get_user_message ( "ESIG_SETUP_TIMEOUT_ESIG_ACTIVE" , 1 )   ,
+                1                   ,
+                6                   ,
+                0                   ,
+                timeout . width     )
+
+	{ Active Timeout frame }
+
+        timeout . add_frame (
+                get_user_message ( "ESIG_SETUP_TIMEOUT_ACTIVE" , 1 )   ,
+                1                   ,
+                3                   ,
+                0                   ,
+                timeout . width     )
+
+	{ Default Timeout frame }
+
+        timeout . add_frame (
+                get_user_message ( "ESIG_SETUP_TIMEOUT_DEFAULT" , 1 ) ,
+                1                   ,
+                0                   ,
+                0                   ,
+                timeout . width     )
+
+	{ Add the prompts - this time in the correct order }
+
+        PROMPT OBJECT timeout . default_timeout
+                BROWSE ON INTEGER
+                WITH ( row = 2                                          ,
+                       column = timeout . width - 20                    ,
+                       minimum = TIMEOUT_MINIMUM                        ,
+                       maximum = TIMEOUT_MAXIMUM                        ,
+                       value = timeout . config_list [ 1, 2 ]           ,
+                       leave_prompt_routine = "timeout_prompt_callback" )
+
+        timeout . add_prompt ( timeout . default_timeout )
+
+        PROMPT OBJECT timeout . active_timeout
+                BROWSE ON INTEGER
+                WITH ( row = 5                                          ,
+                       column = timeout . width - 20                    ,
+                       minimum = TIMEOUT_MINIMUM                        ,
+                       maximum = TIMEOUT_MAXIMUM                        ,
+                       value = timeout . config_list [ 2, 2 ]           ,
+                       leave_prompt_routine = "timeout_prompt_callback" )
+
+        timeout . add_prompt ( timeout . active_timeout )
+
+        PROMPT OBJECT timeout . esig_active_timeout
+                BROWSE ON INTEGER
+                WITH ( row = 8                                          ,
+                       column = timeout . width - 20                    ,
+                       minimum = TIMEOUT_MINIMUM                        ,
+                       maximum = TIMEOUT_MAXIMUM                        ,
+                       value = timeout . config_list [ 3, 2 ]           ,
+                       leave_prompt_routine = "timeout_prompt_callback" )
+
+        timeout . add_prompt ( timeout . esig_active_timeout )
+
+        PROMPT OBJECT timeout . timeout_timeout
+                BROWSE ON INTEGER
+                WITH ( row = 11                                         ,
+                       column = timeout . width - 20                    ,
+                       minimum = TIMEOUT_MINIMUM                        ,
+                       maximum = TIMEOUT_MAXIMUM                        ,
+                       value = timeout . config_list [ 4, 2 ]           ,
+                       leave_prompt_routine = "timeout_prompt_callback" ,
+                       enabled = (( timeout . default_timeout . value      > 0 ) OR
+                                  ( timeout . active_timeout . value       > 0 ) OR
+                                  ( timeout . esig_active_timeout . value  > 0 )))
+
+        timeout . add_prompt ( timeout . timeout_timeout )
+
+        message_fetch ( "ESIG_SETUP_TIMEOUT_STATIC" , message )
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+
+                timeout . add_display ( message_get_text ( message , count ) ,
+                                        7                                    ,
+                                        count                                ,
+                                        PROMPT_RENDITION_NORMAL              )
+
+        UNTIL count = message_get_lines ( message )
+
+        message = get_user_message ( "ESIG_SETUP_TIMEOUT_SECONDS" , 1 )
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+
+                timeout . add_display ( message                  ,
+                                        timeout . width - 12     ,
+                                        2 + (( count - 1 ) * 3 ) ,
+                                        PROMPT_RENDITION_NORMAL  )
+
+        UNTIL count = 4
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE timeout_prompt_callback ( interval_prompt )
+{
+*
+*
+*******************************************************************************}
+
+        interval_prompt . parent_prompt . timeout_timeout . set_enabled
+                           (( interval_prompt . parent_prompt . default_timeout . value      > 0 ) OR
+                            ( interval_prompt . parent_prompt . active_timeout . value       > 0 ) OR
+                            ( interval_prompt . parent_prompt . esig_active_timeout . value  > 0 ))
+
+        IF interval_prompt . original_text <> interval_prompt . value THEN
+
+                interval_prompt . parent_prompt . is_altered = TRUE
+
+        ENDIF
+
+ENDROUTINE { timeout_prompt_callback }
+
+{******************************************************************************}
+
+        ROUTINE timeout_action_load_timeouts ( timeout )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count ,
+                config_item
+
+        ARRAY timeout . config_list ARRAYSIZE ( 4, 2 )
+
+        timeout . config_list [ 1, 1 ] = "TIMEOUT_DEFAULT"
+        timeout . config_list [ 2, 1 ] = "TIMEOUT_ACTIVE"
+        timeout . config_list [ 3, 1 ] = "TIMEOUT_ESIG_ACTIVE"
+        timeout . config_list [ 4, 1 ] = "TIMEOUT_TIMEOUT"
+
+        count = 0
+
+        REPEAT
+        
+                count = count + 1
+
+                config_item = SELECT config_header . identity
+                              WHERE identity = timeout . config_list [ count, 1 ]
+
+                IF config_item = timeout . config_list [ count, 1 ] THEN
+			timeout . config_list [ count, 2 ] =
+			            SELECT config_header . value
+		ELSE
+			timeout . config_list [ count, 2 ] = 0
+		ENDIF
+
+        UNTIL ( count = size_of_array ( timeout . config_list ))
+
+ENDROUTINE { timeout_action_load_timeouts }
+
+{******************************************************************************}
+
+        ROUTINE timeout_action_commit ( timeout )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE config_item , count , needs_rollback
+
+        needs_rollback = FALSE
+
+        count = 0
+
+        START WRITE TRANSACTION get_user_message ( "ESIG_SETUP_TIMEOUT_TRANSACTION" , 1 )
+
+        REPEAT
+        
+                count = count + 1
+
+                config_item = SELECT config_header . identity
+                              FOR UPDATE
+                              WHERE identity = timeout . config_list [ count , 1 ]
+
+                IF config_item = timeout . config_list [ count , 1 ] THEN
+
+                        ASSIGN config_header . value = timeout . prompt_objects [ count ] . value
+                        UPDATE config_header
+
+                ELSE
+                        needs_rollback = TRUE
+                ENDIF
+
+        UNTIL (( count = size_of_array ( timeout . config_list )) OR ( needs_rollback ))
+
+        IF needs_rollback THEN
+                ROLLBACK
+                flash_message ( get_user_message ( "ESIG_SETUP_TIMEOUT_UPDATE_FAILURE" , 1 ) , TRUE )
+        ELSE
+
+                COMMIT
+
+		timeout . remove_user_values ( )
+
+        ENDIF
+
+ENDROUTINE { timeout_action_commit }
+
+{******************************************************************************}
+
+        ROUTINE timeout_action_remove_user_values ( timeout )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE config_item , count
+
+	IF confirm_with_message ( "ESIG_SETUP_TIMEOUT_DELETE_USER" ) THEN
+
+		START WRITE TRANSACTION
+		  get_user_message ( "ESIG_SETUP_TIMEOUT_TRANSACTION" , 1 )
+
+		{ Remove user level globals }
+
+		count = 0
+
+		REPEAT
+
+			count = count + 1
+
+			config_item = SELECT config_item . identity
+			              FOR UPDATE
+			              WHERE identity = timeout . config_list [ count , 1 ]
+
+			WHILE config_item = timeout . config_list [ count , 1 ] DO
+
+				DELETE config_item
+				NEXT config_item
+				config_item = SELECT config_item . identity
+
+			ENDWHILE
+
+		UNTIL ( count = size_of_array ( timeout . config_list ))
+
+		COMMIT
+
+	ENDIF
+
+ENDROUTINE { timeout_action_remove_user_values }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_password_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS PASSWORD_CLASS
+
+        INHERIT OPTION_TAB_FORM_CLASS
+        INITIALISATION
+
+        PROPERTIES
+
+                "pswd_expiry_interval"      , { Global Password Expiry Interval     }
+                "pswd_list"                 , { Password Expiry Intervals per user  }
+                "exp_interval_list"         , { Array to mirror list                }
+                "pswd_grace_period"         , { Change password reminder period     }
+                "pswd_min_length"           , { Minimum length of passwords         }
+                "pswd_logins_before_exit"   , { No. of password attempts on login   }
+                "pswd_logins_before_freeze" , { No. of login attempts               }
+                "pswd_ip_freezing"          , { Freeze IP on password failure       }
+                "pswd_user_freezing"        , { Freeze user on password failure     }
+                "pswd_save_os_username"     , { Save O/S Username check box enabled }
+                "pswd_save_sm_username"     , { Save SM Username check box enabled  }
+                "icon_list"                   { Icons for the password list         }
+
+        ACTIONS
+                "read_expiry_dates"       , { Read from the password table     }
+                "add_exp_interval"        , { Add an expiry interval           }
+                "edit_exp_interval"       , { Edit an expiry interval          }
+                "remove_exp_interval"     , { Remove a user password           }
+                "change_freeze_state"     , { Change the Freeze state          }
+                "get_exp_interval_number" , { Find the expiry interval         }
+                "commit"                  , { Commit form data to database     }
+                "display_line"              { Display a username line          }
+
+        END CLASS { Password Class }
+
+ENDROUTINE { set_up_password_class }
+
+{******************************************************************************}
+
+        ROUTINE password_class_initialisation ( password )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE button_details , button_prompt , count , message , password_size
+
+        get_field_details password . cryptpass, "FIELD_SIZE", password_size
+
+        ARRAY button_details ARRAYSIZE ( 3 , 3 )
+
+        button_details [ 1 , 1 ] = "add_exp_interval"
+        button_details [ 2 , 1 ] = "edit_exp_interval"
+        button_details [ 3 , 1 ] = "remove_exp_interval"
+        button_details [ 1 , 2 ] = get_user_message ( "ESIG_SETUP_ADD" , 1 )
+        button_details [ 2 , 2 ] = get_user_message ( "ESIG_SETUP_EDIT" , 1 )
+        button_details [ 3 , 2 ] = get_user_message ( "ESIG_SETUP_REMOVE" , 1 )
+        button_details [ 1 , 3 ] = 5
+        button_details [ 2 , 3 ] = 20
+        button_details [ 3 , 3 ] = 35
+
+        password . header = get_user_message ( "ESIG_SETUP_PSWD_HEADER" , 1 )
+        password . help_context = "Configuration Overview"
+
+        password . add_frame (
+                get_user_message ( "ESIG_SETUP_PSWD_EXP_INT" , 1 ) ,
+                1                           ,
+                1                           ,
+                12                          ,
+                49                          )
+
+        CREATE OBJECT USER_IMAGE_LIST_CLASS, password . icon_list
+
+        password . icon_list . Add_Resource         ( "Icon\operator.ico" )
+        password . icon_list . Add_Resource_Overlay ( "Icon\operator.ico"       ,
+                                                      "Icon\cancel_overlay.ico" )
+
+        CREATE OBJECT PROMPT_LIST_CLASS , password . pswd_list
+
+        password . pswd_list . row                  = 1
+        password . pswd_list . column               = 2
+        password . pswd_list . width                = 47
+        password . pswd_list . height               = 10 
+        password . pswd_list . add_column ( get_user_message ( "ESIG_SETUP_PSWD_NAME"   , 1 ) , 10 )
+        password . pswd_list . add_column ( get_user_message ( "ESIG_SETUP_PSWD_DATE"   , 1 ) , 11 )
+        password . pswd_list . add_column ( get_user_message ( "ESIG_SETUP_PSWD_STATUS" , 1 ) , 6 )
+        password . pswd_list . right_mouse_routine  = "password_list_right_mouse"
+        password . pswd_list . double_click_routine = "password_list_double_click"
+
+        password . pswd_list . set_image_resource ( password . icon_list . GetListID ( ), 0 )
+
+        password . add_prompt ( password . pswd_list )
+
+        password . add_frame ( "" , 51 ,  1 , 3 , 49 )
+        password . add_frame ( "" , 51 ,  5 , 2 , 49 )
+        password . add_frame ( "" , 51 ,  8 , 2 , 49 )
+        password . add_frame ( "" , 51 , 11 , 2 , 49 )
+
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+
+                CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+                        button_prompt . row                 = 12.2
+                        button_prompt . width               = BUTTON_WIDTH
+                        button_prompt . mouse_click_routine = button_details [ count , 1 ]
+                        button_prompt . column              = button_details [ count , 3 ]
+                        button_prompt . caption             = button_details [ count , 2 ]
+                        button_prompt . character_sized     = TRUE
+
+                password . add_prompt ( button_prompt )
+
+        UNTIL count = 3
+
+        message_fetch ( "ESIG_SETUP_PSWD_STATIC" , message )
+        count = 0
+        
+        REPEAT
+
+                count = count + 1
+
+                password . add_display ( message_get_text ( message , count ) ,
+                                         52                                   ,
+                                         count                                ,
+                                         PROMPT_RENDITION_NORMAL              )
+
+        UNTIL count = message_get_lines ( message )
+
+        PROMPT OBJECT password . pswd_expiry_interval BROWSE ON INTEGER
+        password . pswd_expiry_interval . row     = 1
+        password . pswd_expiry_interval . column  = 80
+        password . pswd_expiry_interval . minimum = 0
+        password . pswd_expiry_interval . maximum = 999
+        password . pswd_expiry_interval . value = GLOBAL ( "PSWD_EXPIRY_INTERVAL" )
+        password . pswd_expiry_interval . user_info = "PSWD_EXPIRY_INTERVAL"
+        password . pswd_expiry_interval . leave_prompt_routine = "password_prompt_callback"
+        password . add_prompt ( password . pswd_expiry_interval )
+
+        PROMPT OBJECT password . pswd_min_length BROWSE ON INTEGER
+        password . pswd_min_length . row = 2
+        password . pswd_min_length . column = 80
+        password . pswd_min_length . minimum = 0
+        password . pswd_min_length . maximum = password_size
+        password . pswd_min_length . value = GLOBAL ( "PSWD_MIN_LENGTH" )
+        password . pswd_min_length . user_info = "PSWD_MIN_LENGTH"
+        password . pswd_min_length . leave_prompt_routine = "password_prompt_callback"
+        password . add_prompt ( password . pswd_min_length )
+
+        PROMPT OBJECT password . pswd_grace_period BROWSE ON INTEGER
+        password . pswd_grace_period . row = 3
+        password . pswd_grace_period . column = 80
+        password . pswd_grace_period . minimum = 0
+        password . pswd_grace_period . maximum = 180
+        password . pswd_grace_period . value = GLOBAL ( "PSWD_GRACE_PERIOD" )
+        password . pswd_grace_period . user_info = "PSWD_GRACE_PERIOD"
+        password . pswd_grace_period . leave_prompt_routine = "password_prompt_callback"
+        password . add_prompt ( password . pswd_grace_period )
+
+        PROMPT OBJECT password . pswd_logins_before_exit BROWSE ON INTEGER
+        password . pswd_logins_before_exit . row = 5
+        password . pswd_logins_before_exit . column = 80
+        password . pswd_logins_before_exit . minimum = 0
+        password . pswd_logins_before_exit . maximum = 999
+        password . pswd_logins_before_exit . value = GLOBAL ( "PSWD_LOGINS_BEFORE_EXIT" )
+        password . pswd_logins_before_exit . user_info = "PSWD_LOGINS_BEFORE_EXIT"
+        password . pswd_logins_before_exit . leave_prompt_routine = "password_prompt_callback"
+        password . add_prompt ( password . pswd_logins_before_exit )
+
+        PROMPT OBJECT password . pswd_logins_before_freeze BROWSE ON INTEGER
+        password . pswd_logins_before_freeze . row = 6
+        password . pswd_logins_before_freeze . column = 80
+        password . pswd_logins_before_freeze . minimum = 0
+        password . pswd_logins_before_freeze . maximum = 999
+        password . pswd_logins_before_freeze . value = GLOBAL ( "PSWD_LOGINS_BEFORE_FREEZE" )
+        password . pswd_logins_before_freeze . user_info = "PSWD_LOGINS_BEFORE_FREEZE"
+        password . pswd_logins_before_freeze . leave_prompt_routine = "password_prompt_callback"
+        password . add_prompt ( password . pswd_logins_before_freeze )
+
+        PROMPT OBJECT password . pswd_ip_freezing BROWSE ON BOOLEAN
+        password . pswd_ip_freezing . row = 8
+        password . pswd_ip_freezing . column = 80
+        password . pswd_ip_freezing . value = GLOBAL ( "PSWD_IP_FREEZING" )
+        password . pswd_ip_freezing . user_info = "PSWD_IP_FREEZING"
+        password . pswd_ip_freezing . leave_prompt_routine = "password_prompt_callback"
+        password . pswd_ip_freezing . is_check = TRUE
+        password . add_prompt ( password . pswd_ip_freezing )
+
+        PROMPT OBJECT password . pswd_user_freezing BROWSE ON BOOLEAN
+        password . pswd_user_freezing . row = 9
+        password . pswd_user_freezing . column = 80
+        password . pswd_user_freezing . value = GLOBAL ( "PSWD_USER_FREEZING" )
+        password . pswd_user_freezing . user_info = "PSWD_USER_FREEZING"
+        password . pswd_user_freezing . leave_prompt_routine = "password_prompt_callback"
+        password . pswd_user_freezing . is_check = TRUE
+        password . add_prompt ( password . pswd_user_freezing )
+
+        PROMPT OBJECT password . pswd_save_os_username BROWSE ON BOOLEAN
+        password . pswd_save_os_username . row = 11
+        password . pswd_save_os_username . column = 80
+        password . pswd_save_os_username . value = GLOBAL ( "PSWD_SAVE_OS_USERNAME" )
+        password . pswd_save_os_username . user_info = "PSWD_SAVE_OS_USERNAME"
+        password . pswd_save_os_username . leave_prompt_routine = "password_prompt_callback"
+        password . pswd_save_os_username . is_check = TRUE
+        password . add_prompt ( password . pswd_save_os_username )
+
+        PROMPT OBJECT password . pswd_save_sm_username BROWSE ON BOOLEAN
+        password . pswd_save_sm_username . row = 12
+        password . pswd_save_sm_username . column = 80
+        password . pswd_save_sm_username . value = GLOBAL ( "PSWD_SAVE_SM_USERNAME" )
+        password . pswd_save_sm_username . user_info = "PSWD_SAVE_SM_USERNAME"
+        password . pswd_save_sm_username . leave_prompt_routine = "password_prompt_callback"
+        password . pswd_save_sm_username . is_check = TRUE
+        password . add_prompt ( password . pswd_save_sm_username )
+
+        ARRAY password . exp_interval_list ARRAYSIZE ( 0 , 4 )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE password_action_display_line (       password ,
+                                               VALUE insert   ,
+                                               VALUE count    )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE disp_str, icon_num
+
+        SET DATE FORMAT "DZ-MON-YYYY"
+
+	IF password . exp_interval_list [ count , 3 ] THEN
+		icon_num = 1
+	ELSE
+		icon_num = 0
+	ENDIF
+
+	IF insert THEN
+                password . pswd_list . insert_item (
+                              password . exp_interval_list [ count , 1 ] ,
+                              icon_num                                   )
+	ELSE
+		password . pswd_list . set_image ( icon_num )
+        ENDIF
+        
+        IF BLANK ( password . exp_interval_list [ count , 2 ] ) THEN
+                password . pswd_list . set_item (
+                              2                                                    ,
+                              GET_USER_MESSAGE ( "ESIG_SETUP_PSWD_WONT_EXPIRE", 1 ))
+        ELSE
+                password . pswd_list . set_item (
+                              2                                          ,
+                              password . exp_interval_list [ count , 2 ] )
+        ENDIF
+
+        FORMAT disp_str FROM password . exp_interval_list [ count , 3 ]
+               USING password . frozen
+
+        password . pswd_list . set_item ( 3, disp_str )
+
+        RESTORE DATE FORMAT
+
+ENDROUTINE { password_action_display_line }
+
+{******************************************************************************}
+
+        ROUTINE password_action_read_expiry_dates ( password )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE user_name , expiry_date , count
+        count = 0
+
+        password . pswd_list . removeallitems ( )
+
+        user_name = SELECT password . identity
+                    WHERE identity <> EMPTY
+                    ORDER ON identity
+
+        WHILE ( user_name <> EMPTY ) DO
+
+                expiry_date = SELECT password . expires
+
+                count = count + 1
+                password . exp_interval_list [ count , 1 ] = user_name
+                password . exp_interval_list [ count , 2 ] = expiry_date
+                password . exp_interval_list [ count , 3 ] = SELECT password . frozen
+
+                password . display_line ( TRUE, count )
+
+                NEXT password
+
+                user_name = SELECT password . identity
+
+        ENDWHILE
+
+ENDROUTINE { password_action_read_expiry_dates }
+
+{******************************************************************************}
+
+        ROUTINE password_prompt_callback ( password_prompt )
+{
+*
+*
+*******************************************************************************}
+
+        IF password_prompt . original_text <> password_prompt . value THEN
+
+                password_prompt . parent_prompt . is_altered = TRUE
+
+        ENDIF
+
+ENDROUTINE { password_prompt_callback }
+
+{******************************************************************************}
+
+        ROUTINE add_exp_interval ( add_button )
+
+{
+*
+*
+*******************************************************************************}
+        
+        add_button . parent_prompt . add_exp_interval ( )
+
+ENDROUTINE { add_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE password_action_add_exp_interval ( password )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE exp_interval_info , add_pos , array_num , default_expiry ,
+                do_add, needs_message, new_state, pswd_expiry_interval
+
+        ARRAY exp_interval_info ARRAYSIZE ( 2 )
+
+        pswd_expiry_interval = password . pswd_expiry_interval . value
+
+        IF pswd_expiry_interval = 0 THEN
+        
+               default_expiry = ""
+        ELSE
+        
+               default_expiry = NOW + INTERVAL ( STRIP ( pswd_expiry_interval ))
+        ENDIF
+
+        exp_interval_info = prompt_for_exp_interval ( "" , default_expiry , FALSE )
+
+        do_add = FALSE
+        needs_message = FALSE
+        new_state = "ADDED"
+                
+        IF ( exp_interval_info [ 1 ] <> EMPTY ) THEN
+
+                array_num = password . get_exp_interval_number ( exp_interval_info [ 1 ] )
+                
+                IF array_num = 0 THEN
+                
+                        do_add = TRUE
+                
+                ELSEIF password . exp_interval_list [ array_num, 4 ] = "DELETE" THEN
+                
+                        do_add = TRUE
+
+                        IF (( SELECT password . identity
+                                     WHERE identity = exp_interval_info [ 1 ]) <> EMPTY ) THEN
+                                new_state = "UPDATED"
+                        ENDIF
+                        
+                ENDIF
+
+                needs_message = TRUE
+
+        ENDIF
+
+        IF do_add THEN
+
+                add_pos = size_of_array ( password . exp_interval_list ) + 1
+
+                password . exp_interval_list [ add_pos , 1 ] = exp_interval_info [ 1 ]
+                password . exp_interval_list [ add_pos , 2 ] = DATE ( exp_interval_info [ 2 ] )
+                password . exp_interval_list [ add_pos , 3 ] = exp_interval_info [ 3 ]
+
+                password . display_line ( TRUE, add_pos )
+
+                password . exp_interval_list [ add_pos , 4 ] = new_state
+                password . is_altered = TRUE
+
+        ELSEIF needs_message THEN
+
+                flash_message ( get_user_message ( "ESIG_SETUP_EXP_INT_ALREADY" , 1 ) , TRUE )
+
+        ENDIF
+
+ENDROUTINE { password_action_add_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE edit_exp_interval ( edit_button )
+
+{
+*
+*
+*******************************************************************************}
+
+        edit_button . parent_prompt . edit_exp_interval ( )
+
+ENDROUTINE { edit_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE password_action_edit_exp_interval ( password )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE temp ,
+                item ,
+                exp_interval_info ,
+                array_num ,
+                expiry_time ,
+                next_item ,
+                next_temp ,
+                frozen
+
+        item = password . pswd_list . get_first_selected ( temp )
+
+        IF item <> EMPTY THEN
+
+                array_num = password . get_exp_interval_number ( temp )
+
+                expiry_time = password . exp_interval_list [ array_num , 2 ]
+                frozen      = password . exp_interval_list [ array_num , 3 ]
+
+                password . pswd_list . current_item = item
+
+                next_item = password . pswd_list . get_next_selected ( next_temp )
+
+                IF next_item <> EMPTY THEN
+                        temp = EMPTY
+                ENDIF
+
+                exp_interval_info = prompt_for_exp_interval ( temp , expiry_time , frozen )
+
+                IF ( exp_interval_info [ 1 ] <> EMPTY ) THEN
+
+                        item = password . pswd_list . get_first_selected ( temp )
+
+                        WHILE item <> EMPTY DO
+
+                                array_num = password . get_exp_interval_number ( temp )
+
+                                password . exp_interval_list [ array_num , 2 ] = DATE ( exp_interval_info [ 2 ] )
+                                password . exp_interval_list [ array_num , 3 ] = exp_interval_info [ 3 ]
+
+                                password . display_line ( FALSE, array_num )
+
+                                IF password . exp_interval_list [ array_num , 4 ] = EMPTY THEN
+
+                                        password . exp_interval_list [ array_num , 4 ] = "UPDATED"
+
+                                ENDIF
+
+                                item = password . pswd_list . get_next_selected ( temp )
+
+                        ENDWHILE
+
+                        password . is_altered = TRUE
+
+                ENDIF
+
+        ELSE
+
+                flash_message ( get_user_message ( "ESIG_SETUP_IP_NO_SEL" , 1 ) , TRUE )
+
+        ENDIF
+
+ENDROUTINE { password_action_edit_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE remove_exp_interval ( edit_button )
+
+{
+*
+*
+*******************************************************************************}
+
+        edit_button . parent_prompt . remove_exp_interval ( )
+
+ENDROUTINE { remove_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE password_action_remove_exp_interval ( password )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE item ,
+                array_num,
+                temp
+
+        item = password . pswd_list . get_first_selected ( temp )
+
+        WHILE item <> EMPTY DO
+
+                array_num = password . get_exp_interval_number ( temp )
+
+                password . exp_interval_list [ array_num , 4 ] = "DELETE"
+
+                password . pswd_list . remove_item ( item )
+
+                password . is_altered = TRUE
+
+                item = password . pswd_list . get_first_selected ( temp )
+
+        ENDWHILE
+
+ENDROUTINE { password_action_remove_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE password_action_change_freeze_state ( password )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE temp ,
+                item ,
+                array_num ,
+                new_frozen_state ,
+                true_word
+
+        item = password . pswd_list . get_first_selected ( temp )
+
+        FORMAT true_word FROM TRUE USING password . frozen
+
+        new_frozen_state = NOT ( password . pswd_list . get_item ( item , 2 ) = true_word )
+        
+        IF new_frozen_state THEN
+        
+                IF NOT password . pswd_user_freezing . value THEN
+                
+                        flash_message ( get_user_message ( "ESIG_SETUP_PSWD_NO_FREEZE" , 1 ) , TRUE )
+                        
+                ENDIF
+
+        ENDIF
+
+        WHILE item <> EMPTY DO
+
+                array_num = password . get_exp_interval_number ( temp )
+
+                IF password . exp_interval_list [ array_num , 3 ] <> new_frozen_state THEN
+
+                        password . exp_interval_list [ array_num , 3 ] = new_frozen_state
+
+                        password . display_line ( FALSE, array_num )
+
+                        IF password . exp_interval_list [ array_num , 4 ] = EMPTY THEN
+
+                                password . exp_interval_list [ array_num , 4 ] = "UPDATED"
+
+                        ENDIF
+
+                        password . is_altered = TRUE
+
+                ENDIF
+
+                item = password . pswd_list . get_next_selected ( temp )
+
+        ENDWHILE
+
+ENDROUTINE { password_action_change_freeze_state }
+
+{******************************************************************************}
+
+        ROUTINE password_action_get_exp_interval_number ( password , user_name )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , array_index
+
+        array_index = 0
+
+        count = 0
+
+        REPEAT
+
+                count = count + 1
+
+                IF password . exp_interval_list [ count , 1 ] = user_name THEN
+
+                        array_index = count
+
+                ENDIF
+
+        UNTIL count = size_of_array ( password . exp_interval_list )
+
+        RETURN ( array_index )  
+
+ENDROUTINE { password_action_get_exp_interval_number }
+
+{******************************************************************************}
+
+        ROUTINE password_list_right_mouse ( list )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE temp , item , menu , result , password , true_word
+
+        ARRAY menu
+
+        password = list . parent_prompt
+
+        item = list . get_first_selected ( temp )
+
+        menu [ 1 ] = get_user_message ( "ESIG_SETUP_ADD" , 1 )
+
+        IF item <> EMPTY THEN
+
+                menu [ 2 ] = get_user_message ( "ESIG_SETUP_EDIT" , 1 )
+                menu [ 3 ] = get_user_message ( "ESIG_SETUP_REMOVE" , 1 )
+                menu [ 4 ] = ""
+
+                FORMAT true_word FROM TRUE USING password . frozen
+
+                IF password . pswd_list . get_item ( item , 2 ) = true_word THEN
+                        menu [ 5 ] = get_user_message ( "ESIG_SETUP_REACTIVATE" , 1 )
+                ELSE
+                        menu [ 5 ] = get_user_message ( "ESIG_SETUP_FREEZE" , 1 )
+                ENDIF
+
+        ENDIF
+
+        result = lib_utils_popup_menu ( menu )
+
+        IF result = 1 THEN
+
+                password . add_exp_interval ( )
+
+        ELSEIF ( result = 2 ) THEN
+
+                password . edit_exp_interval ( )
+
+        ELSEIF ( result = 3 ) THEN
+
+                password . remove_exp_interval ( )
+
+        ELSEIF ( result = 5 ) THEN
+
+                password . change_freeze_state ( )
+
+        ENDIF
+
+ENDROUTINE { password_list_right_mouse }
+
+{******************************************************************************}
+
+        ROUTINE password_list_double_click ( list )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE temp , item 
+
+        item = list . get_first_selected ( temp )
+
+        IF item <> EMPTY THEN
+
+                list . parent_prompt . edit_exp_interval ( )
+
+        ELSE
+
+                list . parent_prompt . add_exp_interval ( )
+
+        ENDIF
+
+ENDROUTINE { password_list_double_click }
+
+{******************************************************************************}
+
+        ROUTINE password_action_commit ( password )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE count , temp , config_item , status , needs_rollback
+
+        needs_rollback = FALSE
+
+        count = 0
+        
+        START WRITE TRANSACTION get_user_message ( "ESIG_SETUP_EXP_INT_TRANSACTION" , 1 )
+
+        REPEAT
+
+                count = count + 1
+
+                IF password . exp_interval_list [ count , 4 ] = "ADDED" THEN
+
+                        RESERVE ENTRY password , password . exp_interval_list [ count , 1 ] , status
+
+                        IF status = EMPTY THEN
+                                ASSIGN password . expires = password . exp_interval_list [ count , 2 ]
+                                ASSIGN password . frozen  = password . exp_interval_list [ count , 3 ]
+                                UPDATE password
+                        ELSE
+                                needs_rollback = TRUE
+                        ENDIF
+
+                ELSEIF password . exp_interval_list [ count , 4 ] <> EMPTY THEN
+
+                        temp = SELECT password . identity
+                               FOR UPDATE
+                               WHERE identity = password . exp_interval_list [ count , 1 ]
+
+                        IF password . exp_interval_list [ count , 4 ] ="DELETE" THEN
+                        
+                                IF temp = password . exp_interval_list [ count , 1 ] THEN
+                                        DELETE password
+                                ELSEIF temp <> EMPTY THEN
+                                        needs_rollback = TRUE
+                                ENDIF
+
+                        ELSEIF temp = password . exp_interval_list [ count , 1 ] THEN
+
+                                ASSIGN password . expires = password . exp_interval_list [ count , 2 ]
+                                ASSIGN password . frozen  = password . exp_interval_list [ count , 3 ]
+                                UPDATE password
+
+                        ELSE
+                        
+                                needs_rollback = TRUE
+                                
+                        ENDIF
+
+                ENDIF
+
+        UNTIL (( count = size_of_array ( password . exp_interval_list )) OR
+               ( needs_rollback ))
+
+        count = 4
+
+        WHILE (( count < ( size_of_array ( password . prompt_objects ))) AND
+               ( NOT needs_rollback ))
+        
+                count = count + 1
+
+                config_item = SELECT config_header . identity
+                              FOR UPDATE
+                              WHERE identity = password . prompt_objects [ count ] . user_info
+
+                IF config_item = password . prompt_objects [ count ] . user_info THEN
+
+                        IF STRIP ( SELECT config_header . value ) <>
+                           STRIP ( password . prompt_objects [ count ] . value ) THEN
+
+                                ASSIGN config_header . value = password . prompt_objects [ count ] . value
+                                UPDATE config_header
+
+                        ENDIF
+
+                ELSE
+                        needs_rollback = TRUE
+                ENDIF
+
+        ENDWHILE
+
+        IF needs_rollback THEN
+                ROLLBACK
+                flash_message ( get_user_message ( "ESIG_SETUP_EXP_INT_UPDATE_FAILURE" , 1 ), TRUE )
+        ELSE
+                COMMIT
+        ENDIF
+
+ENDROUTINE { password_action_commit }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_exp_interval_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS EXP_INTERVAL_CLASS
+
+        INHERIT "STD_FORM"
+        INITIALISATION
+
+        END CLASS { Expiry Interval Class }
+
+ENDROUTINE { set_up_exp_interval_prompt_class }
+
+{******************************************************************************}
+
+        ROUTINE exp_interval_class_initialisation ( exp_interval )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE username , exp_int , ok_button , cancel_button , frozen
+        
+        exp_interval . header           = get_user_message ( "ESIG_SETUP_EXP_INT_HEADER" , 1 )
+        exp_interval . height           = 4
+        exp_interval . width            = 45
+        exp_interval . column           = ( GLOBAL ( "GUI_WIDTH" ) -
+                                            exp_interval . width   ) / 2
+        exp_interval . row              = ( GLOBAL ( "GUI_HEIGHT" ) -
+                                            exp_interval . height   ) / 2
+        exp_interval . return_behaviour = FORM_RETURN_STAY
+        exp_interval . button_style     = FORM_BUTTON_NONE
+
+        exp_interval . add_frame (
+                get_user_message ( "ESIG_SETUP_EXP_INT_ENTER" , 1 ) ,
+                1                      ,
+                1                      ,
+                3                      ,
+                30                     )
+
+        PROMPT OBJECT username
+                BROWSE ON USER_VIEW
+                WITH ( row     = 1  ,
+                       column  = 15 )
+
+        exp_interval . add_prompt ( username )
+
+        exp_interval . add_display ( get_user_message ( "ESIG_SETUP_EXP_INT_USER" , 1 )              ,
+                                     3                       ,
+                                     1                       ,
+                                     PROMPT_RENDITION_NORMAL )
+
+        PROMPT OBJECT exp_int
+                BROWSE ON DATE
+                WITH ( row     = 2  ,
+                       column  = 15 )
+
+        exp_interval . add_prompt ( exp_int )
+
+        exp_interval . add_display ( get_user_message ( "ESIG_SETUP_EXP_INT_DATE" , 1 )           ,
+                                     3                       ,
+                                     2                       ,
+                                     PROMPT_RENDITION_NORMAL )
+
+        PROMPT OBJECT frozen
+                BROWSE ON BOOLEAN
+                WITH ( row     = 3  ,
+                       column  = 15 )
+
+        exp_interval . add_prompt ( frozen )
+
+        exp_interval . add_display ( get_user_message ( "ESIG_SETUP_EXP_INT_FROZEN" , 1 )           ,
+                                     3                       ,
+                                     3                       ,
+                                     PROMPT_RENDITION_NORMAL )
+
+        PROMPT OBJECT ok_button
+                CLASS "STD_PROMPT_BUTTON"
+                WITH (  caption      = get_user_message (
+                                       "SMP_PROMPT_BUTTON_OK" , 1 ) ,
+                        width        = BUTTON_WIDTH                 ,
+                        column       = BUTTON_COLUMN                ,
+                        row          = 1                            ,
+                        send_lastkey = "DO"                         )
+
+        exp_interval . add_prompt ( ok_button )
+
+        PROMPT OBJECT cancel_button
+                CLASS "STD_PROMPT_BUTTON"
+                WITH (  caption      = get_user_message (
+                                       "SMP_PROMPT_BUTTON_CANCEL" , 1 ) , 
+                        width        = BUTTON_WIDTH                     ,
+                        column       = BUTTON_COLUMN                    ,
+                        row          = 3                                ,
+                        send_lastkey = "EXIT"                           )
+
+        exp_interval . add_prompt ( cancel_button )
+
+ENDROUTINE { exp_interval_class_initialisation }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE prompt_for_exp_interval ( VALUE user        ,
+                                          VALUE expiry_time ,
+                                          VALUE frozen      )
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE exp_interval_info , exp_interval
+
+        ARRAY exp_interval_info ARRAYSIZE ( 3 )
+
+        set_up_exp_interval_class ( )
+        CREATE OBJECT EXP_INTERVAL_CLASS , exp_interval
+
+        IF user = EMPTY THEN
+
+                exp_interval . prompt_objects [ 1 ] . set_enabled ( FALSE )
+                exp_interval . prompt_objects [ 2 ] . set_text ( expiry_time )
+                exp_interval . prompt_objects [ 3 ] . set_text ( frozen )
+
+
+        ELSEIF user = "" THEN
+
+                exp_interval . prompt_objects [ 2 ] . set_text ( expiry_time )
+                exp_interval . prompt_objects [ 3 ] . set_text ( FALSE )
+
+                exp_interval . validation_routine = "EXP_INTERVAL_VALIDATE"
+
+        ELSE
+
+                IF expiry_time = EMPTY THEN
+                        expiry_time = ""
+                ENDIF
+
+                exp_interval . prompt_objects [ 1 ] . value = user
+                exp_interval . prompt_objects [ 1 ] . set_enabled ( FALSE )
+                exp_interval . prompt_objects [ 2 ] . set_text ( expiry_time )
+                exp_interval . prompt_objects [ 3 ] . set_text ( frozen )
+                exp_interval . active_prompt = 2
+
+        ENDIF
+                
+        exp_interval . start_prompt ( )
+        exp_interval . wait_prompt ( )
+        exp_interval . end_prompt ( )
+
+        IF exp_interval . get_lastkey ( ) = "DO" THEN
+
+                exp_interval_info [ 1 ] = exp_interval . prompt_objects [ 1 ] . value
+                exp_interval_info [ 2 ] = exp_interval . prompt_objects [ 2 ] . value
+                exp_interval_info [ 3 ] = exp_interval . prompt_objects [ 3 ] . value
+
+        ENDIF
+
+        RETURN ( exp_interval_info )
+
+ENDROUTINE { prompt_for_exp_interval }
+
+{******************************************************************************}
+
+        ROUTINE exp_interval_validate ( self )
+
+{
+*
+*
+*******************************************************************************}
+
+        DECLARE user_specified
+
+        user_specified = NOT BLANK ( self . prompt_objects [ 1 ] . value )
+
+        IF NOT user_specified THEN
+
+                FLASH_MESSAGE ( "ESIG_SETUP_EXP_INT_USER_REQUIRED" , TRUE )
+                self . set_position ( 1 )
+
+        ENDIF
+
+        RETURN ( user_specified )
+
+ENDROUTINE { exp_interval_validate }
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_layout_class
+{
+*
+*
+*******************************************************************************}
+
+        DEFINE CLASS LAYOUT_CLASS
+
+        INHERIT OPTION_TAB_FORM_CLASS
+        INITIALISATION
+
+        PROPERTIES
+                "list_chooser"      , { list of users to send login failures to }
+                "ask_username"      , { Ask for the username or not             }
+                "message_on_cancel" , { Send a failure message on Cancel        }
+                "password_attempts" , { Number of password attempts for Esig    }
+                "initialised"         { Has the form been initialised           }
+
+        ACTIONS
+                "update_value"      , { Set the global value                    }
+                "commit"              { Commit form data to database            }
+
+        END CLASS { layout Class }
+
+	DEFINE CLASS LAYOUT_LIST_CHOOSER_CLASS
+
+		INHERIT LIST_CHOOSER_CLASS
+
+		ACTIONS "stop_prompt"
+
+	END CLASS { layout list chooser Class }
+
+ENDROUTINE { set_up_layout_class }
+
+{******************************************************************************}
+
+        ROUTINE esig_layout_class_initialisation ( layout )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE button_prompt
+
+        layout . header = get_user_message ( "ESIG_SETUP_LAYOUT_HEADER" , 1 )
+        layout . help_context = "not gonna find it"
+        layout . width  = 99
+
+        layout . enter_prompt_routine = "layout_enter_prompt_form"
+	layout . initialised          = FALSE
+
+	{ Add a chooser screen }
+
+	CREATE OBJECT LAYOUT_LIST_CHOOSER_CLASS, layout . list_chooser
+
+	layout . list_chooser . row         = 1
+	layout . list_chooser . column      = 2
+	layout . list_chooser . width       = 40
+	layout . list_chooser . height      = 10
+
+	layout . list_chooser . create_list ( )
+
+	layout . add_prompt ( layout . list_chooser )
+
+	{ Add some buttons }
+
+	CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+
+	button_prompt . row                 = 12.2
+	button_prompt . column              = 3
+	button_prompt . width               = BUTTON_WIDTH
+	button_prompt . mouse_click_routine = "layout_button_routine"
+	button_prompt . user_info           = 1
+	button_prompt . caption             = get_user_message ( "ESIG_SETUP_SELECT_ALL" , 1 )
+	button_prompt . character_sized     = TRUE
+
+	layout . add_prompt ( button_prompt )
+
+	CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+
+	button_prompt . row                 = 12.2
+	button_prompt . column              = 6 + BUTTON_WIDTH
+	button_prompt . width               = BUTTON_WIDTH
+	button_prompt . mouse_click_routine = "layout_button_routine"
+	button_prompt . user_info           = 2
+	button_prompt . caption             = get_user_message ( "ESIG_SETUP_CLEAR_ALL" , 1 )
+	button_prompt . character_sized     = TRUE
+
+	layout . add_prompt ( button_prompt )
+
+	CREATE OBJECT "STD_PROMPT_BUTTON" , button_prompt
+
+	button_prompt . row                 = 12.2
+	button_prompt . column              = 9 + ( 2 * BUTTON_WIDTH )
+	button_prompt . width               = BUTTON_WIDTH
+	button_prompt . mouse_click_routine = "layout_button_routine"
+	button_prompt . user_info           = 3
+	button_prompt . caption             = get_user_message ( "ESIG_SETUP_TOGGLE" , 1 )
+	button_prompt . character_sized     = TRUE
+
+	layout . add_prompt ( button_prompt )
+
+	{ Add a frame around the username list }
+
+	layout . add_frame ( get_user_message ( "ESIG_SETUP_LAYOUT_OPERATORS", 1 ),
+	                     1, 1, 12, 42 )
+
+	{ Add prompt for ask_username }
+
+        PROMPT OBJECT layout . ask_username BROWSE ON BOOLEAN
+
+        layout . ask_username . row             = 1
+        layout . ask_username . column          = 50
+        layout . ask_username . value           = GLOBAL ( "ESIG_ASK_USERNAME" )
+        layout . ask_username . caption         = GET_USER_MESSAGE ( "ESIG_SETUP_LAYOUT_ASK_USERNAME", 1 )
+        layout . ask_username . is_check        = TRUE
+        layout . ask_username . toggled_routine = "layout_boolean_toggled"
+
+        layout . add_prompt ( layout . ask_username )
+
+	{ Add prompt for ask_username }
+
+        PROMPT OBJECT layout . message_on_cancel BROWSE ON BOOLEAN
+
+        layout . message_on_cancel . row             = 2
+        layout . message_on_cancel . column          = 50
+        layout . message_on_cancel . value           = GLOBAL ( "ESIG_MESSAGE_ON_CANCEL" )
+        layout . message_on_cancel . caption         = GET_USER_MESSAGE ( "ESIG_SETUP_LAYOUT_MESSAGE_ON_CANCEL", 1 )
+        layout . message_on_cancel . is_check        = TRUE
+        layout . message_on_cancel . toggled_routine = "layout_boolean_toggled"
+
+        layout . add_prompt ( layout . message_on_cancel )
+
+	{ Add prompt for ask_username }
+
+	layout . add_display ( GET_USER_MESSAGE ( "ESIG_SETUP_LAYOUT_PASSWORD_ATTEMPTS", 1 ) ,
+	                       50                                                            ,
+	                       4                                                             ,
+	                       PROMPT_RENDITION_NORMAL                                       )
+
+        PROMPT OBJECT layout . password_attempts BROWSE ON INTEGER
+
+        layout . password_attempts . row                  = 4
+        layout . password_attempts . column               = 80
+        layout . password_attempts . value                = GLOBAL ( "ESIG_PASSWORD_ATTEMPTS" )
+        layout . password_attempts . minimum              = 0
+        layout . password_attempts . maximum              = 999
+        layout . password_attempts . leave_prompt_routine = "layout_password_leave"
+
+        layout . add_prompt ( layout . password_attempts )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE layout_enter_prompt_form ( layout )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE oper_id ,
+	        count   ,
+	        item
+
+	IF NOT layout . initialised THEN
+
+		window_set_status ( get_user_message ( "ESIG_SETUP_LAYOUT_LOADING" , 1 ))
+
+		{ Load the chooser with the data from the array }
+
+		oper_id = SELECT user_view . identity
+		          WHERE  identity <> ""
+		          ORDER ON identity
+
+		count = 1
+
+		WHILE oper_id <> EMPTY DO
+
+			CREATE OBJECT LIST_CHOOSER_ITEM_CLASS, item
+
+			item . value       = oper_id
+			item . checked     = FALSE
+			item . icon        = EMPTY
+			item . description = EMPTY
+			item . position    = count
+
+			layout . list_chooser . data . add ( item )
+
+			NEXT user_view
+			oper_id = SELECT user_view . identity
+
+			count = count + 1
+
+		ENDWHILE
+
+		{ Reload the chooser }
+
+		layout . list_chooser . remove_all_items ( )
+
+		layout . list_chooser . load_data ( )
+
+		layout . list_chooser . read_csv ( GLOBAL ( "ESIG_FAILURE_DISTRIBUTION" ))
+
+		layout . initialised = TRUE
+
+		window_set_status ( "" )
+
+	ENDIF
+
+ENDROUTINE { menu_editor_enter_prompt_form }
+
+{******************************************************************************}
+
+        ROUTINE layout_button_routine ( button )
+{
+*
+*
+*******************************************************************************}
+
+	IF button . user_info = 1 THEN
+
+		button . parent_prompt . list_chooser .toggle ( TRUE )
+
+	ELSEIF button . user_info = 2 THEN
+
+		button . parent_prompt . list_chooser .toggle ( FALSE )
+
+	ELSE
+
+		button . parent_prompt . list_chooser .set_checks ( TRUE )
+
+	ENDIF
+
+ENDROUTINE { authorise_button_routine }
+
+{******************************************************************************}
+
+	ROUTINE layout_boolean_toggled ( boolean_prompt )
+
+{
+*
+*	Toggled callback for the boolean prompts
+*
+*******************************************************************************}
+
+	boolean_prompt . parent_prompt . is_altered = TRUE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE layout_password_leave ( password_attempts )
+
+{
+*
+*	Password prompt leave routine
+*
+*******************************************************************************}
+
+	password_attempts . parent_prompt . is_altered =
+	     ( password_attempts . original_text <> password_attempts . text )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE esig_layout_list_chooser_action_stop_prompt ( list_chooser )
+{
+*
+*	Tell the form whether this prompt has been modified
+*
+*******************************************************************************}
+
+	list_chooser . parent_prompt . is_altered =
+	                  ( GLOBAL ( "ESIG_FAILURE_DISTRIBUTION" ) <>
+	                    list_chooser . build_csv ( ))
+
+	object_invoke_class ( list_chooser       ,
+	                      LIST_CHOOSER_CLASS ,
+	                      "STOP_PROMPT"      )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE esig_layout_action_commit ( layout )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE ok
+
+	ok = FALSE
+
+	START WRITE TRANSACTION GET_USER_MESSAGE ( "ESIG_SETUP_LAYOUT_TRANSACTION" , 1 )
+
+	ok = layout . update_value ( "ESIG_ASK_USERNAME"           ,
+	                             layout . ask_username . value )
+
+	IF ok THEN
+		ok = layout . update_value ( "ESIG_PASSWORD_ATTEMPTS"           ,
+		                             layout . password_attempts . value )
+	ENDIF
+
+	IF ok THEN
+		ok = layout . update_value ( "ESIG_FAILURE_DISTRIBUTION"          ,
+		                             layout . list_chooser . build_csv ( ))
+	ENDIF
+
+	IF ok THEN
+		COMMIT
+	ELSE
+		ROLLBACK
+		flash_message ( get_user_message ( "ESIG_SETUP_LAYOUT_UPDATE_FAILURE" , 1 ) , TRUE )
+	ENDIF
+
+ENDROUTINE { layout_action_commit }
+
+{******************************************************************************}
+
+        ROUTINE esig_layout_action_update_value (       layout       ,
+                                                  VALUE config_name  ,
+                                                  VALUE config_value )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE config_item, ok
+
+	config_item = SELECT config_header . identity
+	              FOR UPDATE
+	              WHERE identity = config_name
+
+	IF config_item = config_name THEN
+
+		ASSIGN config_header . value = config_value
+
+		UPDATE config_header
+
+		ok = TRUE
+
+	ELSE
+
+		ok = FALSE
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        GLOBAL
+
+        ROUTINE set_up_proxy_login_class
+{
+*
+*
+*******************************************************************************}
+
+	DEFINE CLASS PROXY_LOGIN_CLASS
+
+	INHERIT OPTION_TAB_FORM_CLASS
+	INITIALISATION
+
+	PROPERTIES
+
+		"allow_domain"    , { Allow domain authentication              }
+		"allow_proxy"     , { Allow proxy login based on domain name   }
+		"use_AD"          , { Use Active Directory user authentication }
+		"use_winnt"       , { Use WinNT user authentication            }
+
+		"naming_context"  , { Naming Context for name resolution       }
+		"AD_access_group" , { AD group for access                      }
+
+		"AD_field"        , { AD field to check for user lookup        }
+		"personnel_field" , { Personnel field for user lookup          }
+		"set_button"      , { Update current user                      }
+
+                "initialised"       { Has the form been initialised            }
+
+	ACTIONS
+		"update_value"    , { Set the global value                     }
+		"commit"            { Commit form data to database             }
+
+	END CLASS { layout Class }
+
+ENDROUTINE { set_up_proxy_login_class }
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_class_initialisation ( proxy_login )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE browse_array ,
+		found_id     ,
+		count        ,
+	        temp_array
+
+        proxy_login . header       = get_user_message ( "ESIG_SETUP_PROXY_HEADER" , 1 )
+        proxy_login . help_context = "not gonna find it"
+        proxy_login . width        = 99
+
+        proxy_login . enter_prompt_routine = "proxy_login_enter_prompt_form"
+	proxy_login . initialised          = FALSE
+
+	{ Add prompt for Domain Authorisation }
+
+	proxy_login . add_frame ( "", 1, 1, 0, 99 )
+
+        PROMPT OBJECT proxy_login . allow_domain BROWSE ON BOOLEAN
+
+        proxy_login . allow_domain . row             = 1
+        proxy_login . allow_domain . column          = 1
+        proxy_login . allow_domain . value           = GLOBAL ( "LOGIN_ALLOW_DOMAIN" )
+        proxy_login . allow_domain . caption         = GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_DOMAIN", 1 )
+        proxy_login . allow_domain . is_check        = TRUE
+        proxy_login . allow_domain . toggled_routine = "proxy_login_allow_domain_toggled"
+
+        proxy_login . add_prompt ( proxy_login . allow_domain )
+
+	{ Add prompt for Allow Proxy }
+
+        PROMPT OBJECT proxy_login . allow_proxy BROWSE ON BOOLEAN
+
+        proxy_login . allow_proxy . row             = 3
+        proxy_login . allow_proxy . column          = 3
+	proxy_login . allow_proxy . enabled         = proxy_login . allow_domain . value
+        proxy_login . allow_proxy . value           = GLOBAL ( "LOGIN_ALLOW_PROXY" )
+        proxy_login . allow_proxy . caption         = GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_ALLOW", 1 )
+        proxy_login . allow_proxy . is_check        = TRUE
+        proxy_login . allow_proxy . toggled_routine = "proxy_login_allow_proxy_toggled"
+
+        proxy_login . add_prompt ( proxy_login . allow_proxy )
+
+	{ Add prompt for use_ad - use active directory}
+
+        PROMPT OBJECT proxy_login . use_ad BROWSE ON BOOLEAN
+
+        proxy_login . use_ad . row             = 4
+        proxy_login . use_ad . column          = 3
+        proxy_login . use_ad . value           = NOT GLOBAL ( "LOGIN_WINNT" )
+        proxy_login . use_ad . caption         = GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_AD", 1 )
+        proxy_login . use_ad . is_radio        = TRUE
+	proxy_login . use_ad . enabled         = proxy_login . allow_domain . value
+        proxy_login . use_ad . toggled_routine = "proxy_login_radio_toggled"
+
+        proxy_login . add_prompt ( proxy_login . use_ad )
+
+	{ Add prompt for use_winnt - use WinNT authentication }
+
+        PROMPT OBJECT proxy_login . use_winnt BROWSE ON BOOLEAN
+
+        proxy_login . use_winnt . row             = 5
+        proxy_login . use_winnt . column          = 3
+        proxy_login . use_winnt . value           = GLOBAL ( "LOGIN_WINNT" )
+        proxy_login . use_winnt . caption         = GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_WINNT", 1 )
+        proxy_login . use_winnt . is_radio        = TRUE
+	proxy_login . use_winnt . enabled         = proxy_login . allow_domain . value
+        proxy_login . use_winnt . toggled_routine = "proxy_login_radio_toggled"
+
+        proxy_login . add_prompt ( proxy_login . use_winnt )
+
+	OBJECT_ASSIGN_UNCOUNTED ( proxy_login . use_ad    . user_info ,
+	                          proxy_login . use_winnt             )
+	OBJECT_ASSIGN_UNCOUNTED ( proxy_login . use_winnt . user_info ,
+	                          proxy_login . use_ad                )
+
+	{ System access value }
+
+	proxy_login . add_frame ( "", 2, 6, 0, 42 )
+
+	{ Add prompt for naming_context field }
+
+	proxy_login . add_display ( GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_NC", 1 ) ,
+	                            3                                             ,
+	                            7                                             ,
+	                            PROMPT_RENDITION_NORMAL                       )
+
+        PROMPT OBJECT proxy_login . naming_context FORMAT text
+
+        proxy_login . naming_context . row                  = 7
+        proxy_login . naming_context . column               = 22
+        proxy_login . naming_context . width                = 20
+	proxy_login . naming_context . enabled              = proxy_login . allow_domain . value
+	proxy_login . naming_context . leave_prompt_routine = "proxy_login_leave_naming_context"
+        proxy_login . naming_context . value                = GLOBAL ( "LOGIN_NAMING_CONTEXT" )
+
+        proxy_login . add_prompt ( proxy_login . naming_context )
+
+	{ Add prompt for AD access group }
+
+	proxy_login . add_display ( GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_AD_GROUP", 1 ) ,
+	                            3                                                   ,
+	                            8                                                   ,
+	                            PROMPT_RENDITION_NORMAL                             )
+
+        PROMPT OBJECT proxy_login . AD_access_group FORMAT text
+
+        proxy_login . AD_access_group . row                  = 8
+        proxy_login . AD_access_group . column               = 22
+        proxy_login . AD_access_group . width                = 20
+	proxy_login . AD_access_group . enabled              = proxy_login . allow_domain . value
+	proxy_login . AD_access_group . browse_routine       = "proxy_login_browse_ad_access_group"
+	proxy_login . AD_access_group . leave_prompt_routine = "proxy_login_leave_ad_access_group"
+        proxy_login . AD_access_group . value                = GLOBAL ( "LOGIN_AD_ACCESS_GROUP" )
+
+        proxy_login . add_prompt ( proxy_login . AD_access_group )
+
+	{ Personnel lookup fields }
+
+	proxy_login . add_display ( GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_MAP_LOOKUP", 1 ) ,
+	                            50                                                    ,
+	                            3                                                     ,
+	                            PROMPT_RENDITION_NORMAL                               )
+
+	{ Add prompt for AD_field }
+
+	proxy_login . add_display ( GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_AD_FIELD", 1 ) ,
+	                            52                                                  ,
+	                            4                                                   ,
+	                            PROMPT_RENDITION_NORMAL                             )
+
+        PROMPT OBJECT proxy_login . AD_field FORMAT text
+
+        proxy_login . AD_field . row                  = 4
+        proxy_login . AD_field . column               = 69
+        proxy_login . AD_field . width                = 20
+	proxy_login . AD_field . enabled              = proxy_login . allow_domain . value
+	proxy_login . AD_field . browse_routine       = "proxy_login_browse_ad_field"
+	proxy_login . AD_field . leave_prompt_routine = "proxy_login_leave_ad_field"
+        proxy_login . AD_field . value                = GLOBAL ( "LOGIN_AD_FIELD" )
+
+        proxy_login . add_prompt ( proxy_login . AD_field )
+
+	{ Setup the CHOOSE array for personnel prompt }
+
+	get_field_names ( "PERSONNEL" , temp_array )
+
+	ARRAY browse_array ARRAYSIZE ( 0, 2 )
+	browse_array [ 1, 1 ] = " "
+	browse_array [ 1, 2 ] = " "
+
+	found_id = FALSE
+	count = 0
+
+	WHILE count < size_of_array ( temp_array ) DO
+
+		count = count + 1
+		browse_array [ count + 1, 1 ] = temp_array [ count, 1 ]
+		browse_array [ count + 1, 2 ] = temp_array [ count, 1 ]
+		
+		IF temp_array [ count, 1 ] = GLOBAL ( "LOGIN_PERSONNEL_FIELD" ) THEN
+			found_id = TRUE
+		ENDIF
+
+	ENDWHILE
+
+	{ Add prompt for personnel_field }
+
+	proxy_login . add_display ( GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_PERSONNEL_FIELD", 1 ) ,
+	                            52                                                         ,
+	                            5                                                          ,
+	                            PROMPT_RENDITION_NORMAL                                    )
+
+        PROMPT OBJECT proxy_login . personnel_field CHOOSE OUTOF browse_array
+
+        proxy_login . personnel_field . row                  = 5
+        proxy_login . personnel_field . column               = 69
+        proxy_login . personnel_field . width                = 20
+	proxy_login . personnel_field . enabled              = proxy_login . allow_domain . value
+	proxy_login . personnel_field . leave_prompt_routine = "proxy_login_leave_pers_field"
+
+	IF NOT found_id THEN
+		proxy_login . personnel_field . value = " "
+	ELSE
+	        proxy_login . personnel_field . value = GLOBAL ( "LOGIN_PERSONNEL_FIELD" )
+	ENDIF
+
+        proxy_login . add_prompt ( proxy_login . personnel_field )
+
+	{ proxy_login . add_frame ( "", 48, 5, 0, 43 ) }
+
+        CREATE OBJECT "STD_PROMPT_BUTTON" , proxy_login . set_button
+
+        proxy_login . set_button . row                 = 7
+        proxy_login . set_button . column              = 69
+	proxy_login . set_button . enabled             = proxy_login . allow_domain . value
+        {proxy_login . set_button . mouse_click_routine = "launch_access_log"}
+        proxy_login . set_button . caption             = "Update Current User" {get_user_message ( "ESIG_SETUP_LOG" , 1 )}
+        proxy_login . set_button . width               = length ( proxy_login . set_button . caption )
+        proxy_login . set_button . character_sized     = TRUE
+
+        proxy_login . add_prompt ( proxy_login . set_button )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_enter_prompt_form ( proxy_login )
+{
+*
+*
+*******************************************************************************}
+
+	IF NOT proxy_login . initialised THEN
+
+		proxy_login . initialised = TRUE
+
+	ENDIF
+
+ENDROUTINE { proxy_login_enter_prompt_form }
+
+{******************************************************************************}
+
+	ROUTINE proxy_login_allow_domain_toggled ( domain_active )
+
+{
+*	Callback when allow domain checkbox is clicked
+*
+*	Parameters   : domain_active - object of class STD_PROMPT_TEXT_BOOLEAN
+*	Return Value : none
+*
+*******************************************************************************}
+
+	domain_active . parent_prompt . allow_proxy . set_enabled ( domain_active . value )
+	domain_active . parent_prompt . use_AD      . set_enabled ( domain_active . value )
+	domain_active . parent_prompt . use_winnt   . set_enabled ( domain_active . value )
+
+	domain_active . parent_prompt . naming_context  . set_enabled ( domain_active . value )
+	domain_active . parent_prompt . AD_access_group . set_enabled ( domain_active . value )
+
+	domain_active . parent_prompt . AD_field        . set_enabled ( domain_active . value )
+	domain_active . parent_prompt . personnel_field . set_enabled ( domain_active . value )
+	domain_active . parent_prompt . set_button      . set_enabled ( domain_active . value )
+
+	domain_active . parent_prompt . is_altered  = TRUE
+
+ENDROUTINE { domain_login_allow_domain_toggled }
+
+{******************************************************************************}
+
+	ROUTINE proxy_login_allow_proxy_toggled ( proxy_active )
+
+{
+*	Callback when allow proxy checkbox is clicked
+*
+*	Parameters   : proxy_active - object of class STD_PROMPT_TEXT_BOOLEAN
+*	Return Value : none
+*
+*******************************************************************************}
+
+	proxy_active . parent_prompt . is_altered  = TRUE
+
+ENDROUTINE { proxy_login_allow_proxy_toggled }
+
+{******************************************************************************}
+
+	ROUTINE proxy_login_radio_toggled ( radio_button )
+
+{
+*	Callback when radio buttons toggled on proxy_login tab.
+*
+*	Parameters   : radio_button - object of class STD_PROMPT_TEXT_BOOLEAN
+*	Return Value : none
+*
+*******************************************************************************}
+
+	radio_button . user_info . set_text ( NOT radio_button . value )
+
+	radio_button . parent_prompt . is_altered  = TRUE
+
+ENDROUTINE { proxy_login_radio_toggled }
+
+{******************************************************************************}
+
+	ROUTINE proxy_login_leave_naming_context ( naming_context )
+
+{
+*	Callback when leaving naming_context field
+*
+*	Parameters   : naming_context
+*	Return Value : none
+*
+*******************************************************************************}
+
+	naming_context . parent_prompt . is_altered  = TRUE
+
+ENDROUTINE { proxy_login_leave_naming_context }
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_browse_ad_access_group ( AD_group )
+{
+*
+*	Browse on groups for current user
+*
+*******************************************************************************}
+
+	DECLARE temp_array
+
+	USER_LOGIN_GET_AD_GROUPS ( temp_array                                   ,
+	                           AD_group . parent_prompt . use_winnt . value )
+
+	IF browse_on_array ( 39              ,
+			     AD_group . text ,
+			     temp_array      ) THEN
+
+		AD_group . stop_prompt ( )
+
+	ENDIF
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_leave_ad_access_group ( AD_access_group )
+{
+*
+*
+*******************************************************************************}
+
+	IF AD_access_group . value <> GLOBAL ( "LOGIN_AD_ACCESS_GROUP" ) THEN
+
+		AD_access_group . parent_prompt . is_altered = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_browse_ad_field ( AD_field )
+{
+*
+*	Browse on available fields for the current chosen proxy settings.
+*
+*******************************************************************************}
+
+	DECLARE temp_array
+
+	USER_LOGIN_GET_AD_FIELDS ( temp_array                                   ,
+	                           AD_field . parent_prompt . use_winnt . value )
+
+	IF browse_on_array ( 39              ,
+			     AD_field . text ,
+			     temp_array      ) THEN
+		{FLASH_MESSAGE(ASCII(34):temp_array[26,2]:ASCII(34),TRUE)}
+		AD_field . stop_prompt ( )
+
+	ENDIF
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_leave_ad_field ( AD_field )
+{
+*
+*
+*******************************************************************************}
+
+	IF AD_field . value <> GLOBAL ( "LOGIN_AD_FIELD" ) THEN
+
+		AD_field . parent_prompt . is_altered = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_leave_pers_field ( personnel_field )
+{
+*
+*
+*******************************************************************************}
+
+	IF personnel_field . value <> GLOBAL ( "LOGIN_PERSONNEL_FIELD" ) THEN
+
+		personnel_field . parent_prompt . is_altered = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	ROUTINE proxy_login_action_commit ( proxy_login )
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE ok
+
+	ok = FALSE
+
+	START WRITE TRANSACTION GET_USER_MESSAGE ( "ESIG_SETUP_PROXY_TRANSACTION" , 1 )
+
+	ok = proxy_login . update_value ( "LOGIN_ALLOW_DOMAIN"               ,
+	                                  proxy_login . allow_domain . value )
+
+	IF ok THEN
+		ok = proxy_login . update_value ( "LOGIN_ALLOW_PROXY"               ,
+		                                  proxy_login . allow_proxy . value )
+	ENDIF
+
+	IF ok THEN
+		ok = proxy_login . update_value ( "LOGIN_WINNT"                   ,
+		                                  proxy_login . use_winnt . value )
+	ENDIF
+
+	IF ok THEN
+		ok = proxy_login . update_value ( "LOGIN_NAMING_CONTEXT"               ,
+		                                  proxy_login . naming_context . value )
+	ENDIF
+
+	IF ok THEN
+		ok = proxy_login . update_value ( "LOGIN_AD_ACCESS_GROUP"               ,
+		                                  proxy_login . AD_access_group . value )
+	ENDIF
+
+	IF ok THEN
+		ok = proxy_login . update_value ( "LOGIN_AD_FIELD"               ,
+		                                  proxy_login . AD_field . value )
+	ENDIF
+
+	IF ok THEN
+		ok = proxy_login . update_value ( "LOGIN_PERSONNEL_FIELD"               ,
+		                                  proxy_login . personnel_field . value )
+	ENDIF
+
+	IF ok THEN
+		COMMIT
+	ELSE
+		ROLLBACK
+		flash_message ( get_user_message ( "ESIG_SETUP_PROXY_UPDATE_FAILURE" , 1 ) , TRUE )
+	ENDIF
+
+ENDROUTINE { proxy_login_action_commit }
+
+{******************************************************************************}
+
+        ROUTINE proxy_login_action_update_value (       proxy_login  ,
+                                                  VALUE config_name  ,
+                                                  VALUE config_value )
+
+{
+*
+*
+*******************************************************************************}
+
+	DECLARE config_item, ok
+
+	config_item = SELECT config_header . identity
+	              FOR UPDATE
+	              WHERE identity = config_name
+
+	IF config_item = config_name THEN
+
+		IF SELECT config_header . value <> config_value THEN
+
+			ASSIGN config_header . value = config_value
+
+			UPDATE config_header
+
+		ENDIF
+
+		ok = TRUE
+
+	ELSE
+
+		ok = FALSE
+
+	ENDIF
+
+	RETURN ( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

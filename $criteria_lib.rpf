@@ -1,0 +1,1076 @@
+{******************************************************************************
+*
+* Module Name   : $CRITERIA_LIB.RPF
+*
+* Purpose       : Library of routines for handling of the criteria key.
+*
+* Note that the ARRAY_SELECT_BETWEEN, ARRAY_SELECT_IN and
+* ARRAY_SELECT_PRED_VALUE clauses are not supported.
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : Yes
+*
+*******************************************************************************}
+
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_GLOBAL
+
+JOIN LIBRARY $CRITERIA_CACHE
+JOIN LIBRARY $LIB_TEXT
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $DATABASE_BROWSE
+JOIN LIBRARY $VARIABLE_COLLECTION
+
+{* GLOBAL CONSTANTS ***********************************************************}
+
+
+{* LOCAL CONSTANTS ************************************************************}
+
+CONSTANT ERROR_INTRO = " **** - "      { Text to introduce an error  }
+CONSTANT PUSH_INDENT = 3               { Characters to indent on a ( }
+
+CONSTANT MAX_CRITERIA_LENGTH = 76
+CONSTANT MAX_PROMPT_COUNT    = 15
+
+{* VARIABLES ******************************************************************}
+
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_is_compare ( VALUE array_select_val )
+
+{
+*	Return whether an array_select value is a comparison.
+*
+*******************************************************************************}
+
+	RETURN ( ( ( array_select_val <= ARRAY_SELECT_GT ) OR
+	           ( array_select_val = ARRAY_SELECT_LIKE ) ) AND
+	         ( array_select_val > 0 ) )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_compare_exists ( select_array )
+
+{
+*	Checks to see if a compare exists in the select array
+*
+*******************************************************************************}
+
+	DECLARE compare_exists, loop
+
+	compare_exists = FALSE
+
+	IF ( size_of_array ( select_array ) > 0 ) THEN
+		loop = 1
+		WHILE ( loop <= size_of_array ( select_array ) ) AND
+		      ( NOT ( criteria_lib_is_compare (
+		                 select_array [ loop , 1 ] ) ) ) DO
+
+			loop = loop + 1
+		ENDWHILE
+
+		IF loop <= size_of_array ( select_array ) THEN
+			compare_exists = TRUE
+		ENDIF
+
+	ENDIF
+
+	RETURN ( compare_exists )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_is_logical ( VALUE array_select_val )
+
+{
+*	Return whether an array_select value is AND or OR.
+*
+*******************************************************************************}
+
+	RETURN ( ( array_select_val = ARRAY_SELECT_AND ) OR
+	         ( array_select_val = ARRAY_SELECT_OR  ) )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_val_to_text ( VALUE array_select_val )
+
+{
+*	Convert an array select value (1 2 etc) into the associated text
+*	message.
+*
+*******************************************************************************}
+
+	DECLARE mess , text
+
+	mess = GET CONSTANT ( "ARRAY_SELECT_TEXT_" : strip ( array_select_val ))
+
+	text = GET_USER_MESSAGE ( "$CRITERIA_LIB_ARRAY_SELECT_" : mess ,
+	                          1                                    )
+
+	RETURN ( text )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE format_field_string( VALUE base_table, VALUE field_string )
+{
+* Formats the field string
+*
+*******************************************************************************}
+
+	RETURN( lib_text_identity_to_text( field_string ) )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_to_text (       criteria_array ,
+	                                     text_array     ,
+	                                     max_length     ,
+	                               VALUE table          ,
+	                               VALUE fold_and_or    )
+
+{
+*	Convert a criteria array into text strings. The text_array parameter
+*	will hold an array of text strings making up the selection. The
+*	max_length parameter will hold the length of the longest string.
+*	The fold_and_or parameter is a boolean which states whether and/or
+*	values are folded onto the previous line, or have a line of their own.
+*	Returns whether the select is valid or not.
+*
+*******************************************************************************}
+
+	DECLARE loop, text_count, current_indent, code, variables, this_line
+	DECLARE order_text, code_text, any_errors, field, p1, p2, prefix
+
+	variable_collection_initialise( )
+	CREATE OBJECT VARIABLE_COLLECTION_CLASS, variables
+
+	ARRAY text_array
+	max_length = 0
+
+	text_count     = 0
+	current_indent = 0
+	any_errors     = FALSE
+
+	loop = 1
+	WHILE ( loop <= size_of_array ( criteria_array ) ) DO
+
+		this_line = EMPTY
+
+		code = criteria_array [ loop , 1 ]
+		p1   = criteria_array [ loop , 2 ]
+		p2   = criteria_array [ loop , 3 ]
+		
+		code_text = criteria_lib_val_to_text ( criteria_array [ loop , 1 ] )
+
+		IF code = ARRAY_SELECT_PUSH THEN
+
+			this_line = code_text
+
+			current_indent = current_indent + PUSH_INDENT
+
+		ELSEIF code = ARRAY_SELECT_POP THEN
+
+			current_indent = current_indent - PUSH_INDENT
+			
+			IF ( current_indent < 0 ) THEN
+			
+				current_indent = 0
+				code_text = code_text : ERROR_INTRO :
+				            GET_USER_MESSAGE( "$CRITERIA_LIB_TOO_MANY_POP", 1 )
+				any_errors = TRUE
+				
+			ENDIF
+			
+			this_line = code_text
+
+		ELSEIF code = ARRAY_SELECT_ORDER THEN
+
+			field = format_field_string ( table, p1 )
+			                                     
+			this_line = code_text : " " : field
+
+			IF NOT BLANK( p2 ) THEN
+
+				order_text = criteria_lib_val_to_text ( p2 )
+
+				this_line = this_line : " (" : order_text : ")"
+
+			ENDIF
+
+		ELSEIF ( code = ARRAY_SELECT_AND ) OR
+		       ( code = ARRAY_SELECT_OR  ) THEN
+
+			this_line = code_text
+
+		ELSEIF ( code = ARRAY_SELECT_ASSIGN         ) OR
+		       ( code = ARRAY_SELECT_ASSIGN_PROMPT  ) OR
+		       ( code = ARRAY_SELECT_ASSIGN_GLOBAL  ) OR
+		       ( code = ARRAY_SELECT_ASSIGN_ROUTINE ) THEN
+		       
+			variables . set( p1, p2 )
+			
+		ELSE
+
+			field = format_field_string( table, p1 )
+
+			IF variables . get_variable( p1 ) = EMPTY THEN
+
+				this_line = field : " " : code_text : " " :
+				            CHR ( 34 ) : STRIP( p2 ) : CHR ( 34 )
+
+			ELSE
+
+				this_line = field : " " : code_text : " " : p2
+
+			ENDIF
+
+		ENDIF
+
+		IF this_line <> EMPTY THEN
+		
+			text_count = text_count + 1
+			text_array [ text_count ] = PAD ( "" , " " , current_indent ) :
+			                            this_line
+
+			max_length = find_max_number ( max_length, LENGTH ( this_line ) )
+			
+		ENDIF
+
+		loop = loop + 1
+
+	ENDWHILE
+
+	this_line = ""
+	prefix = "Where "
+
+	variables . set_first( )
+	WHILE ( variables . current <> EMPTY ) DO
+	
+		this_line = this_line : prefix : variables . current . get_name ( )
+		prefix = ", "
+	
+		variables . set_next( )
+	ENDWHILE
+	
+	IF NOT BLANK( this_line ) THEN
+		
+		IF variables . size( ) = 1 THEN
+			this_line = this_line : " is a variable"
+		ELSE
+			this_line = this_line : " are variables"
+		ENDIF
+	
+		text_count = text_count + 1
+		text_array [ text_count ] = ""
+	
+		text_count = text_count + 1
+		text_array [ text_count ] = this_line
+	
+	ENDIF
+	
+
+	IF current_indent > 0 THEN
+
+		text_count = text_count + 1
+		text_array [ text_count ] = ERROR_INTRO :
+		                            GET_USER_MESSAGE( "$CRITERIA_LIB_TOO_MANY_PUSH" ,1 )
+		any_errors = TRUE
+
+	ENDIF
+
+	RETURN ( NOT ( any_errors ) )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_display (       select_array     ,
+	                               VALUE table            ,
+	                               VALUE header_message   ,
+	                               VALUE no_array_message ,
+	                               VALUE help_context     )
+
+{
+*	Display a criteria array in a form.
+*
+*******************************************************************************}
+
+	DECLARE text_array , max_length , form , head_mess , window_width , text,
+	        loop , window_column , start_col , display_obj
+
+	start_col = 1
+
+	IF size_of_array ( select_array ) > 0 THEN
+
+		criteria_lib_to_text ( select_array         ,
+		                       text_array           ,
+		                       max_length           ,
+		                       table                ,
+		                       TRUE { fold and/or } )
+
+		head_mess = GET_USER_MESSAGE ( header_message , 1 )
+
+		window_width = find_max_number ( LENGTH ( head_mess ) ,
+		                                 max_length           )
+
+
+		IF GLOBAL ( "TERMTYPE" ) = "GUI" THEN
+
+			start_col = 2
+
+			window_width = window_width + 1
+
+			window_width = find_max_number ( window_width          ,
+			                                 24 { Size of Buttons })
+		ENDIF
+
+		window_column =
+		          find_min_number ( 10                               ,
+		                            GLOBAL ( "SCREEN_WIDTH" ) - 4 -
+		                                                window_width )
+		window_column = find_max_number ( window_column , 3 )
+
+		PROMPT OBJECT form
+		       CLASS PROMPT_CLASS_FORM
+		       WITH ( column       = window_column                ,
+		              row          = 10                           ,
+		              width        = window_width                 ,
+		              height       = size_of_array ( text_array ) ,
+		              border       = TRUE                         ,
+		              header       = head_mess                    ,
+		              proportional = TRUE                         ,
+		              button_style = FORM_BUTTON_NONE             ,
+		              help_context = help_context                 )
+
+
+		text = ""
+		loop = 1
+
+		WHILE ( loop <= size_of_array ( text_array ) ) DO
+
+			text = text : text_array [ loop ] : CHR( 13 )
+
+			loop = loop + 1
+
+		ENDWHILE
+		
+		PROMPT OBJECT display_obj
+			FORMAT TEXT
+			ON LINE 1 FROM start_col TO window_width
+			WITH ( value        = text  ,
+			       display_only = TRUE  ,
+			       height       = size_of_array ( text_array ) ,
+			       zap_on_first = FALSE ,
+			       length       = 1000 )
+
+		form . add_prompt( display_obj )
+
+		form . start_prompt ( )
+		form . wait_prompt ( )
+		form . end_prompt ( )
+
+	ELSE
+
+		flash_message ( no_array_message , TRUE )
+
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_parameter_count ( select_array )
+
+{
+*	Returns the number of undefined values in the passed select_array
+*
+******************************************************************************}
+
+	DECLARE param_count, row, op
+
+	param_count = 0
+	row = 1
+
+	WHILE row <= size_of_array ( select_array ) DO
+	
+		op = select_array[row,1]
+	
+		IF op = ARRAY_SELECT_ASSIGN THEN
+			param_count = param_count + 1
+		ENDIF
+
+		row = row + 1
+
+	ENDWHILE
+
+	RETURN ( param_count )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	ROUTINE get_parameter_number_row( select_array, VALUE parameter_number )
+{
+*	Returns the row number within the select array where the passed parameter
+*	number is declared. -1 is returned if not found
+*
+******************************************************************************}
+
+	DECLARE found_row, num, row, op
+
+	found_row = -1
+	num = 0
+	
+	row = 1
+
+	WHILE ( row <= size_of_array ( select_array ) ) AND ( found_row = -1 ) DO
+
+		op = select_array[row,1]
+	
+		IF op = ARRAY_SELECT_ASSIGN THEN
+
+			num = num + 1
+
+			IF num = parameter_number THEN
+				found_row = row
+			ENDIF
+			
+		ENDIF
+	
+		row = row + 1
+	
+	ENDWHILE
+
+	RETURN( found_row )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_parameter_name(       select_array     ,
+	                                     VALUE parameter_number )
+{
+*	Returns the name of the undefined value in the select_array.
+*	Returns EMPTY if not found
+*
+*******************************************************************************}
+
+	DECLARE param_name, declare_row
+
+	param_name = EMPTY
+	
+	declare_row = get_parameter_number_row( select_array     ,
+	                                        parameter_number )
+	IF( declare_row <> -1 ) THEN
+
+		param_name = select_array[declare_row, 2]
+		
+	ENDIF
+	
+	RETURN( param_name )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	ROUTINE unknown_value_fields_first_used( VALUE base_table   ,
+	                                               select_array ,
+	                                         VALUE parameter_id )
+{
+*
+*	Returns the field string of the undefined value in the select_array. Uses
+*	the first occurance to determine type. Returns EMPTY if error
+*
+*******************************************************************************}
+
+	DECLARE test_parameter_id, link_fields, op, row
+
+	link_fields = EMPTY
+
+	{ find first occurance of parameter_id }
+	row = 1
+	WHILE ( row <= size_of_array ( select_array ) ) AND
+		  ( link_fields = EMPTY                   ) DO
+
+		op = select_array[ row, 1 ]
+
+		IF criteria_lib_is_compare( op ) THEN
+
+			test_parameter_id = select_array[ row, 3 ]
+
+			IF test_parameter_id = parameter_id THEN
+
+				link_fields = select_array[ row, 2 ]
+
+			ENDIF
+
+		ENDIF
+
+		row = row + 1
+
+	ENDWHILE
+
+	RETURN( link_fields )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_parameter_type( VALUE base_table       ,
+	                                           select_array     ,
+	                                     VALUE parameter_number )
+{
+*
+*	Returns the type of the undefined value in the select_array. Uses the
+*	first occurance to determine type. Returns EMPTY if error
+*
+*******************************************************************************}
+
+	DECLARE link_fields, datatype, table, field, parameter_id, declare_row
+
+	datatype = EMPTY
+
+	declare_row = get_parameter_number_row( select_array, parameter_number )
+
+	IF declare_row <> -1 THEN
+	
+		parameter_id = select_array[ declare_row, 2 ]
+	
+		link_fields = unknown_value_fields_first_used( base_table   ,
+		                                               select_array ,
+		                                               parameter_id )
+
+		IF get_link_field_target( base_table, link_fields, table, field ) THEN
+
+			GET_FIELD_DETAILS 'table' . 'field', "DATA_TYPE", datatype
+
+		ENDIF
+
+	ENDIF
+	
+	RETURN( datatype )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_set_parameter(       select_array     ,
+	                                    VALUE parameter_number ,
+	                                    VALUE parameter_value  )
+{
+*	Sets the unknown values in the select array with the passed value
+*
+*******************************************************************************}
+
+	DECLARE declare_row
+
+	declare_row = get_parameter_number_row( select_array     ,
+	                                        parameter_number )
+	IF( declare_row <> -1 ) THEN
+
+		select_array[declare_row, 3] = parameter_value
+		
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE criteria_lib_build_obdb( VALUE base_table      ,
+                                       select_array    ,
+                                       parameter_array )
+{
+*	Returns an object database containing populated with records that meet the
+*	passed criteria
+*
+*******************************************************************************}
+
+	DECLARE obdb, param_count, param
+
+	obdb = EMPTY
+
+	param_count = criteria_lib_parameter_count( select_array ) 
+	param = 1
+	
+	WHILE param <= param_count DO
+	
+		criteria_lib_set_parameter( select_array, param, parameter_array[param] )
+	
+		param = param + 1
+		
+	ENDWHILE
+	
+	CREATE OBJECT "STD_OBJECT_DATABASE", obdb
+	obdb . initialise( base_table )
+	obdb . select( select_array )
+
+	RETURN( obdb )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE prompt_identity_max_length( select_array )
+{
+*	Returns the length of the longest prompt id in the passed select array
+*
+*******************************************************************************}
+
+	DECLARE max_length, row
+
+	max_length = 0
+
+	row = 1
+	WHILE row <= size_of_array( select_array ) DO
+
+		IF select_array[row, 1] = ARRAY_SELECT_ASSIGN_PROMPT THEN
+		
+			max_length = find_max_number( max_length                     ,
+			                              LENGTH( select_array[row, 2] ) )
+
+		ENDIF
+
+		row = row + 1
+		
+	ENDWHILE
+	
+	RETURN( max_length )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE criteria_lib_populate_prompt_unknowns( VALUE base_table, select_array )
+{
+*	Prompts for all prompt parameter values. Returns True if successful
+*
+*******************************************************************************}
+
+	DECLARE prompt_object, form, prompt_num, fields, table, field
+	DECLARE op, id, param, lib, ok, row, pos, max_id_length
+
+	ok = TRUE
+
+	max_id_length = prompt_identity_max_length( select_array )
+
+	CREATE OBJECT "STD_FORM", form
+	form . header       = GET_USER_MESSAGE( "$CRITERIA_LIB_PROMPT_HEADER", 1 )
+	form . row          = 10
+	form . column       = 10
+	form . width        = max_id_length + 20
+	form . button_style = FORM_BUTTON_CLOSE
+
+	prompt_num = 0
+
+	row = 1
+	WHILE ( row <= size_of_array( select_array ) ) AND ok DO
+
+		op    = select_array[row, 1]
+
+		IF op = ARRAY_SELECT_ASSIGN_PROMPT THEN
+		
+			id    = select_array[row, 2]
+			param = select_array[row, 3]
+		
+			
+			fields = unknown_value_fields_first_used( base_table   ,
+													  select_array ,
+													  id           )
+
+			IF get_link_field_target( base_table, fields, table, field ) THEN
+
+				PROMPT OBJECT prompt_object
+					FORMAT 'table' . 'field'
+
+			ENDIF
+
+			IF param <> EMPTY THEN
+
+				lib = get_token( param, "/" )
+
+				CALL_ROUTINE param
+					USING prompt_object
+					IN LIBRARY lib
+
+			ENDIF
+
+			IF prompt_object <> EMPTY THEN
+
+				prompt_num = prompt_num + 1
+
+				form . add_display( STRIP( id )             ,
+				                    1                       ,
+				                    prompt_num              ,
+				                    PROMPT_RENDITION_NORMAL )
+
+				prompt_object . row       = prompt_num
+				prompt_object . column    = max_id_length + 2
+				prompt_object . user_info = row
+
+				form . add_prompt( prompt_object )
+
+			ENDIF
+			
+		ENDIF
+
+		row = row + 1
+		
+	ENDWHILE
+
+	IF prompt_num > MAX_PROMPT_COUNT THEN
+
+		fatal_error( "Too many unknowns defined. Maximum = " :
+		             STRIP( MAX_PROMPT_COUNT )              )
+
+		ok = FALSE
+		
+	ELSEIF prompt_num > 0
+
+		form . height = prompt_num
+
+		form . start_prompt( )
+		form . wait_prompt( )
+		form . end_prompt( )
+
+		pos = 1
+
+		WHILE pos <= prompt_num DO
+
+			prompt_object = form . prompt_objects[ pos ]
+
+			row = prompt_object . user_info
+
+			select_array[row,1] = ARRAY_SELECT_ASSIGN
+			select_array[row,3] = prompt_object . value
+
+			pos = pos + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN( ok )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE criteria_lib_build_browse_initial( VALUE table       ,
+                                           VALUE field       ,
+                                           VALUE filter_text )
+
+{ 
+* Creates criteria based on the value of the passed filter_text and field.
+* If filter_text contains like-characters (i.e * or %) then the criteria will
+* be 'WHERE field LIKE filter_text.
+* Otherwise the filter_text will be used as a start position - either a less
+* than or greater than clause depending upon the field's default ordering
+*
+* e.g. if table='report', field='identity', filter_text='*LIB*' the criteria
+*      returned will select all library reports.
+*
+* Parameters : table       , Table criteria will be based on
+*              field       , Field criteria will be based on
+*              filter_text , the text that will dictate the criteria
+*
+*******************************************************************************}
+
+	DECLARE criteria, order_desc, version_field, field_type
+
+	ARRAY criteria
+
+	GET_FIELD_DETAILS 'table' . 'field', "DESCENDING" , order_desc
+
+	IF NOT order_desc THEN
+
+		GET_TABLE_DETAILS 'table' , "VERSION_FIELD" , version_field
+
+		order_desc = ( version_field = field )
+
+	ENDIF
+
+	IF ( INDEX ( filter_text , "%" ) <> 0 ) OR
+	   ( INDEX ( filter_text , "*" ) <> 0 ) THEN
+
+		filter_text = SUBSTITUTE ( filter_text, "*", "%" )
+
+		ARRAY_SELECT_ADD ( criteria          ,
+		                   ARRAY_SELECT_LIKE ,
+		                   field             ,
+		                   filter_text       )
+
+	ELSEIF order_desc THEN
+
+		GET_FIELD_DETAILS 'table' . 'field', "DATA_TYPE" , field_type
+
+		IF TOUPPER ( field_type ) = "TEXT" THEN
+
+			filter_text = lib_text_increment_string( filter_text )
+
+		ENDIF
+
+		ARRAY_SELECT_ADD ( criteria        ,
+		                   ARRAY_SELECT_LE ,
+		                   field           ,
+		                   filter_text     )
+
+	ELSEIF NOT BLANK( filter_text ) THEN
+
+		ARRAY_SELECT_ADD ( criteria        ,
+		                   ARRAY_SELECT_GE ,
+		                   field           ,
+		                   filter_text     )
+
+	ELSE
+
+		ARRAY_SELECT_ADD ( criteria        ,
+		                   ARRAY_SELECT_NE ,
+		                   field           ,
+		                   NULL            )
+
+	ENDIF
+	
+	RETURN( criteria )
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE criteria_lib_add_status_select (       select_array ,
+                                         VALUE status_set   )
+
+{
+*	Add status selection to the select clause.
+*	For each status letter in the status_set string add an appropriate
+*	select predicate to the select_array.
+*
+*******************************************************************************}
+
+	DECLARE loop , status_char
+
+	IF NOT ( BLANK ( status_set )) THEN
+
+		loop = 1
+
+		ARRAY_SELECT_ADD ( select_array      ,
+		                   ARRAY_SELECT_PUSH ,
+		                   EMPTY             ,
+		                   EMPTY             )
+
+		WHILE ( loop <= LENGTH ( status_set )) DO
+
+			status_char = SUBSTRING ( status_set ,
+			                          loop       ,
+			                          1          )
+
+			ARRAY_SELECT_ADD ( select_array    ,
+			                   ARRAY_SELECT_EQ ,
+			                   "STATUS"        ,
+			                   status_char     )
+
+			IF ( loop < LENGTH ( status_set )) THEN
+
+				ARRAY_SELECT_ADD ( select_array    ,
+				                   ARRAY_SELECT_OR ,
+				                   EMPTY           ,
+				                   EMPTY           )
+
+			ENDIF
+
+			loop = loop + 1
+
+		ENDWHILE
+
+		ARRAY_SELECT_ADD ( select_array     ,
+		                   ARRAY_SELECT_POP ,
+		                   EMPTY            ,
+		                   EMPTY            )
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE criteria_lib_get_table_implicit (       mandatory_array ,
+                                          VALUE table           )
+
+{
+* Returns the mandatory criteria that should be applied when browsing on the
+* passed table. The criteria is based on the remove flag and approval status
+* fields
+*
+* Parameters : table , table name
+*
+*******************************************************************************}
+
+	DECLARE remove_field   ,
+	        approval_field ,
+	        inspection_field ,
+	        found_approval ,
+	        count          ,
+	        status_set
+
+	{**************************************************************************}
+	{* Handle removed/active behaviour                                        *}
+	{**************************************************************************}
+
+	GET_TABLE_DETAILS 'table' , "REMOVE_FIELD", remove_field
+
+	IF ( remove_field <> EMPTY ) AND GLOBAL ( "HIDE_DELETED" ) THEN
+
+		ARRAY_SELECT_ADD ( mandatory_array             ,
+		                   ARRAY_SELECT_EQ             ,
+		                   remove_field                ,
+		                   GLOBAL ( "BROWSE_REMOVED" ) )
+
+	ENDIF
+
+	{**************************************************************************}
+	{* Add approval_status information - if required                          *}
+	{**************************************************************************}
+
+	GET_TABLE_DETAILS 'table' , "APPROVAL_STATUS" , approval_field
+
+	GET_TABLE_DETAILS 'table' , "INSPECTION_FIELD" , inspection_field
+
+	IF (( approval_field != EMPTY ) AND ( inspection_field != EMPTY ))
+	
+		{ Check if approval_field already used in select_array }
+		
+		found_approval = FALSE
+		count = 1
+
+		WHILE ( count <= size_of_array ( mandatory_array ) ) AND
+		      ( NOT found_approval                         ) DO
+		
+			IF mandatory_array[ count, 2 ] = approval_field THEN
+				found_approval = TRUE
+			ENDIF
+			
+			count = count + 1
+			
+		ENDWHILE
+		
+		{ If its not in the select_array - only allow approved records }
+
+		IF NOT found_approval THEN
+		
+			ARRAY_SELECT_ADD ( mandatory_array ,
+			                   ARRAY_SELECT_EQ ,
+			                   approval_field  ,
+			                   "A"             )
+
+		ENDIF
+
+	ENDIF
+
+	{**************************************************************************}
+	{* Add the allowed status set if the global exists                         }
+	{* Used for the following tables                                           }
+	{* 	JOB_STATUS                                                         }
+	{* 	SAMPLE_STATUS                                                      }
+	{* 	BATCH_STATUS                                                       }
+	{* 	TEST_STATUS                                                        }
+	{**************************************************************************}
+
+	status_set = EMPTY
+
+	IF global_exists ( STRIP ( table ) : "_STATUS" ) THEN
+		status_set = GLOBAL ( STRIP ( table ) : "_STATUS" )
+	ELSEIF table = "JOB_HEADER" THEN
+		status_set = GLOBAL ( "JOB_STATUS" )
+	ELSEIF table = "BATCH_HEADER" THEN
+		status_set = GLOBAL ( "BATCH_STATUS" )
+	ENDIF
+
+	IF status_set <> EMPTY THEN
+		criteria_lib_add_status_select ( mandatory_array, status_set )
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+	GLOBAL
+
+	ROUTINE criteria_lib_prompt_count ( select_array )
+
+{
+*	Returns the number of undefined values in the passed select_array
+*
+******************************************************************************}
+
+	DECLARE param_count, row, op
+
+	param_count = 0
+	row = 1
+
+	WHILE ( row <= size_of_array ( select_array ) ) DO
+	
+		op = select_array[row,1]
+	
+		IF op = ARRAY_SELECT_ASSIGN_PROMPT THEN
+			param_count = param_count + 1
+		ENDIF
+
+		row = row + 1
+
+	ENDWHILE
+
+	RETURN ( param_count )
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

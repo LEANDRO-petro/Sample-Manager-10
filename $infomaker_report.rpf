@@ -1,0 +1,1451 @@
+{*******************************************************************************
+* Module Name   : $INFOMAKER_REPORT
+*
+* Purpose       : Run Infomaker reports via predefined parameters
+*
+* Portability   : Will only work on SMW
+*
+* Re-entrant    : No
+********************************************************************************} 
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+001	08/01/2013	Corrigindo Rotina de Prompt
+002   02/05/2014  Suspender emissão de Boletins por meio do SM10
+}
+ENABLE WINDOWS
+
+SET NOTPROTECTED
+
+SET NAME "DEFER/"
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_GLOBAL
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_MENU
+JOIN LIBRARY $PROMPT_IMPRINT
+JOIN LIBRARY $LIB_TEXT
+
+{**Local Constants ************************************************************} 
+
+CONSTANT INFOMAKER_LINK_CLASS = "INFOMAKER_LINK"
+
+CONSTANT NAME_COL                =       1
+CONSTANT DEFL_COL                =       2
+CONSTANT TYPE_COL                =       3
+CONSTANT TBLE_COL                =       4
+CONSTANT FORM_COL                =       4
+CONSTANT PHRS_COL                =       4
+CONSTANT FILD_COL                =       5
+CONSTANT MAND_COL                =       6
+CONSTANT VALU_COL                =       7
+CONSTANT RTAB_COL                =       8
+CONSTANT RFLD_COL                =       9
+CONSTANT ROPR_COL                =       10
+
+{** Global Constants **********************************************************} 
+
+{** Global Variables **********************************************************} 
+
+{** Main Code *****************************************************************} 
+
+main ()
+
+{* Start Of Routines **********************************************************} 
+
+{******************************************************************************}
+
+
+
+{* Routines *******************************************************************}
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE infomaker_report_menu_option( VALUE option_number ) 
+
+{
+* Summary    : Run infomaker report, from given menu number.
+*
+* Parameters : VALUE option_number
+*
+* Return     : None
+*
+*******************************************************************************}
+
+DECLARE rep_id, status
+
+	IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+		PROMPT FOR rep_id
+
+		infomaker_report_run_report ( rep_id )
+
+	ELSEIF GLOBAL ( "MODE" ) = "INTERACTIVE" THEN
+
+		status = GET_IDENTITY ( rep_id                                                   , 
+			 GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_INFO_REPORT", 1 )  , 
+			 GET_USER_MESSAGE ( "INFOMAKER_LINK_REP_TO_RUN", 1 )  , 
+			 "INFOMAKER_LINK"                                         , 
+			 ""                                                       ) 
+
+		IF status = TRUE THEN
+			infomaker_report_run_report ( rep_id )
+		ENDIF
+
+	ENDIF
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+ROUTINE infomaker_report_run_report ( VALUE rep_id )
+
+{
+* Summary    : Creates the infomaker reporting object, prompts for the relevant
+*              value and then connects to Infomaker and runs the report.
+*
+* Parameters : rep_id - The Identity of the report.
+*
+* Return     : None
+*
+*******************************************************************************}
+
+	DECLARE infomaker_link, rep_exists, count, val
+      DECLARE msg_top_line, msg_bottom_line, msg_lines
+      
+      ARRAY msg_lines ARRAYSIZE (9)
+
+	rep_exists = ( SELECT infomaker_link . identity
+			WHERE ( identity = rep_id  ) AND
+			      ( removeflag = FALSE ) ) <> EMPTY
+
+	IF ( rep_exists ) THEN
+
+		infomaker_report_define_infomaker_link_class ()
+
+		CREATE OBJECT INFOMAKER_LINK_CLASS , infomaker_link
+
+		infomaker_link . identity = rep_id
+
+		IF GLOBAL ( "MODE" ) = "INTERACTIVE" THEN
+
+			IF ( infomaker_link . load ( ) ) THEN
+
+				infomaker_link . create_form ()
+				infomaker_link . start_prompt ()
+				infomaker_link . wait_prompt ()
+
+				IF ( infomaker_link . get_lastkey () = "DO" ) THEN
+
+					infomaker_link . get_values ()
+					infomaker_link . do_imprint ()
+					infomaker_link . end_prompt ()
+
+					infomaker_link . blank_form ()
+					infomaker_link . visible = TRUE
+
+				ENDIF
+
+			ELSE
+
+				infomaker_link . do_imprint ()
+
+			ENDIF
+
+		ELSE
+
+			infomaker_link . load ()
+
+			count = 0
+
+			WHILE ( GLOBAL ( "PARAM_ACTIVE" ) ) AND 
+			      ( count < SIZE_OF_ARRAY ( infomaker_link . details ) ) DO
+
+				count = count + 1
+
+				PROMPT FOR val
+
+				val = SUBSTITUTE ( val , ASCII ( 34 ) , "" )
+
+				infomaker_link . details [ VALU_COL , count ] = val
+
+			ENDWHILE
+
+			infomaker_link . preview = FALSE
+			infomaker_link . do_imprint ()
+
+		ENDIF
+
+	ELSE
+	    
+	    { >>> 002 LLV 02-05-2014 Begin }
+	    msg_top_line = GET_USER_MESSAGE( "CONFIG_EDITOR_LOCKED", 6 )
+          
+	    {* msg_lines[1] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 2 )  *} 
+	    {* msg_lines[2] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 3 )  *}
+	    {* msg_lines[3] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 4 )  *}
+          {* msg_lines[4] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 5 )  *}
+	    {* msg_lines[5] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 6 )  *}
+	    {* msg_lines[6] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 7 )  *}
+	    {* msg_lines[7] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 8 )  *}
+          {* msg_lines[8] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 9 )  *}
+	    {* msg_lines[9] = GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 10 ) *}
+
+	    msg_lines[1] = "Caro Usuário,"
+          msg_lines[2] = ""
+          msg_lines[3] = "Favor utilizar o EPLAB/IPL para a emissão do boletim."
+          msg_lines[4] = "Utilizando um navegador, disponível pelo sistema Petrobras, acesse o endereço:  eplab.petrobras.biz"
+          msg_lines[5] = "Para solicitar seu acesso, envie nota com sua chave e gerência para: RHLO"
+          msg_lines[6] = "Em caso de dúvida, favor entrar em contato com a equipe  de suporte, conforme segue:"
+          msg_lines[7] = "LIMS do LF :   861-4465   -  chave  A2SM"
+          msg_lines[8] = ""
+          msg_lines[9] = "Obrigado"
+
+	    msg_bottom_line = GET_USER_MESSAGE( "CONFIG_EDITOR_LOCKED", 7 )
+ 
+	    flash_messages ( msg_top_line    ,
+            		   msg_bottom_line ,
+                 	         msg_lines       ,
+                 	         TRUE            )
+
+
+	    {* flash_message ( GET_USER_MESSAGE ( "INFOMAKER_LINK_REPORT_REMOVED" , 1 ) , TRUE ) *}
+          { >>> LLV 002 02-05-2014 End  }
+	ENDIF
+
+ENDROUTINE { infomaker_report_run_report } 
+
+{* Routines *******************************************************************}
+
+{*******************************************************************************}
+
+ROUTINE main
+
+{
+* Summary    : The main routine if called directly. Prompts for a report 
+*              identity and then runs it by calling the global routine.
+*
+* Parameters : None
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE rep_id, status
+
+    IF GLOBAL ( "MODE" ) = "INTERACTIVE" THEN
+        
+        status = GET_IDENTITY ( rep_id                                                   , 
+                             GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_INFO_REPORT", 1 )  , 
+                             GET_USER_MESSAGE ( "INFOMAKER_LINK_REP_TO_RUN", 1 )  , 
+                             "INFOMAKER_LINK"                                         , 
+                             ""                                                       ) 
+                             
+        IF status = TRUE THEN
+            infomaker_report_run_report ( rep_id )
+        ENDIF
+        
+        
+
+    ELSE
+    
+        IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+        
+            PROMPT FOR rep_id
+        
+            infomaker_report_run_report ( rep_id )
+            
+        ENDIF
+        
+    ENDIF
+    
+    RETURN ( TRUE )
+    
+ENDROUTINE { main }
+
+{*******************************************************************************}
+
+GLOBAL
+ROUTINE infomaker_report_define_infomaker_link_class
+
+{
+* Summary    : Defines the infomaker_link class. The class inherits from 
+*              STD_FORM so that all of the prompts can be added and be
+*              immediately accessible to the object.
+*              
+* Parameters : None
+*
+* Return     : None
+*
+*******************************************************************************}
+
+
+    DEFINE CLASS INFOMAKER_LINK_CLASS
+    
+        INITIALISATION
+        INHERIT "STD_FORM"
+        PROPERTIES
+        
+             "name"                ,         { The Management Report Name.      }
+             "details"             ,         { Prompt Details Array.            } 
+             "identity"            ,         { The Management Report ID.        }
+             "user_library"        ,         { The User VGL Report.             }
+             "valid_routine"       ,         { The Validation Routine.          }
+             "printer"             ,         { The Printer to use.              }
+             "relative_date"       ,         { Relative date for historical.    }
+             "im_library"          ,         { The Infomaker Library to use     }
+             "im_report"           ,         { The Infomaker Report to use      }
+             "copies"              ,         { The Number of Copies to Print.   }
+             "parent"              ,         { For Status Message Support       }
+             "preview"                       { Do we want print preview?        }
+
+        ACTIONS
+        
+            "load"                 ,
+            "do_imprint"           ,
+            "get_values"           ,
+            "create_form"          ,
+            "blank_form"
+            
+    END CLASS
+    
+ENDROUTINE { infomaker_report_define_infomaker_link_class }
+
+{*******************************************************************************}
+
+ROUTINE infomaker_link_class_initialisation ( self ) 
+
+{
+* Summary    : Initialisation Routine.
+*              
+* Parameters : Self
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    ARRAY self . details
+           
+    self . user_library   = EMPTY
+    self . valid_routine  = EMPTY
+    self . copies         = 1
+    self . preview        = TRUE
+    self . name           = "Infomaker Report"
+    self . relative_date  = CLIENT_DATE_TO_SERVER ( NOW )
+    self . printer        = ""
+
+ENDROUTINE { infomaker_link_class_initialisation }
+
+{*******************************************************************************}
+
+ROUTINE infomaker_link_action_load ( self )
+
+{
+* Summary    : Loads all of the data from the database. This includes all 
+*              of the prompt details as well as the header details.
+*              
+* Parameters : self - the main object (INFOMAKER_LINK_CLASS)
+*
+* Return     : TRUE if at least one prompt is found....
+*
+*******************************************************************************}
+
+    DECLARE id, field, count, def, dat, pbl_name
+    
+    count = 0
+
+    id = SELECT infomaker_link . identity
+         WHERE  identity = self . identity
+
+    IF id <> EMPTY THEN
+
+        self . name           = STRIP ( SELECT infomaker_link . description    )
+        self . user_library   = STRIP ( SELECT infomaker_link . user_library   )
+        self . valid_routine  = STRIP ( SELECT infomaker_link . valid_routine  )
+        self . copies         = SELECT infomaker_link . copies
+        self . preview        = SELECT infomaker_link . preview
+        self . im_report      = STRIP ( SELECT infomaker_link . report         )
+
+        pbl_name = SELECT infomaker_link . library
+
+	IF GLOBAL ( "OLEIMPRINT_SERVER_SIDE" ) THEN
+
+		self . im_library = lib_utils_logical_containing_file ( "smp$imprint" ,
+		                                                        pbl_name      )
+
+		IF self . im_library <> EMPTY THEN
+			self . im_library = self . im_library : "\" : pbl_name
+		ELSE
+			self . im_library = pbl_name
+		ENDIF
+
+	ELSE
+
+		self . im_library = CLIENT_GET_IMPRINT_PATH ( ) : "\" : pbl_name
+
+	ENDIF
+
+        field = SELECT infomaker_parameters . identity
+                WHERE  infomaker_link = id
+                ORDER ON order_number
+
+        WHILE field <> EMPTY DO
+
+            count = count + 1
+
+            self . details [ NAME_COL, count ] = 
+                                       SELECT infomaker_parameters . description
+            self . details [ DEFL_COL, count ] = 
+                                       SELECT infomaker_parameters . default_value
+            self . details [ TYPE_COL, count ] = 
+                                       SELECT infomaker_parameters . type
+            self . details [ TBLE_COL, count ] = 
+                                       SELECT infomaker_parameters . prompt1
+            self . details [ FILD_COL, count ] = 
+                                       SELECT infomaker_parameters . prompt2
+            self . details [ MAND_COL, count ] = 
+                                       SELECT infomaker_parameters . mandatory
+
+            IF self . details [ MAND_COL, count ] THEN
+
+                self . details [ NAME_COL, count ] =
+                          STRIP ( self . details [ NAME_COL, count ] ) 
+
+            ENDIF
+
+            {*****************************************************************}
+            { Just Parse Date Parameters a little bit.                        }
+            {*****************************************************************}
+
+            IF ( SELECT infomaker_parameters . type = "FORMAT" ) AND
+               ( ( SELECT infomaker_parameters . prompt1 = "DATETIME" ) OR
+                 ( SELECT infomaker_parameters . prompt1 = "DATE"     ) ) THEN
+
+                def = SELECT infomaker_parameters . default_value
+                dat = self . relative_date             
+
+                IF SELECT infomaker_parameters . prompt1 = "DATE" THEN
+                  
+                    SET DATE FORMAT "DZMZYY"
+                    dat = STRIP ( dat )
+                    RESTORE DATE FORMAT
+                    dat = DATE ( dat )
+
+                ENDIF   
+
+                IF NUMTEXT ( def ) THEN 
+           
+                    IF def < 0 THEN
+
+                        def = TODAY - INTERVAL ( TRUNC ( 0 - def ) )
+
+                    ELSE
+                        def = TODAY  + INTERVAL ( TRUNC ( def ) )
+                    ENDIF
+
+                ELSEIF def = "EOLM" THEN
+
+                    SET DATE FORMAT "DZMZYY"
+                    dat = STRIP ( self . relative_date )
+
+                    dat = DATE ( dat )
+                    RESTORE DATE FORMAT
+
+                    SET DATE FORMAT "DZMZYY"
+                    def = DATE ( "01" : RIGHTSTRING ( STRIP ( dat ), 4 ) )
+                    def = def - INTERVAL ( "0000 00:00:00.01" )
+                    RESTORE DATE FORMAT
+
+                ELSEIF def = "SOLM" THEN
+
+                    SET DATE FORMAT "DZMZYY"
+                    dat = STRIP ( self . relative_date )
+
+                    dat = DATE ( dat )
+                    RESTORE DATE FORMAT
+
+                    SET DATE FORMAT "DZMZYY"
+                    def = DATE ( "01" : RIGHTSTRING ( STRIP ( dat ), 4 ) )
+                    def = def - INTERVAL ( 1 )
+                    def = DATE ( "01" : RIGHTSTRING ( STRIP ( def ), 4 ) )
+                    RESTORE DATE FORMAT
+
+                ENDIF
+
+                self . details [ DEFL_COL, count ] = def
+                
+            ENDIF
+
+            IF ( SELECT infomaker_parameters . type = "BROWSE" ) THEN
+
+               def = SELECT infomaker_parameters . default_value
+
+               IF ( def = "OPERATOR" ) THEN
+  
+
+                   self . details [ DEFL_COL, count ] = OPERATOR
+
+               ENDIF
+
+            ENDIF
+            {*****************************************************************}
+            { Default the Sample Owner Field.                                 }
+            {*****************************************************************}
+
+            IF ( self . details [ RFLD_COL, count ] = "SAMPLE_OWNER" ) AND
+               ( self . details [ MAND_COL, count ] = TRUE           ) AND
+               ( BLANK ( self . details [ DEFL_COL, count ] )        ) THEN
+
+                self . details [ DEFL_COL, count ] = GLOBAL ( "SAMPLE_OWNER" ) 
+
+            ENDIF 
+
+
+            NEXT infomaker_parameters
+            field = SELECT infomaker_parameters . identity
+
+        ENDWHILE
+
+    ENDIF
+
+    RETURN ( count <> 0 )
+
+ENDROUTINE { infomaker_link_action_load }
+
+{******************************************************************************}
+
+ROUTINE infomaker_link_action_create_form ( self ) 
+
+{
+* Summary    : This action creates the form for the Infomaker Report prompts.
+*              
+* Parameters : self - the main object (INFOMAKER_LINK_CLASS)
+*
+* Return     : TRUE if at least one prompt is found....
+*
+*******************************************************************************}
+
+    DECLARE count, prompt_obj, name, defl, table, field, form, phrase
+    CONSTANT COL = 30
+
+    self . header             = self . name
+    self . width              = 60
+    self . column             = 4
+    self . row                = 8 
+    self . button_style       = FORM_BUTTON_OK_CANCEL
+    self . validation_routine = "form_validation_routine"
+    self . vgl_library        = GLOBAL ( "CURRENT_LIBRARY" )
+ 
+    count = 1
+
+    WHILE self . details [ NAME_COL, count ] <> EMPTY DO
+
+        name = self . details [ NAME_COL, count ] 
+        defl = self . details [ DEFL_COL, count ]
+        
+        IF self . details [ TYPE_COL, count ] = "BROWSE" THEN 
+        
+            table = self . details [ TBLE_COL, count ]
+            field = self . details [ FILD_COL, count ] 
+
+        
+            IF ( valid_table ( table ) ) 
+               AND ( valid_field ( table , field ) ) THEN
+        
+                PROMPT OBJECT prompt_obj
+                    AT COL + 2, count 
+                    BROWSE ON 'table' . 'field'
+                    WITH ( lowered = TRUE,
+                           value   = defl,
+                           width   = self . width - ( COL + 1 ), 
+                           vgl_library = "$infomaker_report" ,
+                           enter_prompt_routine = "param_enter_prompt_routine" )
+            ELSE
+                            
+                PROMPT OBJECT prompt_obj
+                AT COL + 2, count
+                FORMAT TEXT
+                WITH ( lowered = TRUE,
+                       value   = defl,
+                       width   = self . width - ( COL + 1 ) ,
+                       vgl_library = "$infomaker_report" ,
+                       enter_prompt_routine = "param_enter_prompt_routine")
+        
+            ENDIF
+
+
+        ELSEIF self . details [ TYPE_COL, count ] = "ROUTINE" THEN
+{ \/ 001 }
+	PROMPT OBJECT prompt_obj
+{ 
+            CALLROUTINE self . details [ FILD_COL, count ]
+                IN LIBRARY self . details [ TBLE_COL, count ]
+                USING self, count
+                RETURNING prompt_obj
+}
+{ \/ 001 }
+		prompt_obj . vgl_library = self . details [ TBLE_COL, count ]
+            prompt_obj . enter_prompt_routine = self . details [ FILD_COL, count ]
+{ /\ 001 }
+            prompt_obj . column = COL + 2
+            prompt_obj . row = count
+            prompt_obj . width  = self . width - ( COL + 1 )
+
+        ELSEIF self . details [ TYPE_COL, count ] = "PHRASE" THEN 
+        
+            phrase = self . details [ PHRS_COL, count ]
+
+            PROMPT OBJECT prompt_obj
+                AT COL + 2, count 
+                BROWSE ON PHRASE_ID . 'phrase'
+                WITH ( lowered = TRUE,
+                       value   = defl,
+                       width   = self . width - ( COL + 1 ) ,
+                       vgl_library = "$infomaker_report" ,
+                       enter_prompt_routine = "param_enter_prompt_routine" )
+
+        ELSEIF self . details [ TYPE_COL, count ] = "FORMAT" THEN
+
+            form = self . details [ FORM_COL, count ]
+
+            PROMPT OBJECT prompt_obj
+                AT COL + 2, count
+                FORMAT 'form'
+                WITH ( lowered = TRUE,
+                       value   = defl,
+                       width   = self . width - ( COL + 1 ) , 
+                       vgl_library = "$infomaker_report" ,
+                       enter_prompt_routine = "param_enter_prompt_routine" )
+
+        ENDIF
+            
+        self . add_display ( PAD ( name, " ", COL ), 
+                             2, count, 
+                             PROMPT_RENDITION_RAISED   )    
+        
+        self . add_prompt ( prompt_obj )
+
+        
+
+        count = count + 1
+
+    ENDWHILE
+
+    self . height = count - 1
+    self . add_frame ( "", 1, 1, self . height, self . width )
+
+ENDROUTINE { infomaker_link_action_create_form }
+
+{******************************************************************************}
+
+ROUTINE param_enter_prompt_routine ( self )
+
+{
+* Summary    : This check if the prompt will contain a value, if not set
+*              the form to visible.
+*              
+* Parameters : Self - Form Object.
+*
+* Return     : None
+*
+*******************************************************************************}
+
+	DECLARE param_valid ,
+	        class_name  ,
+	        param
+
+	IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+		param_valid = TRUE
+
+		PROMPT FOR param
+
+		class_name = object_get_class_name ( self )
+
+		IF ( class_name = "STDPROMPTTEXTDATE"  ) OR
+		   ( class_name = "STDPROMPTFIELDDATE" ) THEN
+
+			param_valid =  IS_DATE ( param )
+
+		ELSEIF ( class_name = "STDPROMPTTEXTINTEGER"        ) OR
+		       ( class_name = "STDPROMPTFIELDINTEGER"       ) OR
+		       ( class_name = "STDPROMPTFIELDPACKEDDECIMAL" ) OR
+		       ( class_name = "STDPROMPTTEXTREAL"           ) OR
+		       ( class_name = "STDPROMPTTEXTREAL"           ) THEN
+
+			param_valid = NUMTEXT ( param )
+
+		ENDIF
+
+		IF param_valid THEN
+
+			self . set_text ( param )
+
+			IF NOT GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+				self . keep_prompting = FALSE
+				self . set_lastkey ( "DO" )
+
+			ENDIF
+
+		ENDIF
+
+	ELSE
+
+		self . parent_prompt . visible = TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE form_validation_routine ( self  )
+
+{
+* Summary    : This is a valdation routine to ensure that the form is filled in.
+*              
+* Parameters : Self - Form Object.
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE count, return_val, message
+    return_val = TRUE
+    count      = 1
+
+    IF ( self . valid_routine = EMPTY ) OR BLANK ( self . valid_routine ) OR 
+       ( self . user_library = EMPTY  ) OR BLANK ( self . user_library  ) THEN
+
+        WHILE ( return_val ) AND 
+              ( self . details [ NAME_COL, count ] <> EMPTY ) DO
+
+            IF self . details [ MAND_COL, count ] THEN
+  
+                return_val = NOT BLANK ( self . 
+                                         prompt_objects [ count ] . text )
+
+            ENDIF
+
+            count = count + 1
+
+        ENDWHILE
+
+    ELSE
+
+        self . get_values ( )
+
+        CALLROUTINE self . valid_routine
+             IN LIBRARY self . user_library
+             USING self 
+             RETURNING return_val
+
+    ENDIF
+
+    IF NOT return_val THEN
+
+        message = GET_USER_MESSAGE ( "INFOMAKER_LINK_REQ_FIELDS", 1 ) 
+        flash_message ( message, TRUE )
+        self . visible = TRUE
+        self . start_prompt()
+
+    ENDIF
+ 
+    RETURN ( return_val )
+
+ENDROUTINE { form_validation_routine }
+
+{******************************************************************************}
+
+ROUTINE infomaker_link_action_get_values( self )
+
+{
+* Summary    : Get the Filled in Values.
+*              
+* Parameters : Self
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE count, text
+    count = 1
+
+    WHILE self . details [ NAME_COL, count ] <> EMPTY DO   
+
+	IF ( self . details [ TBLE_COL, count ] = "DATETIME" ) OR
+	   ( self . details [ TBLE_COL, count ] = "DATE" )     THEN
+
+	        text = self . prompt_objects [ count ] . value
+	        self . details [ VALU_COL, count ] = text
+
+	ELSE
+
+	        text = self . prompt_objects [ count ] . text
+	        self . details [ VALU_COL, count ] = text
+
+	ENDIF
+
+        count = count + 1
+
+    ENDWHILE
+
+ENDROUTINE { infomaker_link_action_get_values }
+
+{******************************************************************************}
+
+ROUTINE infomaker_link_action_blank_form ( self ) 
+
+{
+* Summary    : Blank the Form Information
+*              
+* Parameters : Self
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE count, text
+    count = 1
+
+    WHILE self . details [ NAME_COL, count ] <> EMPTY DO   
+
+        IF NOT self . prompt_objects [ count ] . display_only THEN
+            text = self . details [ DEFL_COL, count ]
+            self . prompt_objects [ count ] . set_text ( text )
+        ENDIF
+        count = count + 1
+
+    ENDWHILE
+
+    self . set_position ( 1 ) 
+
+ENDROUTINE { manage_report_action_blank_form }
+
+{******************************************************************************}
+
+ROUTINE infomaker_link_action_do_imprint ( self )
+
+{
+* Summary    : Call Imprint passing in all of the values entered in the prompts.
+*              
+* Parameters : self - the main object (INFOMAKER_LINK_CLASS)
+*
+* Return     : None
+*
+*******************************************************************************}
+
+	DECLARE count , imprint_path , imprint_report
+
+	imprint_path = client_get_imprint_path ()
+
+	IF imprint_path <> EMPTY THEN
+
+	define_imprint_class ()
+
+	CREATE OBJECT IMPRINT , imprint_report
+
+	imprint_report . create_ole_object ()
+
+	imprint_report . reset_ole_object ()
+
+	imprint_report . library = self . im_library
+	imprint_report . report  = self . im_report
+
+	imprint_report . copies  = self . copies
+	imprint_report . preview = self . preview
+	imprint_report . datetime = FALSE
+
+	count = 1
+
+	WHILE self . details [ NAME_COL , count ] <> EMPTY DO
+
+		IF ( self . details [ TBLE_COL, count ] = "DATETIME" ) OR
+		   ( self . details [ TBLE_COL, count ] = "DATE" )     THEN
+
+			imprint_report . add_date_predicate ( self . details [ VALU_COL , count ] )
+
+		ELSE
+
+			imprint_report . add_parameter ( self . details [ VALU_COL , count ] )
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+	imprint_report . generate ()
+
+	imprint_report . ole_object = EMPTY
+
+	ELSE
+
+	flash_message ( GET_USER_MESSAGE ( "IMPRINT_CONNECT_UNSUCCESSFUL", 3 ) , 1 )
+
+	ENDIF
+    
+ENDROUTINE { infomaker_link_action_do_imprint }
+
+{*****************************************************************************}
+GLOBAL
+
+ROUTINE infomaker_report_define_infomaker_menu_class
+
+{
+* Summary    : The infomaker menu class provides a link between infomaker LTE
+*              records, master_menu records and selected data from the explorer.
+*              The infomaker rmb menu is built dynamically. Therefore each menu
+*              carries an object of this class.  So when a menu is selected
+*              the infomaker report, menu and data selected can be worked out.
+*              
+* Parameters : None
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DEFINE CLASS "INFOMAKER_MENU"
+    
+        INITIALISATION
+        PROPERTIES
+        
+             "report"           ,   { Infomaker LTE record. }
+             "menu_proc"        ,   { Menu number linked to infomaker report. } 
+             "params"           ,   { The parameters of the LTE.    }
+             "error"            ,   { If an error occurs while the object is
+                                      being built, place error here. }             
+             "table"            ,   { The table name of the data selected.    }
+             "values"
+             
+
+        ACTIONS
+        
+            "get_parameters"       ,{ Get the parameters from the infomaker LTE. }
+            "get_values"           ,
+            "call_menu"             { Select the data and call the infomaker menu. }
+            
+    END CLASS
+    
+ENDROUTINE { infomaker_report_define_infomaker_link_class }
+
+{*******************************************************************************}
+
+ROUTINE infomaker_menu_class_initialisation ( self ) 
+
+{
+* Summary    : Initialisation Routine.
+*              
+* Parameters : Self
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    self . report        = EMPTY
+    self . menu_proc     = EMPTY
+    self . params        = EMPTY
+    self . error         = EMPTY
+    self . table         = EMPTY
+
+ENDROUTINE { infomaker_menu_class_initialisation }
+
+
+{*****************************************************************************}
+
+ROUTINE infomaker_menu_action_get_parameters ( self )
+
+{
+* Summary    : Load parameters from the db and place them in the infomaker
+*              menu class.
+*              
+* Parameters : self - the main object (INFOMAKER_MENU_CLASS)
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE params, count, param_id
+    
+    self . params = EMPTY
+    
+    ARRAY params
+    
+    count = 0
+    param_id = SELECT infomaker_parameters . identity
+            WHERE infomaker_parameters . infomaker_link = self . report
+            ORDER ON order_number
+            
+            
+    WHILE param_id <> EMPTY 
+    
+        count = count + 1
+        
+        params[ count , 1] = STRIP ( param_id )
+        params[ count , 2] = STRIP ( SELECT infomaker_parameters . type )
+        params[ count , 3] = STRIP ( SELECT infomaker_parameters . prompt1 )
+        params[ count , 4] = STRIP ( SELECT infomaker_parameters . prompt2 )
+                    
+        NEXT infomaker_parameters
+        param_id = SELECT infomaker_parameters . identity
+            
+    ENDWHILE
+    
+    self . params = params
+
+ENDROUTINE { infomaker_menu_action_get_parameters }
+
+{*****************************************************************************}
+
+
+ROUTINE infomaker_menu_action_get_values ( self , data )
+
+{
+* Summary    : Get the values needed for the infomaker report.
+*              
+* Parameters : self - the main object (INFOMAKER_MENU_CLASS)
+*              data - selected data
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE count, values, link_table, first_row, field_array,
+        field_count
+    
+    ARRAY values
+    
+    count = 0
+    
+    first_row = data . get_by_number( 1 )
+    
+    WHILE count < size_of_array( self . params )
+    
+        count = count + 1
+        
+        values[ count ] = ""
+
+        IF self . params[ count , 2 ] = "BROWSE" THEN        
+            
+            
+            IF valid_field ( self . params[ count , 3 ] ,
+                     self . params[ count , 4 ] ) THEN
+
+                IF self . params[ count , 3 ] = STRIP ( data  . table ) THEN
+
+                    values[ count ] = SELECT 'self . params[ count , 3]' . 'self . params[ count , 4]'
+                                IN OBJECT first_row            
+
+                ELSE
+                
+                    ARRAY field_array
+
+                    get_field_names( STRIP ( data  . table ) , field_array )
+
+                    field_count = 0
+                    WHILE field_count < size_of_array( field_array )
+
+                        field_count = field_count + 1
+
+                        { Find field which is linked to 
+                          paramters needed by report}
+
+                        GET_FIELD_DETAILS 'STRIP ( data  . table )'.
+                            'field_array[field_count,1]',
+                            "LINK_TABLE" , link_table
+                            
+                        IF link_table = self . params[ count , 3 ] THEN
+                        
+                            values[ count ] = SELECT 'STRIP ( data  . table )' . 'field_array[field_count,1]'
+                                IN OBJECT first_row
+                        
+                        ENDIF
+
+                            
+                    ENDWHILE
+                
+                
+                ENDIF
+            
+            ELSE
+
+                self . error =  GET_USER_MESSAGE ( "RPC_K_INVFLDNAM" , 1 ) :
+                        ":" :
+                        self . params[ count , 4 ]
+            
+            ENDIF
+        
+        ELSEIF  (( self . params[ count , 2 ] = "FORMAT" ) AND
+                 ( self . params[ count , 3 ] = "DATETIME" )) OR
+
+                (( self . params[ count , 2 ] = "ROUTINE" ) AND
+                 ( self . params[ count , 3 ] = "$INFOMAKER_TEMP") AND 
+                 ( self . params[ count , 4 ] = "READONLYDATETIMEPROMPT")) THEN
+
+            values[ count ] = CLIENT_DATE_TO_SERVER ( NOW )
+
+        ENDIF
+        
+
+    ENDWHILE
+    
+    self . values = values
+
+ENDROUTINE { infomaker_menu_action_get_values }
+
+
+{*****************************************************************************}
+
+ROUTINE infomaker_menu_action_call_menu ( self )
+
+{
+* Summary    : Once the selection parameters are found, the menu class knows
+*              which data to select.  The data is selected and the menu it 
+*              called passing the data to the infomaker report.
+*              
+* Parameters : self - the main object (INFOMAKER_MENU_CLASS)
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE dim
+        
+    dim = size_of_array ( self . values )
+            
+    IF dim = 0 THEN
+        
+        MENUPROC self . menu_proc
+    
+    ELSEIF dim = 1 THEN
+    
+        MENUPROC self . menu_proc USING self . values[1] 
+    
+    ELSEIF dim = 2 THEN
+    
+        MENUPROC self . menu_proc USING self . values[1] , self . values[2]
+    
+    ELSEIF dim = 3 THEN
+    
+        MENUPROC self . menu_proc USING self . values[1] , self . values[2], 
+            self . values[3]
+        
+    ELSEIF dim = 4 THEN
+    
+        MENUPROC self . menu_proc USING self . values[1] , self . values[2], 
+            self . values[3], self . values[4]
+        
+    ELSEIF dim = 5 THEN
+    
+        MENUPROC self . menu_proc USING self . values[1] , self . values[2], 
+            self . values[3], self . values[4], self . values[5]
+    
+    ENDIF
+    
+
+ENDROUTINE { infomaker_menu_action_call_menu }
+
+{*****************************************************************************}
+
+
+{*****************************************************************************}
+
+ROUTINE get_link_field ( VALUE search_table, VALUE link_table )
+
+{
+* Summary    : Using search_table get all the fields of this table and check
+*              the link tables for these fields, when it matches the link_table
+*              pass the field back.
+*              
+* Parameters : search_table     - table to search to find the link field
+*           link_table    - table link to look for
+*
+* Return     : Link field
+*
+*******************************************************************************}
+
+    DECLARE field_array, count, link_field, link
+    
+    link_field = EMPTY
+    count = 0
+
+    get_field_names( search_table, field_array )
+    
+    WHILE count < size_of_array( field_array )
+        
+        count = count + 1
+        
+        GET_FIELD_DETAILS 'search_table'.'field_array[count,1]',
+                    "LINK_TABLE" , link
+                
+        IF STRIP ( link ) = STRIP ( link_table ) THEN
+        
+            GET_FIELD_DETAILS 'search_table'.'field_array[count,1]', 
+                        "LINK_FIELD" , link_field                    
+            
+        
+        ENDIF
+        
+    ENDWHILE
+
+    RETURN ( link_field )
+
+ENDROUTINE { get_link_field }
+
+{******************************************************************************} 
+
+ROUTINE create_master_menu ( VALUE option )
+
+{
+* Summary    : Create a master menu record based on an infomaker report.
+*
+* Parameters : option - menu option call
+*
+* Return     : None
+*
+*******************************************************************************} 
+
+    DECLARE form, infomaker_prompt, menu_prompt, menu_no, 
+        context, handled
+    
+    context = "CUSTOMISATION"
+    handled = TRUE
+    
+    IF option = "15304" THEN
+    
+        handled = lib_menu_prompt_for_context( context )
+    
+    ENDIF
+    
+    
+    
+    IF handled = TRUE THEN
+    
+        CREATE OBJECT PROMPT_CLASS_FORM, form
+
+        form . height         = 3
+        form . width         = 50
+        form . row         = 3
+        form . column         = 5
+        form . header         = GET_USER_MESSAGE 
+                    ( "INFOMAKER_LINK_CREATE_MENU_HEADER" , 1 )
+        form . border         = TRUE
+        form . return_behaviour    = FORM_RETURN_LEAVE
+
+        PROMPT OBJECT infomaker_prompt
+            BROWSE ON infomaker_link
+            ON LINE 1 FROM 18
+
+        form . add_prompt ( infomaker_prompt )
+
+        menu_no = lib_menu_get_new_proc_num( context )
+
+
+        PROMPT OBJECT menu_prompt
+            FORMAT master_menu . procedure_num
+            ON LINE 3 FROM 16
+            WITH (     value = menu_no , 
+                enabled = FALSE )
+
+
+
+        form . add_prompt ( menu_prompt )
+
+        form . add_frame ("", 1, 2, 0 , 49 )
+
+
+        form . add_display ( 
+            GET_USER_MESSAGE ( "INFOMAKER_LINK_LTE_INFO_REPORT" , 1 )
+            , 2 ,1 ,PROMPT_RENDITION_BOLD )
+
+        form . add_display ( 
+            GET_USER_MESSAGE ( "INFOMAKER_LINK_MENU_NUM_PROMPT" , 1 )
+            , 2 ,3 ,PROMPT_RENDITION_BOLD )
+
+        form . start_prompt()
+        form . wait_prompt()
+        form . end_prompt()
+
+        IF form . get_lastkey ( ) <> "EXIT" THEN
+
+            IF create_infomaker_menu ( infomaker_prompt . value    ,
+                        menu_prompt .value         ) THEN
+
+                MENUPROC "923"  USING menu_prompt . value
+
+            ENDIF
+        ENDIF
+
+
+    ENDIF
+         
+
+ENDROUTINE { create_master_menu }
+
+
+{*****************************************************************************}
+
+ROUTINE create_infomaker_menu ( VALUE infomaker_lte    , 
+                VALUE menu_num         )
+
+{
+* Summary    : Using search_table get all the fields of this table and check
+*              the link tables for these fields, when it matches the link_table
+*              pass the field back.
+*              
+* Parameters : infomaker_lte    - infomaker report to call from menu
+*              table        - primary table for infomaker report    
+*              menu_num     - new mwnu number        
+*
+* Return     : None
+*
+*******************************************************************************}
+
+    DECLARE new_menu, handled, infomaker_desc, info_table, short_text, pos,
+        new_identity, role_len, role_key
+    
+    handled = FALSE
+    
+    new_menu = SELECT master_menu . procedure_num
+            WHERE procedure_num = menu_num
+            
+
+    infomaker_desc = SELECT infomaker_link . description
+                WHERE identity = infomaker_lte
+    
+    
+    info_table = SELECT infomaker_parameters . prompt1
+            WHERE (    infomaker_link = infomaker_lte AND
+                type = "BROWSE" )
+                ORDER ON order_number
+                
+    IF info_table = EMPTY THEN
+    
+        info_table = "SAMPLE"
+    
+    ENDIF
+    
+    IF new_menu = EMPTY THEN
+    
+    
+        pos = INDEX ( infomaker_lte, "R_" )
+        
+        IF pos = 1 THEN
+            
+            new_identity = SUBSTRING(infomaker_lte, 3 , LENGTH (infomaker_lte) - 2 )
+                    
+        ELSE
+        
+            new_identity = infomaker_lte
+
+        ENDIF
+        
+        short_text = lib_text_identity_to_text( new_identity )
+    
+        RESERVE ENTRY master_menu , menu_num
+        
+        ASSIGN master_menu . type         = "MENU"
+        ASSIGN master_menu . action_type     = "REPORTING"
+        ASSIGN master_menu . description     = infomaker_desc
+        ASSIGN master_menu . short_text        = short_text
+        ASSIGN master_menu . library         = "$INFOMAKER_REPORT"
+        ASSIGN master_menu . routine         = "INFOMAKERREPORTMENUOPTION"
+        ASSIGN master_menu . table_name     = info_table
+        ASSIGN master_menu . parameters        = infomaker_lte
+        ASSIGN master_menu . parameters_actions = "BEFORE"
+        ASSIGN master_menu . committed        = FALSE
+        
+        GET_FIELD_DETAILS role_header . identity, "FIELD_SIZE", role_len
+        role_key = PAD("STATIC_DISPLAYER", " ", role_len) : menu_num
+        RESERVE ENTRY role_entry, role_key
+
+        START WRITE TRANSACTION "add master menu"
+        
+        UPDATE role_entry
+        UPDATE master_menu
+        
+        COMMIT
+    
+        handled = TRUE
+    
+    ENDIF
+    
+    RETURN ( handled )
+                            
+    
+
+ENDROUTINE { create_infomaker_menu }
+
+{*****************************************************************************}
+
+GLOBAL
+ROUTINE infomaker_report_invoke_rmb (     VALUE report_identity    , 
+                                          VALUE menu_no    ,
+                                          selected_data            )
+
+{
+* Summary    : Run infomaker report with passed collection
+*              
+* Parameters : report_identity    - report identity
+*           selected_data    - object db    
+*
+* Return     : Handled
+*
+*******************************************************************************}
+
+    Declare menu_num, primary_table, info_menu, report
+    
+    menu_num = SELECT master_menu . procedure_num
+            WHERE ( procedure_num = menu_no )
+    
+    primary_table = SELECT master_menu . table_name
+    
+    
+    report = SELECT infomaker_link . identity
+            WHERE ( identity = STRIP( report_identity ) )
+            AND   ( removeflag  = FALSE )
+    
+    
+
+    IF     ( menu_num <> EMPTY )         AND
+        ( primary_table <> EMPTY )     AND
+        ( report <> EMPTY )         AND
+        ( selected_data . size () > 0 )    THEN
+        
+        infomaker_report_define_infomaker_menu_class ()
+        
+        CREATE OBJECT "INFOMAKER_MENU", info_menu
+
+        info_menu . report     = report
+        info_menu . menu_proc     = menu_num
+        info_menu . table     = STRIP ( primary_table )
+        
+        info_menu . get_parameters ()
+        info_menu . get_values ( selected_data )
+        info_menu . call_menu ()    
+    
+    ENDIF
+
+    RETURN ( TRUE )
+
+
+
+ENDROUTINE { infomaker_report_invoke_rmb }
+
+{*****************************************************************************} 
+{*****************************************************************************}
+{*****************************************************************************}

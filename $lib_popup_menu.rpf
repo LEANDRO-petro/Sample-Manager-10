@@ -1,0 +1,818 @@
+{******************************************************************************
+*
+* Module Name   : $LIB_POPUP_MENU
+*
+* Purpose       : Library for Handling Popup Menus
+*
+* Document Ref. :
+*
+* Specification :
+*
+* Portability   : Not Checked
+*
+* Re-entrant    :
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+08/01/2013	Mudanças para correção de BUG - todas
+}
+SET COMPILE_OPTION DECLARE
+
+ENABLE WINDOWS
+
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_CLASS
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_VGL
+
+JOIN LIBRARY $LIB_CALLBACK
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $STACK_CLASS
+
+{* GLOBAL CONSTANTS ***********************************************************}
+
+GLOBAL CONSTANT   POPUP_MENU_CLASS      = "POPUP_MENU"
+GLOBAL CONSTANT   POPUP_MENU_ITEM_CLASS = "POPUP_MENU_ITEM"
+
+CONSTANT MAX_DEPTH = 5
+
+CONSTANT ATTRIBUTE_DISABLED      = 1
+CONSTANT ATTRIBUTE_CHECKED       = 2
+CONSTANT ATTRIBUTE_RADIOCHECKED  = 4
+CONSTANT ATTRIBUTE_NEWLINE       = 8
+CONSTANT ATTRIBUTE_NEWLINEBREAK  = 16
+CONSTANT ATTRIBUTE_DEFAULT       = 32
+
+{* GLOBAL ROUTINES ************************************************************}
+
+GLOBAL 
+ROUTINE set_up_popup_class
+
+{
+*
+******************************************************************************}
+
+	IF NOT ( GLOBAL ( "LIBRARY_INITIALISED" ) ) THEN
+
+		callback_initialise( )
+		popup_menu_class_declare ( )
+
+		SET GLOBAL "LIBRARY_INITIALISED" TO TRUE
+
+	ENDIF
+
+ENDROUTINE
+
+{* ROUTINES ******************************************************************}
+
+ROUTINE popup_menu_class_declare
+
+{
+*
+******************************************************************************}
+
+	stack_initialise( )
+
+	DEFINE CLASS POPUP_MENU_CLASS
+
+		INITIALISATION
+
+		PROPERTIES
+
+			"items"                 , { Array of Menu Items                   }
+			"item_objects"          , { Array of menu item objects mirroring  }
+			                          { 'items' array that gets sent to client}
+			"objects"               , { Array of Menu Objects                 }
+			"process_routine"       , { Process Routine Name                  }
+			"process_library"       , { Process Library Name                  }
+			"inc"                   , { array of ptrs to current pos in dims. }
+			"new_section"           ,   
+			"level_stack"           , { stack of headers: flush when add item }
+			"current_level"         ,
+			"exceptions_routine"    ,
+			"vgl_library"           ,
+			"prompt"                ,
+			"user_info"             , 
+			"return_text"           , { return position or text?              }
+			"coord_system"          , { what are coordinates relative to ?    }
+			"selected_item"         , { The selected item object or EMPTY     }
+			"handled"                 { Has the menu been handled?            }
+
+		ACTIONS
+			"add"                   , { Adds a menu item object to the menu   }
+			"clear"                 , { Empties the menu of all items         }
+			"is_empty"              , { Returns true if the menu has no items }
+			"add_item"              , { Adds text to menu. Returns item object}
+			"new_level"             , { Creates a sub menu using passed text  }
+			"pop_level"             , { Pops back a sub level in the menu     }
+			"add_divider"           , { Adds a divider to the menu            }
+			"start"                 , { Displays menu. Waits for selection    }
+			"start_at"              , { Start the Menu at pos                 }
+			"process"               , { Process the Results                   }
+			"add_menu"              , { Add a Menu Object                     }
+			"assign"                ,
+			"assign_object"         ,
+			"increment_pointer"
+
+	END CLASS
+
+	DEFINE CLASS POPUP_MENU_ITEM_CLASS
+	
+		INITIALISATION
+		
+		PROPERTIES
+			"text"                  , { The text to be displayed for item     }
+			"enabled"               , { Is this item enabled or grayed out    }
+			"checked"               , { Is this item checked (tick mark)      }
+			"radio_checked"         , { Is the item radio checked (dot mark)  }
+			"new_line"              , { Put this item on a new line           }
+			"new_line_break"        , { Put item on new line with divider     }
+			"default"               , { Is this the default item ?            }
+			"select_callback"         { Callback object-handles click callback}
+	
+		ACTIONS
+			"set_action"            , { Sets action and object to be called   }
+			"add_action_parameter"  , { Adds an action parameter to action    }
+			"mouse_click"
+	
+	END CLASS
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_class_initialisation ( self )
+
+{
+* Popup Menu Class Initialisation.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	self . vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+	self . exceptions_routine = EMPTY
+
+	ARRAY self . objects 
+	ARRAY self . items
+	ARRAY self . item_objects
+
+	ARRAY self . inc         ARRAYSIZE (6)
+	ARRAY self . new_section ARRAYSIZE (6) = FALSE
+	
+	CREATE OBJECT STACK_CLASS, self . level_stack
+
+	self . prompt           = EMPTY
+	self . user_info        = EMPTY
+	self . process_routine  = EMPTY
+	self . process_library  = EMPTY
+	
+	self . return_text      = TRUE
+
+	self . coord_system     = 3
+	
+	self . selected_item    = EMPTY
+	
+	self . handled          = FALSE
+
+	self . clear ( )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_clear ( self )
+{
+* Empties the menu of all items.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	ARRAY self . items
+	ARRAY self . item_objects
+
+	self . inc [ 1 ] = 1
+	self . inc [ 2 ] = -1
+	self . inc [ 3 ] = -1
+	self . inc [ 4 ] = -1
+	self . inc [ 5 ] = -1
+	self . inc [ 6 ] = -1
+
+	ARRAY self . new_section ARRAYSIZE (6) = FALSE
+	
+	self . level_stack . clear( )
+
+	self . current_level = 1
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_is_empty ( self )
+{
+* Returns True if the menu contains no items.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	RETURN ( self . items [ 1 ] = EMPTY ) 
+
+ENDROUTINE
+
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_add_divider ( self )
+{
+* Adds a menu divider. Dividers will only be added between items - not at
+* the beginning of a sub menu or the end. Duplicate dividers will be shown
+* as one.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	IF self . inc [ self . current_level ] > 1 THEN
+		self . new_section[self . current_level] = TRUE
+	ENDIF
+	
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_add_item ( self, VALUE item_text )
+{
+* Adds a menu item to the menu
+*
+* Parameters : self      , Popup Menu Object
+*              item_text , Text to add to menu
+*
+******************************************************************************}
+
+	DECLARE item_object
+
+	CREATE OBJECT POPUP_MENU_ITEM_CLASS, item_object
+	item_object . text = item_text
+	
+	self . add( item_object )
+
+	RETURN( item_object )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_add ( self, item_object )
+{
+* Adds an item object to the menu
+*
+* Parameters : self        , Popup Menu Object
+*              item_object , Popup Menu Item Object
+*
+******************************************************************************}
+
+	DECLARE valid, stack_pos, item
+
+	item = item_object . text
+
+	{* Call filter routine to filter new item based on text *}
+	IF ( self . exceptions_routine <> EMPTY ) THEN
+
+		CALL_ROUTINE self . exceptions_routine
+			USING self, item
+			RETURNING valid
+			IN LIBRARY self . vgl_library
+
+	ELSE
+		valid = TRUE
+	ENDIF
+
+	IF ( valid )  THEN
+
+		{* Run through stack of pushed levels and dump it *}
+
+		IF NOT self . level_stack . is_empty( ) THEN
+
+			stack_pos = 1
+			WHILE stack_pos <= self . level_stack . size( ) DO
+
+				self . current_level = self . current_level + 1
+
+				self . inc [ self . current_level ] = 0
+
+				self . assign ( self . level_stack . stack_item( stack_pos ) )
+				self . increment_pointer( )
+
+				stack_pos = stack_pos + 1
+				
+			ENDWHILE
+			
+			self . level_stack . clear( )
+
+		ELSEIF ( self . new_section[self . current_level] ) THEN
+
+			self . new_section [ self . current_level ] = FALSE
+			self . assign( "" )
+			self . increment_pointer( )
+
+		ENDIF
+
+		self . assign_object ( item_object )
+
+	ENDIF
+	
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_new_level ( self, VALUE item )
+{
+* Adds a sub menu header to the menu
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	IF self . level_stack . size( ) + self . current_level <= MAX_DEPTH THEN
+		self . level_stack . push( item )
+	ELSE
+		flash_message( "ERROR: $LIB_POPUP_MENU: Cannot have more than " :
+		               STRIP( MAX_DEPTH ) : " levels", TRUE )
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_pop_level ( self )
+{
+* Returns from a sub menu.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	IF self . level_stack . size( ) > 0 THEN
+		
+		{* Levels were not added - must not have contained item. *}
+		
+		self . level_stack . pop( )
+		
+	ELSE
+
+		IF self . current_level > 1 THEN
+
+			self . inc         [ self . current_level ] = -1
+			self . new_section [ self . current_level ] = FALSE
+
+			self . current_level = self . current_level - 1
+			self . inc[ self . current_level ] = self . inc[ self . current_level ] + 1
+
+		ELSE
+		
+			flash_message( "ERROR: $LIB_POPUP_MENU: No more menu levels to pop", TRUE )
+
+		ENDIF
+	
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE start_menu ( self, VALUE x, VALUE y, VALUE mode )
+{
+* Displays the menu on screen at the passed coordinates and allows the user
+* to select an item
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	DECLARE selected_text, selected_index, ret_val, pos
+	
+	self . selected_item = EMPTY
+	selected_text = EMPTY
+	
+	IF NOT self . is_empty( ) THEN
+
+		client_do_popup_menu_pos ( self . items, x, y, mode, selected_index )
+
+		IF selected_index <> EMPTY THEN
+			self . selected_item = array_read( self . item_objects, selected_index )
+			
+			{* Set all other menu objects' selected item property *}
+			pos = 1
+			WHILE pos <= size_of_array( self . objects ) DO
+				
+				self . objects[pos] . selected_item = self . selected_item
+				
+				pos = pos + 1
+			ENDWHILE
+			
+			selected_text = self . selected_item . text
+			
+			self . handled = self . selected_item . mouse_click( )
+		ENDIF
+		
+	ENDIF
+	
+	IF self . return_text THEN
+		ret_val = selected_text
+	ELSE
+		ret_val = self . selected_item
+	ENDIF
+	
+	RETURN( ret_val )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_start ( self )
+{
+* Displays the menu on screen at the right mouse position and allows the
+* user to select an item.	The item text is returned
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	RETURN( start_menu( self, 0, 0, 0 ) )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_start_at ( self, VALUE x, VALUE y )
+{
+* Displays the menu on screen at the passed coordinates and allows the user
+* to select an item. The item text is returned
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	RETURN( start_menu( self, x, y, self . coord_system ) )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_increment_pointer( self )
+{
+* Increments the current level's current item pointer
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	self . inc [ self . current_level ] = self . inc [ self . current_level ] + 1
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_assign( self, VALUE new_value )
+{
+* Assigns the passed value to the array at the current position
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	array_assign( self . items, self . inc, new_value )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_assign_object( self, item_object )
+{
+* Adds the passed item_object to the menu. It is added to the menu that will
+* be sent to the client and the server-based menu containing menu objects
+*
+* Parameters : self        , Popup Menu Object
+*              item_object . Menu Item Object
+*
+******************************************************************************}
+
+	DECLARE attributes
+
+	attributes = 0
+
+	IF NOT item_object . enabled THEN
+		attributes = attributes + ATTRIBUTE_DISABLED
+	ENDIF
+
+	IF item_object . checked THEN
+		attributes = attributes + ATTRIBUTE_CHECKED
+	ENDIF
+
+	IF item_object . radio_checked THEN
+		attributes = attributes + ATTRIBUTE_RADIOCHECKED
+	ENDIF
+
+	IF item_object . new_line THEN
+		attributes = attributes + ATTRIBUTE_NEWLINE
+	ENDIF
+
+	IF item_object . new_line_break THEN
+		attributes = attributes + ATTRIBUTE_NEWLINEBREAK
+	ENDIF
+
+	IF item_object . default THEN
+		attributes = attributes + ATTRIBUTE_DEFAULT
+	ENDIF
+	
+	array_assign( self . item_objects, self . inc, item_object )
+
+	self . assign( STRIP( attributes ) : ASCII( 27 ) : item_object . text )
+	
+	self . increment_pointer( )
+	
+ENDROUTINE
+
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_process ( self, VALUE result )
+
+{
+* Legacy action to call the appropriate menu's process routine using the text
+* of  the selected menu item. It is now neater and easier to set the action
+* or callback routine against each menu item object.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	DECLARE count, message, detail
+
+	IF NOT self . handled THEN
+	
+		IF ( self . process_routine <> EMPTY ) AND
+		   ( self . process_library <> EMPTY ) THEN
+
+			IF vgl_validate_routine ( self . process_library , 
+									  self . process_routine ) THEN
+
+				CALL_ROUTINE self . process_routine
+					IN LIBRARY self . process_library
+						USING self, result
+					RETURNING self . handled
+
+			ELSE
+
+				message_fetch ( "POPUP_LIB_BAD_ROUT", message )
+				detail  = STRIP ( self . process_library ) : "/" :
+						  STRIP ( self . process_routine )
+				message_add_parameter ( message, detail )
+				message = message_get_text ( message, 1 )
+
+				fatal_error ( message )
+
+			ENDIF
+
+		ENDIF
+
+		count = 1
+
+		WHILE ( self . objects [ count ] <> EMPTY ) AND 
+			  ( NOT self . handled                ) DO
+
+			self . handled = self . objects [ count ] . process ( result )
+			count = count + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( self . handled )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_action_add_menu ( self, menu )
+
+{
+* Adds the passed menu to the menu.
+*
+* Parameters : self , Popup Menu Object
+*
+******************************************************************************}
+
+	DECLARE count, insert_pos
+
+	IF self . current_level = 1 THEN
+
+		IF ( menu <> EMPTY )AND
+		   ( menu . items <> EMPTY ) AND
+		   ( SIZE_OF_ARRAY ( menu . items ) > 0 ) THEN
+
+			self . add_divider( )
+
+			count = SIZE_OF_ARRAY ( self . objects ) + 1
+			self . objects [ count ] = menu
+
+			{* add divider if necessary *}
+			IF ( self . new_section[1] ) THEN
+
+				self . new_section [1] = FALSE
+				self . assign( "" )
+				self . increment_pointer( )
+
+			ENDIF
+
+			{* Copy all items from menu *}
+			count = 1
+			WHILE ( menu . items [ count ] <> EMPTY ) DO
+
+				insert_pos = self . inc[1]
+				self . items [ insert_pos ] = menu . items [ count ]
+				self . item_objects [ insert_pos ] = menu . item_objects [ count ]
+
+				self . inc[1] = self . inc[1] + 1
+				count = count + 1
+
+			ENDWHILE
+
+			self . add_divider( )
+
+		ENDIF
+		
+	ELSE
+	
+		flash_message("ERROR: $LIB_POPUP_MENU: Menu can only be added to first level", TRUE)
+		
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+{* Popup Menu Item Class                                                     *}
+{*****************************************************************************}
+
+
+{*****************************************************************************}
+
+ROUTINE popup_menu_item_class_initialisation ( self )
+
+{
+* Popup Menu Item Class Initialisation.
+*
+* Parameters : self , Popup Menu Item Object
+*
+******************************************************************************}
+
+	self . text = ""
+	
+	self . enabled        = TRUE
+	self . checked        = FALSE
+	self . radio_checked  = FALSE
+	self . new_line       = FALSE
+	self . new_line_break = FALSE
+	self . default        = FALSE
+	
+	CREATE OBJECT CALLBACK_CLASS, self . select_callback
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE popup_menu_item_action_set_action(       self          ,
+                                                 action_object ,
+                                           VALUE action_name   )
+{
+* Sets the action name and object to call when item is selected
+*
+* Parameters : self          , Popup Menu Item Object
+*              action_object , Object to call action on
+*              action_name   , Name of action to call
+*
+*******************************************************************************}
+
+	self . select_callback . set_action( action_object, action_name )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE popup_menu_item_action_add_action_parameter( self, VALUE val )
+{
+* Adds a parameter to the callback
+*
+* Parameters : self , Popup Menu Item Object
+*              val  , parameter value to add
+*
+*******************************************************************************}
+
+	self . select_callback . add_parameter( val )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE popup_menu_item_action_mouse_click( self )
+{
+* Called on mouse click. Returns True if handled
+*
+* Parameters : self, Popup Menu Item Object
+*
+*******************************************************************************}
+
+	RETURN( self . select_callback . invoke( ) <> ERROR )
+	
+ENDROUTINE
+
+{*****************************************************************************}
+{* Routines                                                                  *}
+{*****************************************************************************}
+
+{*****************************************************************************}
+
+ROUTINE array_assign( arr, dim, val )
+{
+* Assigns the passed value to the passed array at the position given by the
+* index array 'dim'
+*
+* Parameters : arr , Array to assign
+*              dim , Index array
+*              val , Value to assign
+*
+******************************************************************************}
+
+	{*** 6d array ***}
+	IF dim[6] <> -1 THEN	
+		arr[dim[1], dim[2], dim[3], dim[4], dim[5], dim[6]] = val
+	{*** 5d array ***}
+	ELSEIF dim[5] <> -1 THEN
+		arr[dim[1], dim[2], dim[3], dim[4], dim[5]] = val
+	{*** 4d array ***}
+	ELSEIF dim[4] <> -1 THEN
+		arr[dim[1], dim[2], dim[3], dim[4]] = val
+	{*** 3d array ***}
+	ELSEIF dim[3] <> -1 THEN
+		arr[dim[1], dim[2], dim[3]] = val
+	{*** 2d array ***}
+	ELSEIF dim[2] <> -1 THEN	
+		arr[dim[1], dim[2]] = val
+	{*** 1d array ***}
+	ELSEIF dim[1] <> -1 THEN
+		arr[dim[1]] = val
+	ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE array_read( arr, dim )
+{
+* Returns the value in the passed array at the position given by the
+* index array 'dim'
+*
+* Parameters : arr , Array to assign
+*              dim , Index array
+*
+******************************************************************************}
+
+	DECLARE num_dim, val
+
+	num_dim = size_of_array ( dim ) 
+
+	{*** 6d array ***}
+	IF num_dim = 6 THEN	
+		val = arr[dim[1], dim[2], dim[3], dim[4], dim[5], dim[6]]
+	{*** 5d array ***}
+	ELSEIF num_dim = 5 THEN
+		val = arr[dim[1], dim[2], dim[3], dim[4], dim[5]]
+	{*** 4d array ***}
+	ELSEIF num_dim = 4 THEN
+		val = arr[dim[1], dim[2], dim[3], dim[4]]
+	{*** 3d array ***}
+	ELSEIF num_dim = 3 THEN
+		val = arr[dim[1], dim[2], dim[3]]
+	{*** 2d array ***}
+	ELSEIF num_dim = 2 THEN	
+		val = arr[dim[1], dim[2]]
+	{*** 1d array ***}
+	ELSEIF num_dim = 1 THEN
+		val = arr[dim[1]]
+	ELSE
+		val = EMPTY
+	ENDIF
+
+	RETURN( val )
+
+ENDROUTINE
+
+{*****************************************************************************}
+{*****************************************************************************}
+{*****************************************************************************}

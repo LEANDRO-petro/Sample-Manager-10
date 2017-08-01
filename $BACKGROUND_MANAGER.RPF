@@ -1,0 +1,6262 @@
+{******************************************************************************
+* Module Name   : $BACKGROUND_MANAGER
+* Purpose       : Library for background services
+*
+* Modification History
+* Date_______   Marker____   Reason___________________________________________
+*
+*******************************************************************************}
+
+ENABLE WINDOWS
+
+SET NAME "DISPLAY/"
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY STD_CLASS         { object invoke class / check property }
+JOIN STANDARD_LIBRARY STD_CLIENT        { do_popup_menu                        }
+JOIN STANDARD_LIBRARY STD_DDE           { dde_winexec, dde_winexec_wait        }
+JOIN STANDARD_LIBRARY STD_GLOBAL        { global_exists                        }
+JOIN STANDARD_LIBRARY STD_MESSAGE       { message fetch get text add param     }
+JOIN STANDARD_LIBRARY STD_USER_LOGIN    { set any password for BG services     }
+JOIN STANDARD_LIBRARY STD_UTILS         { size of array variable is assigned   }
+JOIN STANDARD_LIBRARY STD_VGL           { validate_routine / generate_report   }
+JOIN STANDARD_LIBRARY STD_WINDOW        { window_set_status                    }
+
+JOIN LIBRARY $BSMP_REPT                 { BackGround (WDT)                     }
+JOIN LIBRARY $LIB_GRID                  { grid editor                          }
+JOIN LIBRARY $LIB_STATUS_WINDOW         { status_window                        }
+JOIN LIBRARY $LIB_TEXT                  { Toolbar text strings                 }
+JOIN LIBRARY $LIB_UTILS                 { flash_message                        }
+JOIN LIBRARY $LIST_EDITOR               { List editor                          }
+JOIN LIBRARY $PROMPT_LIST               { list routines                        }
+JOIN LIBRARY $PROMPT_TAB                { Tab forms                            }
+JOIN LIBRARY $PROMPT_TOOLBAR            { task form has buttons                }
+JOIN LIBRARY $PROMPT_WINDOW             { vgl_prompt_in_window_criteria        }
+JOIN LIBRARY $ROLE_LIB                  { role_lib_has_privilege               }
+JOIN LIBRARY $TOOLBOX                   { buttons on forms...                  }
+
+CONSTANT G_DEBUG                              = FALSE
+CONSTANT G_TASK_FORM                          = "BG_TASK_FORM"
+CONSTANT G_REMOTE_SERVER                      = "<Server>"
+CONSTANT G_STD_OBJECT_DATABASE                = "STD_OBJECT_DATABASE"
+CONSTANT G_MESSAGE_POINTERS                   = "MESSAGE_POINTERS"
+CONSTANT G_ERROR_BACKGROUND                   = "Unable to setup background"
+CONSTANT G_CREATE_BACKGROUND                  = "BackgroundCreate"
+CONSTANT G_REG_KEY_ADD_REGKEY                 = "reg add "
+CONSTANT G_REG_HKEY_LOCAL_MACHINE             = "HKEY_LOCAL_MACHINE"
+CONSTANT G_REG_THERMO_64_SOFTWARE             = "SOFTWARE\Wow6432Node\LabSystems\SampleManager Server\"
+CONSTANT G_REG_THERMO_SOFTWARE                = "SOFTWARE\LabSystems\SampleManager Server\"
+CONSTANT G_REG_THERMO_SERVICES                = "SYSTEM\CurrentControlSet\services"
+CONSTANT G_REG_WINNT_CURRENT_VERSION          = "SOFTWARE\Microsoft\Windows NT\CurrentVersion"
+CONSTANT G_SERVICE_CREATE                     = " start= auto depend= smplock "
+CONSTANT G_SERVICE_KEY1                       = " -batch -instance "
+CONSTANT G_SERVICE_KEY2                       = " -task VGL -report $background_manager -routine BGSTART -params ("
+CONSTANT G_BG_PREFIX                          = "smpbatch"
+CONSTANT G_BG_PREFIX_921                      = "smpback"
+CONSTANT G_SMP_BATCH_EXE_921                  = "smp.exe -instance "
+CONSTANT G_SMP_BACKGROUND_921                 = "background_daemon.exe "
+CONSTANT G_SMP_BATCH_EXE                      = "SampleManagerBatch.exe"
+CONSTANT G_SM_DAEMON_PREFIX                   = "smdaemon"
+CONSTANT G_SM_INCREMENT_PREFIX                = "smp"
+CONSTANT G_SM_WDT_PREFIX                      = "smptq"
+CONSTANT G_NO_TASKS_RUNNING                   = "No tasks are running"
+CONSTANT G_UTIL_LICE_EXE                      = "lmutil.exe"
+CONSTANT G_UTIL_LICE_PARAM                    = " lmstat -f "
+CONSTANT G_UTIL_LICE_DELIM                    = " | "
+CONSTANT G_TASK_VGL                           = "VGL"
+CONSTANT G_SMP_ORACLE_DB                      = "SMP$ORACLE_DB"
+CONSTANT G_SMP_SQL_SERVER_DB                  = "SMP$SQLSERVER_DB"
+CONSTANT G_ONE_MINUTE                         = INTERVAL ( "0 00:01:00" )
+
+CONSTANT G_TYPE_ALL                           = ""                { no mask do 'em all  }
+CONSTANT G_TYPE_SMIDI                         = "SMIDI"           { mask for start/stop }
+CONSTANT G_TYPE_BG_MGR                        = "BG-MANAGER"      { mask for start/stop }
+
+CONSTANT G_LIBRFC32DLL_FILE                   = "librfc32.dll"
+CONSTANT G_DLL_VERSION_NO_FILE                = "<Remote>"
+CONSTANT G_SHUTDOWN_PREFIX                    = "SHUTDOWN-"
+CONSTANT G_SHUTDOWN_SLEEP                     = "0 00:00:30.00"
+CONSTANT C_GATEWAY_PREFIX                     = "SMIDI"
+CONSTANT G_SMIDI_LOG_PREFIX                   = "\SMIDI\"
+CONSTANT G_SMIDI_CATEGORY                     = "SMIDI"
+CONSTANT G_MENUPROC_MOD_SMIDI_SYSTEM          = "MQS"
+CONSTANT G_MENUPROC_TEST_PASSWORD             = "SAPPW"
+CONSTANT G_MENUPROC_CONFIG_SYSTEM             = "SMIDIECH"
+CONSTANT G_MENUPROC_CONFIG_SERVER             = "SMIDIECS"
+CONSTANT G_MENUPROC_CONFIG_QUERY              = "SMIDIECQ"
+CONSTANT G_MENUPROC_MOD_MAP_PROFILE           = "MXZ"
+CONSTANT G_MENUPROC_GET_LOT                   = "QDN1"
+CONSTANT G_MENUPROC_GET_PHRASES               = "QMDNPH"
+CONSTANT G_MENUPROC_PROCESS_LOT               = "QDP2"
+CONSTANT G_MENUPROC_UPLOAD_RESULTS            = "QUP1"
+CONSTANT G_MENUPROC_EDIT_SERVICES             = "EDITBG"
+CONSTANT G_MENUPROC_SERVER_MANAGER            = "35031"
+
+CONSTANT C_REG_HKEY_LOCAL_MACHINE             = "HKEY_LOCAL_MACHINE"
+CONSTANT C_REG_THERMO_INSTANCE                = "Software\LabSystems\SampleManager Server"
+CONSTANT C_SMIDI_CONFIG_HEADER                = "SMIDI_CONFIG_HEADER"
+CONSTANT C_SMIDI_SYSTEM                       = "SMIDI_SYSTEM"
+CONSTANT C_LOCK_DUMP_FORM                     = "LOCK_FORM"
+CONSTANT C_PATH_SEP                           = "\"
+CONSTANT C_REMOVE_ORPHANS                     = "REMOVE_ORPHANS"     { config_header.identity }
+CONSTANT C_PHRASE_TASKS                       = "BG-TASKS"
+CONSTANT C_NET_SLEEP_INTERVAL                 = "0 00:10:00"
+CONSTANT C_SLEEP_REFRESH_INTERVAL             = "0 00:00:04"
+CONSTANT C_BG_USER_TRIGGER_LIBRARY            = "background_mgr_user"
+CONSTANT C_SLEEP_SNAPSHOT                     = interval ( "0 00:01:00" )
+CONSTANT C_SOURCE_DIR_FIELD                   = "source_directory"
+CONSTANT C_SOURCE_FILE_MOD_FIELD              = "source_date_modified"
+CONSTANT C_TRANSACTION_SNAPSHOT               = "SnapShot.Sessions"
+CONSTANT C_TRANSACTION_ADD_COMPILE            = "BG-Manager.AddCompile"
+
+DECLARE spare                       ,  { general use for status checking       }
+        retval                      ,  { return values from routines           }
+        tmpString                   ,  { general use temp string               }
+        logfile                     ,  { logfile for compile all program       }
+        bgProcess                   ,  { the thread to run                     }
+        bgUser                      ,  { userid for the thread                 }
+        bgPassword                  ,  { pw for the userid that runs           }
+        bgReport                    ,  { VGL library to run                    }
+        bgRoutine                   ,  { VGL routine in library to run         }
+        bgRetryCount                ,  { Max retry on thread/process           }
+        bgCategory                  ,  { Category of background thread         }
+        bgType                      ,  { CategoryType (NET vs VGL)             }
+        bgShutdown                     { Shutdown Id for thread/process        }
+
+{*******************************************************************************
+*               B A C K G R O U N D         R O U T I N E S
+*******************************************************************************}
+
+IF GLOBAL ( "PARAM_ACTIVE" )
+
+	PROMPT FOR bgProcess
+	bgStart ( bgProcess )
+
+ELSE
+
+	Menu_Bg_Service ( "NotUsed" )
+
+ENDIF
+
+EXIT
+
+{******************************************************************************}
+
+GLOBAL ROUTINE BG_Start ( VALUE bgProcess )
+
+	DECLARE startFileLog
+
+	FLASH_MESSAGE ( "START ":NOW , TRUE )
+
+	StartFileLog = lib_utils_logical_to_string ( "SMP$LOGFILES" ):"\BG-": STRIP ( GLOBAL ( "INSTANCE" ) ) :"-" :STRIP ( bgProcess ) : ".log"
+	bgProcess    = STRIP ( bgProcess )
+
+	IF BLANK ( bgProcess )
+
+		internal_start_message ( get_user_message ( "BG_BACKGROUND_BG_25", 1 ), StartFileLog )
+
+	ELSEIF NOT ( GetBackgroundDetails( bgProcess, bgUser, bgReport, bgRoutine, bgCategory, bgType, StartFileLog ) )
+
+		internal_start_message ( get_user_message ( "BG_BACKGROUND_BG_26", 1 ), StartFileLog )
+
+	ELSEIF NOT ( GetUserSignon ( bgProcess, bgUser, bgPassWord, StartFileLog ) )
+
+		internal_start_message ( get_user_message ( "BG_BACKGROUND_BG_27", 1 ), StartFileLog )
+
+	ELSEIF ( bgUser <> "BATCH" ) AND NOT ( login_user (bgUser, bgPassWord) )
+
+		internal_start_message ( get_user_message ( "BG_BACKGROUND_BG_28", 1 ), StartFileLog )
+
+	ELSE
+
+		BgStartProcess ( bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, bgCategory, bgType, bgUser, StartFileLog )
+
+	ENDIF
+
+	FLASH_MESSAGE ( "EXIT ++++++++++ ":NOW:" +++++++++++" , TRUE )
+
+	EXIT
+
+ENDROUTINE  { BG_Start }
+
+{******************************************************************************}
+
+ROUTINE GetBackgroundDetails ( bgProcess, bgUser, bgReport, bgRoutine, bgCategory, bgType, StartFileLog )
+
+	DECLARE tmpString, bgSAP
+
+	retval   = FALSE
+	bgReport = SELECT smp_background.vgl_library FOR UPDATE
+                    WHERE removeflag = FALSE
+                    AND active       = TRUE
+                    AND service      = bgProcess
+
+	IF ( bgReport <> EMPTY ) AND NOT BLANK ( bgReport ) AND ( bgReport <> LOCKED )
+
+		bgRetryCount = SELECT smp_background.max_retry
+		bgRoutine    = SELECT smp_background.vgl_routine
+		bgShutdown   = G_SHUTDOWN_PREFIX : bg_process
+		bgCategory   = SELECT smp_background.service_category
+		bgType       = SELECT smp_background.service_type
+		bgUser       = SELECT smp_background.user_id
+		bgSAP        = ( bgCategory = G_SMIDI_CATEGORY )
+
+		START WRITE TRANSACTION G_CREATE_BACKGROUND
+
+		ASSIGN smp_background.current_pid = GLOBAL ( "PROCESS_ID" )
+		UPDATE smp_background
+		COMMIT
+
+		tmpString = SELECT report.identity WHERE identity = bgReport
+
+		IF ( tmpString = EMPTY ) AND ( bgType <> "NET" )
+
+			internal_start_message ( "GetBackgroundDetails * ERROR REPORT INVALID * " : bgProcess:" ":bgReport, StartFileLog )
+
+		ELSEIF ( bgType = "VGL" ) AND NOT ( BgValidateLibrary ( bgReport, bgRoutine, StartFileLog ) )
+
+			internal_start_message ( "GetBackgroundDetails * ERROR LIB/ROUTINE invalid * " : bg_process : bgReport : bgRoutine, StartFileLog )
+
+		ELSEIF ( bgSAP )
+
+			retval = BG_add_shutdown_flag ( bgShutdown, StartFileLog )
+
+		ELSE
+
+			retval = TRUE
+			internal_start_message ( "GetBackgroundDetails * BATCH USER * " : bg_process, StartFileLog )
+
+		ENDIF
+
+	ELSE
+
+		internal_start_message ( "GetBackgroundDetails * ERROR VGL LIBRARY * " : bg_process:" ":bgReport, StartFileLog )
+
+	ENDIF
+
+	IF NOT retval
+
+		internal_start_message ( "GetBackgroundDetails * ISSUE * " : bg_process, StartFileLog )
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE { GetBackgroundDetails }
+
+{******************************************************************************}
+
+ROUTINE GetUserSignon ( bgProcess, bgUser, bgPassWord, StartFileLog )
+
+	DECLARE user_removed
+
+	retval = FALSE
+
+	IF BLANK ( bgUser )
+
+		retval     = TRUE
+		bgPassWord = ""
+		bgUser     = "BATCH"
+
+		internal_start_message ( "BATCH.":bgProcess, StartFileLog )
+
+	ELSE
+
+		user_removed = SELECT personnel.removeflag WHERE identity = bgUser
+
+		IF ( user_removed = EMPTY ) | ( user_removed )
+
+			internal_start_message ( get_user_message ( "BG_BACKGROUND_BG_24", 1):bgProcess, StartFileLog )
+
+		ELSE
+
+			user_removed= SELECT password.expires WHERE identity = bgUser
+
+			IF ( user_removed = EMPTY )
+
+				internal_start_message ( get_user_message ("BG_BACKGROUND_BG_23", 1):bgProcess, StartFileLog )
+
+			ELSE
+
+				bgPassWord = SELECT password.cryptpass
+				retval     = TRUE
+
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+	IF NOT retval
+
+		internal_start_message ( "GetUserSignon * ISSUE * " : bgProcess, StartFileLog )
+
+	ENDIF
+
+	RETURN (retval)
+
+ENDROUTINE { GetUserSignon }
+
+{*******************************************************************************}
+
+ROUTINE BgValidateLibrary ( bgReport, bgRoutine, StartFileLog )
+
+	DECLARE retval, tmpString
+
+	tmpString = "Invalid routine for the library"
+	retval    = SELECT report.removeflag WHERE identity = bgReport
+
+	IF retval = EMPTY
+
+		retval    = FALSE
+		tmpString = "REPORT not found in database"
+
+	ELSEIF retval
+
+		retval    = FALSE
+		tmpString = "REPORT.removeflag TRUE"
+
+	ELSEIF NOT BLANK ( bgRoutine )
+
+		retval = vgl_validate_routine ( bgReport, bgRoutine )
+
+	ELSE
+
+		retval = TRUE
+
+	ENDIF
+
+	IF NOT retval
+
+		internal_start_message ( get_user_message ("BG_BACKGROUND_BG_33", 1):bgReport:"/":bgRoutine:" ":tmpString, StartFileLog )
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE   { BgValidateLibrary }
+
+{*******************************************************************************}
+
+ROUTINE BgStartProcess ( VALUE bgReport     ,
+                         VALUE bgRoutine    ,
+                         VALUE bgProcess    ,
+                         VALUE bgRetryCount ,
+                         VALUE bgShutdown   ,
+                         VALUE bgCategory   ,
+                         VALUE bgType       ,
+                         VALUE bgUser       ,
+                               StartFileLog )
+
+	DECLARE isShut         ,
+	        LoopSleep      ,
+	        StartCount     ,
+	        bgParams       ,
+	        bgSleepInterval
+
+	internal_start_message ( "BgStartProcess * " : bg_process, StartFileLog )
+
+	LoopSleep  = FALSE
+	isShut     = FALSE
+	StartCount = 0
+
+	WHILE NOT isShut DO
+
+		IF ( valid_table ( C_SMIDI_CONFIG_HEADER ) )
+
+			LoopSleep = SELECT 'C_SMIDI_CONFIG_HEADER'.value WHERE identity = bgShutdown { <- thread shutdown }
+
+		ENDIF
+
+		BgAddSMPSession ( bgProcess, bgUser, StartFileLog )  { each time it starts write to smp_sessions... }
+
+		isShut = SELECT config_header.value WHERE identity = "SHUTDOWN_ENABLED"  { <- master shutdown no matter what }
+
+		bg_trigger_lib ( "START_SERVICE", bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog )
+
+		IF ( StartCount >= bgRetryCount )
+
+			bg_max_process_retry ( bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog )
+			isShut = TRUE
+
+		ELSEIF ( LoopSleep <> EMPTY ) AND ( LoopSleep )
+
+			internal_start_message ( "BgStartProcess * LoopSleep * " : bgProcess : StartCount, StartFileLog )
+
+			SLEEP FOR INTERVAL ( G_SHUTDOWN_SLEEP )
+			StartCount = 0
+
+		ELSEIF NOT isShut
+
+			StartCount = StartCount + 1
+
+			IF BLANK ( bgRoutine )
+
+				internal_start_message ( "BgStartProcess * START * " : bgReport : StartCount, StartFileLog )
+				vgl_generate_report ( BgReport, "", FALSE, "" )
+
+			ELSEIF bgType = "NET"
+
+				bgParams        = SELECT smp_background.parameters
+				bgSleepInterval = SELECT smp_background.timer_schedule
+
+				bgStartNetTask ( bgRoutine, bgParams, bgSleepInterval, bgUser, StartFileLog )
+
+			ELSE
+
+				internal_start_message ( "BgStartProcess * START * " : bgReport:"/":bgRoutine: StartCount, StartFileLog )
+
+				IF  ( GLOBAL ( "MODE" ) = "INTERACTIVE" ) AND ( confirm_with_text ( "Start ":bgReport:"/":bgRoutine ) )
+
+					CALL_ROUTINE bgRoutine IN LIBRARY bgReport USING bgProcess NEW CONTEXT
+
+				ELSE
+
+					CALL_ROUTINE bgRoutine IN LIBRARY bgReport USING bgProcess NEW CONTEXT
+
+				ENDIF
+
+			ENDIF
+
+			internal_start_message ( "BgStartProcess * RESTART * " : bgProcess : StartCount, StartFileLog )
+
+			CALL_ROUTINE "remove_mapped_libraries" IN LIBRARY "$COW" USING isShut
+
+		ENDIF
+
+		bg_trigger_lib ( "STOP_SERVICE", bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog )
+
+	ENDWHILE
+
+	internal_start_message ( "BgStartProcess * terminated * " : bgProcess, StartFileLog )
+
+ENDROUTINE   { BgStartProcess }
+
+{******************************************************************************}
+
+ROUTINE BgStartNetTask ( VALUE bgRoutine, bgParams, bgSleepInterval, bgUser, StartFileLog )
+
+	DECLARE cmd, cmdLog
+
+	cmdLog = lib_utils_logical_to_string ( "smp$logfiles" ) : "/" : STRIP ( bgRoutine ) : "-spawn.log"
+	cmd    = lib_utils_logical_to_string ( "smp$programs" ) : "/SampleManagerCommand -instance : " : GLOBAL ( "INSTANCE" ) : " -username " :bgUser: " -task " :bgRoutine: " -params" :ASCII(34):bgParams:ASCII(34)
+
+	internal_start_message ( "BgStartNetTask " : cmd : " " : cmdLog, StartFileLog )
+
+	lib_utils_spawn_with_log ( cmd, cmdLog )
+
+	bgNetTaskTimerSchedule( bgSleepInterval, StartFileLog )
+
+ENDROUTINE   { bgStartNetTask }
+
+{ **************************************************************************** }
+
+ROUTINE bgNetTaskTimerSchedule ( bgSleepInterval, StartFileLog )
+
+	DECLARE tmpString, tmpString2, tmpString3, tmpString4
+
+	internal_start_message ( "BgNetTaskTimerSchedule check time.... ", StartFileLog )
+
+	tmpString  = SELECT timer_schedule.library WHERE identity = bgSleepInterval
+	tmpString2 = SELECT timer_schedule.routine
+	tmpString3 = FALSE
+	tmpString4 = NOW
+
+	{ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }
+	{ Whatever timer schedule is built it will do all the sleeping  }
+	{ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }
+
+	CALL_ROUTINE "bsmp_timer_schedule_call" IN LIBRARY "$bsmp_timer_schedule"
+	USING tmpString, tmpString2, tmpString3, tmpString4 RETURNING tmpString4
+
+	IF IS_DATE ( tmpString4 )
+
+		internal_start_message ( "BgNetTaskTimerSchedule * wakeup time * ", StartFileLog )
+
+	ELSE
+
+		{ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }
+		{ Timer.Schedule did not return a date, so sleep minimum time   }
+		{ - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - }
+
+		internal_start_message ( "BgNetTaskTimerSchedule sleeping ":C_NET_SLEEP_INTERVAL, StartFileLog )
+		SLEEP FOR C_NET_SLEEP_INTERVAL
+
+	ENDIF
+
+ENDROUTINE   { bgNetTaskTimerSchedule }
+
+{******************************************************************************}
+
+ROUTINE BG_add_shutdown_flag ( VALUE bgShutDown, StartFileLog )
+
+	DECLARE tmpString, retval
+
+	retval = TRUE
+
+	IF ( valid_table ( C_SMIDI_CONFIG_HEADER ) )
+
+		tmpString = SELECT 'C_SMIDI_CONFIG_HEADER'.identity FOR UPDATE WHERE identity = bgShutDown
+
+	ENDIF
+
+	IF tmpString = EMPTY
+
+		START WRITE TRANSACTION G_CREATE_BACKGROUND
+
+		RESERVE ENTRY 'C_SMIDI_CONFIG_HEADER', bgShutdown, tmpString
+
+		IF tmpString = EMPTY
+
+			ASSIGN 'C_SMIDI_CONFIG_HEADER'.value     = FALSE
+			ASSIGN 'C_SMIDI_CONFIG_HEADER'.data_type = "BOOLEAN"
+			ASSIGN 'C_SMIDI_CONFIG_HEADER'.level_id  = "SYSTEM"
+
+			UPDATE 'C_SMIDI_CONFIG_HEADER'
+			COMMIT
+
+		ELSE
+
+			retval = FALSE
+
+			ROLLBACK
+			internal_start_message ( "BgAddShutdownFlag * ISSUE * ":tmpString, StartFileLog )
+
+		ENDIF
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE   { BG_Add_ShutDown_flag }
+
+{******************************************************************************}
+
+ROUTINE BgAddSMPSession ( VALUE bgService, VALUE bgUser, StartFileLog )
+
+	DECLARE status, aRec, aDate, aHour, aMinute, ServDate, StarterPID
+
+	ServDate   = NOW
+	StarterPID = PACKED_DECIMAL ( GLOBAL ( "PROCESS_ID" ) )
+
+	SET DATE FORMAT "MON-DZ-YYYZ"
+		aDate = STRIP ( ServDate )
+	RESTORE DATE FORMAT
+
+	SET DATE FORMAT "H24"
+		aHour = STRIP ( ServDate )
+	RESTORE DATE FORMAT
+
+	SET DATE FORMAT "MI"
+		aMinute = STRIP ( ServDate )
+	RESTORE DATE FORMAT
+
+	aRec = StarterPID : aDate : aHour : aMinute
+
+	START WRITE TRANSACTION G_CREATE_BACKGROUND
+
+	RESERVE ENTRY smp_sessions, aRec, status
+
+	IF status = EMPTY
+
+		ASSIGN smp_sessions.session_service  = bgService
+		ASSIGN smp_sessions.session_operator = bgUser
+		ASSIGN smp_sessions.session_mode     = FALSE
+		ASSIGN smp_sessions.server_date      = ServDate
+		ASSIGN smp_sessions.session_date     = aDate : "-" : aHour : "-" : aMinute
+		ASSIGN smp_sessions.session_day_hr   = aDate : "-" : aHour
+
+		UPDATE smp_sessions, status
+		COMMIT
+
+		internal_start_message ( "BgAddSMPSession.StarterSession.Record-> ":aRec:" ":bgService, StartFileLog )
+
+	ELSE
+
+		ROLLBACK
+
+		internal_start_message ( "BgAddSMPSession *** sleeping for 1 minute *** ":aRec, StartFileLog )
+
+		SLEEP FOR G_ONE_MINUTE
+
+	ENDIF
+
+ENDROUTINE {  BgAddSMPSession  }
+
+{*******************************************************************************
+*
+*    When SERVICES has attempted to (re)start too many times.......
+*
+*******************************************************************************}
+
+ROUTINE BG_max_process_retry ( bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog )
+
+	DECLARE a_msg           ,
+	        EventId         ,
+	        EventApplication,
+	        EventPrefix     ,
+	        EventInstance   ,
+	        EventPID
+
+	internal_start_message ( "* * * MAXIMUM RESTART * * * ":bgProcess, StartFileLog )
+
+	{ ---------------------------------------------------------- }
+	{ Create an EVENT log on the Windows server for the service  }
+	{ ---------------------------------------------------------- }
+
+	EventId           = STRIP ( internal_msg ( "BG_EVENT_ID"         , 1 ) )
+	EventApplication  = STRIP ( internal_msg ( "BG_EVENT_APPLICATION", 1 ) )
+	EventPrefix       = STRIP ( internal_msg ( "BG_EVENT_PREFIX"     , 1 ) )
+	EventInstance     = STRIP ( GLOBAL ( "INSTANCE"   ) )
+	EventPID          = STRIP ( GLOBAL ( "PROCESS_ID" ) )
+
+	a_msg  = "eventcreate /T ERROR /ID " :
+	         EventId                     :
+	         " /L APPLICATION /SO "      :
+	         EventApplication            :
+	         " /D "                      :
+	         ASCII(34)                   :
+	         EventPrefix                 :" "   :
+	         EventInstance               :" : " :
+	         STRIP (bgProcess)           :" ("  :
+	         EventPID                    :")."  : ASCII(34)
+
+	lib_utils_spawn_with_log ( a_msg, StartFileLog )
+
+	internal_start_message ( "* * * STOPPED PROCESS ---> " : bgProcess : " " : EventApplication, StartFileLog )
+
+	bg_trigger_lib ( "MAX_PROCESS", bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog )
+
+ENDROUTINE  { BG_max_process_retry }
+
+{******************************************************************************}
+
+ROUTINE MenuSnapShotSessions ( VALUE procNum )
+
+	DECLARE stform
+
+	internalInitBgForm ( stform )
+
+	stform.SnapShotMode = TRUE
+	stform.process_list()
+
+ENDROUTINE   { MenuSnapShotSessions }
+
+{******************************************************************************}
+
+ROUTINE MenuSnapShotSleep ( VALUE procNum )
+
+	DECLARE stform, isShutdown, aSleep
+
+	internalInitBgForm ( stform )
+
+	aSleep              = C_SLEEP_SNAPSHOT
+	stform.SnapShotMode = TRUE
+	isShutdown          = GLOBAL ( "SHUTDOWN_ENABLED" )
+
+	WHILE NOT isShutdown
+
+		stform.process_list()
+
+		IF GLOBAL_EXISTS ( "SMP_SESSION_SLEEP" )
+
+			aSleep = GLOBAL ( "SMP_SESSION_SLEEP" )
+
+		ENDIF
+
+		SLEEP FOR aSleep
+
+		isShutdown = SELECT config_header.value WHERE identity = "SHUTDOWN_ENABLED"
+
+	ENDWHILE
+
+ENDROUTINE   { MenuSnapShotSleep }
+
+{******************************************************************************}
+
+ROUTINE MenuRegistryInstance ( procNum )
+
+	internal_REGISTRY( "smp$" )
+
+ENDROUTINE   { MenuRegistryInstance }
+
+{******************************************************************************}
+
+ROUTINE MENU_bg_service( VALUE menu_num )
+
+	DECLARE stform    ,
+                a_last    ,
+                cnt       ,
+                msg_array
+
+	{ ------------------------------------------------------------------------- }
+	{ Init the form / object and actions to search sessions                     }
+	{ ------------------------------------------------------------------------- }
+
+	internalInitBgForm ( stform )
+
+	{ ------------------------------------------------------------------------- }
+	{ Display the details of the SAP Gateway if it is on this server            }
+	{ ------------------------------------------------------------------------- }
+
+	ARRAY msg_array
+
+	msg_array[ 1,2] = 15
+	msg_array[ 2,2] = 25
+	msg_array[ 3,2] = 10
+	msg_array[ 4,2] = 10
+	msg_array[ 5,2] = 10
+	msg_array[ 6,2] = 10
+	msg_array[ 1,1] = internal_MSG ( "BG_W_GATEWAYID" ,1 )
+	msg_array[ 2,1] = internal_MSG ( "BG_W_GATELOGDIR",1 )
+	msg_array[ 3,1] = internal_MSG ( "BG_W_GATEDLLVER",1 )
+	msg_array[ 4,1] = internal_MSG ( "BG_W_PROCESS_ID",1 )
+	msg_array[ 5,1] = internal_MSG ( "BG_W_MEMORY"    ,1 )
+	msg_array[ 6,1] = internal_MSG ( "BG_W_CPU"       ,1 )
+
+	CREATE OBJECT "STD_PROMPT_LIST", stform.listGateway
+		stform.listGateway.height               = 4
+		stform.listGateway.width                = stform.width  - 4
+		stform.listGateway.row                  = stform.height - 5
+		stform.listGateway.column               = 1
+		stform.listGateway.full_screen          = FALSE
+		stform.listGateway.vgl_library          = GLOBAL ( "current_library" )
+		stform.listGateway.double_click_routine = "internal_click_gateway_btn"
+		stform.listGateway.style                = stform.listGateway.style + LIST_STYLE_SINGLE_SEL
+		stform.listGateway.userinfo             = msg_array
+		stform.listGateway.use_images ( EMPTY, 1 )
+
+	cnt = 1
+
+	WHILE ( msg_array[cnt,1] <> EMPTY ) DO
+
+		stform.listGateway.add_column ( msg_array[cnt,1], msg_array[cnt,2] )
+		cnt = cnt + 1
+
+	ENDWHILE
+	
+	{ ---------------------------------------------------------------------------- }
+	{ Big honkin toolbar with all the ways to start/stop configure the system      }
+	{ ---------------------------------------------------------------------------- }
+
+	CREATE OBJECT TOOLBAR_CLASS, st_form.a_toolbar
+		st_form.a_toolbar.header   = get_user_message ( "BG_TOOLBAR1_TITLE", 1 )
+		st_form.a_toolbar.width    = stform.width - 2
+
+	internal_set_button ( stform, "BG_W_CLOSE"           , "EXIT"                      , "EXIT"    , 13, 9003 )
+	internal_set_button ( stform, "BG_W_REFRESH_USERS"   , "internal_refresh_users_btn", "REFRESH" , 35, 9003 )
+	internal_set_button ( stform, "BG_W_KILL"            , "internal_KILL_btn"         , "KILL"    ,  6, 9501 )
+	internal_set_button ( stform, "BG_W_KILL_ORPHANS"    , "internal_ORPHANS_btn"      , "ORPHANS" ,102, 9501 )
+	internal_set_button ( stform, "BG_W_SNAPSHOTSERVER"  , "internalSnapShot_btn"      , "SNAPSHOT",104, 9501 )
+	internal_set_button ( stform, "BG_W_ABOUT"           , "internalAbout_btn"         , "ABOUT"   ,180, 9501 )
+
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "BG_W_START_INCREMENT", "internal_start_1_service"      , G_SM_INCREMENT_PREFIX : stform.instance, 283, 9502 )
+	internal_set_button ( stform, "BG_W_STOP_INCREMENT" , "internal_stop_1_service"       , G_SM_INCREMENT_PREFIX : stform.instance, 281, 9503 )
+	internal_set_button ( stform, "BG_W_RESET_INCREMENT", "internal_reset_increments_main", "RESET_INCREMENTS"                     , 284, 9504 )
+
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "BG_W_START_SMDAEMON" , "internal_start_1_service"      , G_SM_DAEMON_PREFIX : stform.instance, 299, 9505 )
+	internal_set_button ( stform, "BG_W_STOP_SMDAEMON"  , "internal_stop_1_service"       , G_SM_DAEMON_PREFIX : stform.instance, 267, 9506 )
+
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "BG_W_START_WDT", "internal_start_WDT", G_SM_WDT_PREFIX : stform.instance, 174, 9507 )
+	internal_set_button ( stform, "BG_W_STOP_WDT" , "internal_stop_WDT" , G_SM_WDT_PREFIX : stform.instance, 176, 9508 )
+
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "BG_W_LOGS"    , "internal_logs_btn"   , "LOGS",  23, 9509 )
+	internal_set_button ( stform, "BG_W_REGISTRY", "MenuRegistryInstance", "REGX",  82, 9511 )
+
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "BG_W_START_ALL"   , "internal_start_all_btn", "STARTALL"        , 20, 9512 )
+	internal_set_button ( stform, "BG_W_STOP_ALL"    , "internal_stop_all_btn" , "STOPALL"         , 80, 9513 )
+	internal_set_button ( stform, "BG_W_SHUTDOWN_SMP", "internal_shutdown_btn" , "SHUTDOWN_ENABLED", 67, 9514 )
+	internal_set_button ( stform, "BG_W_START"       , "internal_start_btn"    , "START_SERVICE"   , 22, 9515 )
+	internal_set_button ( stform, "BG_W_STOP"        , "internal_stop_btn"     , "STOP_SERVICE"    , 44, 9516 )
+
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "BG_W_EDITSERVICES"  , "internal_EditServices_btn"  , "EDITSERVICE"  , 264, 9518 )
+	internal_set_button ( stform, "BG_W_CREATESERVICES", "internal_CreateServices_btn", "CREATESERVICE", 127, 9517 )
+	internal_set_button ( stform, "BG_W_COMPILE_ALL"   , "internal_compile_all"       , "COMPILE_ALL"  , 144, 9519 )
+	
+	stform.a_toolbar.add_separator()
+
+	internal_set_button ( stform, "SERVER_MANAGER_HEADER", "internalSvrMgrMenu_btn", "SVR-MGR", 116, 9501 )
+
+	stform.a_toolbar.add_separator()
+
+	{ ---------------------------------------------------------------------------- }
+	{ Only show these buttons when SMidi has been installed                        }
+	{ ---------------------------------------------------------------------------- }
+
+	IF  ( VALID_TABLE ( "SMIDI_SYSTEM" )                  ) 
+	AND ( role_lib_has_privilege ( MENUNUMBER ( "SMIDI" )))
+
+		internal_set_button ( stform, "BG_W_SLEEP"        , "internal_shut_btn"        , "TOGGLE"        ,  11, 29907 )
+		internal_set_button ( stform, "BG_W_GATEWAY"      , "internal_gateway_btn"     , "GATEWAY"       ,  12, 29907 )
+		internal_set_button ( stform, "BG_W_RFCLOGS"      , "internal_RFCLogFiles_btn" , "RFCLOGFILES"   , 279, 29907 )
+		internal_set_button ( stform, "BG_W_RFC"          , "internal_RFCLogDebug_btn" , "LOG_DEBUG"     , 280, 29907 )
+		internal_set_button ( stform, "BG_W_GETPHRASES"   , "internal_GetPhrases_btn"  , "GET_PHRASE"    ,  20, 29754 )
+		internal_set_button ( stform, "BG_W_GETLOT"       , "internal_GetLot_btn"      , "GET_LOT"       ,  17, 29752 )
+		internal_set_button ( stform, "BG_W_PROCESSLOT"   , "internal_ProcLot_btn"     , "PROCESS_LOT"   ,  18, 29756 )
+		internal_set_button ( stform, "BG_W_UPLOADRESULTS", "internal_UpRes_btn"       , "UPLOAD_RESULTS",  16, 29759 )
+		internal_set_button ( stform, "BG_W_MODIFYSERVER" , "internal_ModifyServer_btn", "MODIFYSERVER"  , 119, 29504 )
+		internal_set_button ( stform, "BG_W_TESTSAPPW"    , "internal_TestPassWord_btn", "TESTPASSWORD"  , 261, 29511 )
+		internal_set_button ( stform, "BG_W_MAPPROFILE"   , "internal_MapProfile_btn"  , "MAPPROFILE"    , 251, 29565 )
+		internal_set_button ( stform, "BG_W_CONFIGSYSTEM" , "internal_ConfigSystem_btn", "CONFIGSYSTEM"  , 255, 29532 )
+		internal_set_button ( stform, "BG_W_CONFIGSERVER" , "internal_ConfigServer_btn", "CONFIGSERVER"  , 208, 29533 )
+		internal_set_button ( stform, "BG_W_CONFIGQUERY"  , "internal_ConfigQuery_btn" , "CONFIGQUERY"   , 178, 29534 )
+
+		stform.a_toolbar.add_separator()
+
+	ENDIF
+
+	{ ---------------------------------------------------------------------------- }
+	{ The list pane shows what is started and what resources each uses             }
+	{ ---------------------------------------------------------------------------- }
+
+	ARRAY msg_array
+
+	msg_array[ 1,2] = 8
+	msg_array[ 2,2] = 8
+	msg_array[ 3,2] = 10
+	msg_array[ 4,2] = 8
+	msg_array[ 5,2] = 8
+	msg_array[ 6,2] = 8
+	msg_array[ 7,2] = 10
+	msg_array[ 8,2] = 15
+	msg_array[ 9,2] = 20
+
+	msg_array[ 1,1] = internal_MSG ( "BG_W_MODE"       ,1 )
+	msg_array[ 2,1] = internal_MSG ( "BG_W_INSTANCE"   ,1 )
+	msg_array[ 3,1] = internal_MSG ( "BG_W_SM_USER"    ,1 )
+	msg_array[ 4,1] = internal_MSG ( "BG_W_PROCESS_ID" ,1 )
+	msg_array[ 5,1] = internal_MSG ( "BG_W_MEMORY"     ,1 )
+	msg_array[ 6,1] = internal_MSG ( "BG_W_CPU"        ,1 )
+	msg_array[ 7,1] = internal_MSG ( "BG_W_OS_USER"    ,1 )
+	msg_array[ 8,1] = internal_MSG ( "BG_W_DOMAIN_USER",1 )
+	msg_array[ 9,1] = internal_MSG ( "BG_W_USER_DESC"  ,1 )
+
+	CREATE OBJECT "STD_PROMPT_LIST", stform.list
+		stform.list.height         = stform.height - stform.listGateway.height - 4
+		stform.list.width          = stform.width  - 4
+		stform.list.row            = 3
+		stform.list.column         = 1
+		stform.list.full_screen    = FALSE
+		stform.list.vgl_library    = GLOBAL ( "current_library" )
+		stform.list.style          = stform.list.style + LIST_STYLE_SINGLE_SEL
+		stform.list.userinfo       = msg_array
+		stform.list.use_images ( EMPTY, 1 )
+
+	cnt = 1
+
+	WHILE ( msg_array[cnt,1] <> EMPTY ) DO
+
+		stform.list.add_column ( msg_array[cnt,1], msg_array[cnt,2] )
+		cnt = cnt + 1
+
+	ENDWHILE
+
+	PROMPT OBJECT stform.lice_form AT 1,2 WITH ( value = stform.lice_mess )
+
+	stform.add_prompt ( stform.a_toolbar )
+	stform.add_prompt ( stform.lice_form )
+	stform.add_prompt ( stform.list )
+
+	IF ( valid_table ( "SMIDI_SYSTEM" ) )
+
+		stform.add_prompt ( stform.listGateway )   { do not show if not installed }
+
+	ENDIF
+
+	stform.start_prompt()
+	stform.process_list()
+
+	REPEAT
+
+		stform.wait_prompt()
+		a_last = stform.get_lastkey()
+
+	UNTIL ( a_last = "EXIT" )
+
+	stform.end_prompt()
+
+	stform = EMPTY
+
+	EXIT
+
+ENDROUTINE  { MENU_bg_service }
+
+{******************************************************************************}
+
+ROUTINE internalInitBgForm ( stform )
+
+	BG_TASK_FORM_class_init()
+
+	set_up_std_prompt_list_class()
+	prompt_toolbar_initialise()
+
+	CREATE OBJECT G_TASK_FORM, stform
+	stform.header           = internal_msg ( "BG_MANAGER_DASHBOARD_TITLE", 1 )
+	stform.height           = GLOBAL ( "GUI_HEIGHT" ) - 6
+	stform.width            = GLOBAL ( "GUI_WIDTH"  ) - 10
+	stform.row              = 2
+	stform.column           = 2
+	stform.vgl_library      = GLOBAL ( "CURRENT_LIBRARY" )
+	stform.button_style     = FORM_BUTTON_NONE
+	stform.prompt_id        = "SMPDashBoard"
+	stform.return_behaviour = FORM_RETURN_WRAP
+
+ENDROUTINE  { internalInitBgForm }
+
+{******************************************************************************}
+
+ROUTINE internal_set_button ( stform, VALUE a_caption, VALUE a_routine, VALUE pt_id, VALUE a_icon, VALUE aPrivNumber )
+
+	DECLARE a_button
+
+	IF role_lib_has_privilege ( aPrivNumber )
+
+		CREATE OBJECT TOOLBAR_BUTTON_CLASS, a_button
+			a_button.tooltip             = internal_MSG ( a_caption, 1 )
+			a_button.vgl_library         = GLOBAL ( "CURRENT_LIBRARY" )
+			a_button.mouse_click_routine = a_routine
+			a_button.prompt_id           = pt_id
+			a_button.enabled             = TRUE
+			a_button.flat                = TRUE
+			a_button.tab_stop            = FALSE
+			a_button.use_images( EMPTY, 16, a_icon )
+			a_button.set_image_resource( 0 )
+
+		IF ( a_routine = "EXIT" ) | ( a_routine = "DO" )
+
+			a_button.send_lastkey = a_routine
+
+		ENDIF
+
+		IF ( a_routine = "internal_KILL_btn" )
+
+			a_button.enabled = NOT BLANK ( stform.kill_cmd )
+
+		ELSEIF ( a_routine = "internal_ORPHANS_btn" )
+
+			a_button.enabled = NOT BLANK ( stform.kill_cmd )
+
+		ELSEIF ( a_routine = "internal_CreateServices_btn" )
+
+			a_button.enabled = internal_services_need_create()
+
+		ENDIF
+
+		stform.a_toolbar.add_item ( a_button )
+
+	ENDIF
+
+ENDROUTINE   { internal_Set_button }
+
+{***************************************************************************
+ *                            TASK FORM ROUTINES                           *
+ ***************************************************************************}
+
+ROUTINE BG_TASK_FORM_class_init
+
+	DEFINE CLASS G_TASK_FORM INITIALISATION INHERIT PROMPT_CLASS_FORM
+	PROPERTIES
+            "data"                ,
+            "own_pid"             ,
+            "id_ref"              ,
+            "lice_form"           ,
+            "lice_mess"           ,
+            "list"                ,
+            "listGateway"         ,
+            "instance"            ,
+            "output"              ,
+            "use_instance"        ,
+            "os_version"          ,
+            "smp_version"         ,
+            "ProductName"         ,
+            "SystemRoot"          ,
+            "smp_cmd"             ,
+            "task_cmd"            ,
+            "service_cmd_prefix"  ,
+            "task_cmd_prefix"     ,
+            "task_cmd_suffix"     ,
+            "task_cmd_suffix_no32",
+            "kill_cmd"            ,
+            "SvrMgrMenuArray"     ,
+            "SvrMgrArray"         ,
+            "GateWayArray"        ,
+            "aClient"             ,
+            "aServer"             ,
+            "a_imagename"         ,
+            "a_pid"               ,
+            "a_SessionName"       ,
+            "a_SessionNo"         ,
+            "a_memory"            ,
+            "a_status"            ,
+            "a_domain_user"       ,
+            "a_cpu"               ,
+            "a_title"             ,
+            "a_toolbar"           ,
+            "logs_menu_array"     ,
+            "logs_program_array"  ,
+            "SnapShotMode"        ,
+            "shut_bg_array"       ,
+            "shut_title_array"    ,
+            "bg_title_array"      ,
+            "start_bg_array"      ,
+            "stop_bg_array"       ,
+            "show_all_users"
+
+	ACTIONS
+
+            "parse_sm"           ,
+            "parse_tasklist"     ,
+            "parse_TaskCSV"      ,
+            "pop_list"           ,
+            "process_backgrounds",
+            "process_list"       ,
+            "ProcessListGateway" ,
+            "PopListGateway"     ,
+            "CheckGateway"       ,
+            "gateway_os_pid"     ,
+            "StoreSnapShot"
+
+	END CLASS
+
+ENDROUTINE { BG_TASK_FORM_class_init }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_class_initialisation ( self )
+
+	DECLARE path, len, search_array, status, command, log_out, line_var, cmd_out, aPos, aDrive
+
+	{ --------------------------------------------------------------------------------- }
+	{ Get details of the OS and instance and how to do the commands to list tasks       }
+	{ --------------------------------------------------------------------------------- }
+
+	global_client_server_names ( self.aClient, self.aServer )
+
+	self.SnapShotMode       = FALSE
+	self.smp_version        = SUBSTITUTE ( smp_version_number(), " ", "" )
+	self.smp_version        = SUBSTITUTE ( smp_version_number(), ".", "" )
+	self.show_all_users     = ( SELECT CONFIG_HEADER.VALUE WHERE IDENTITY = "SHOW_ALL_USERS" )
+	self.ProductName        = registry_get_value ( G_REG_HKEY_LOCAL_MACHINE, G_REG_WINNT_CURRENT_VERSION, "ProductName"    )
+	self.SystemRoot         = registry_get_value ( G_REG_HKEY_LOCAL_MACHINE, G_REG_WINNT_CURRENT_VERSION, "SystemRoot"     )
+	self.os_version         = registry_get_value ( G_REG_HKEY_LOCAL_MACHINE, G_REG_WINNT_CURRENT_VERSION, "CurrentVersion" )
+	self.own_pid            = STRIP ( GLOBAL ( "PROCESS_ID") )
+	self.instance           = STRIP ( GLOBAL ( "INSTANCE"  ) )
+	self.output             = LOGICAL ( "SMP$TEXTREPORTS" ) : "\spawn" : self.own_pid : ".out"
+	self.kill_cmd           = ""
+	self.task_cmd           = ""
+	self.task_cmd_prefix    = ""
+	self.task_cmd_suffix    = ""
+	self.service_cmd_prefix = "tasklist /v /nh /fo " : ASCII(34):"CSV":ASCII(34):" /fi " : ASCII(34 ) : "SERVICES eq "
+	self.lice_mess          = "No.Server.License.Manager"
+
+	{ --------------------------------------------------------------- }
+	{ These arrays are used for input of the submenus for all options }
+	{ --------------------------------------------------------------- }
+
+	ARRAY self.GateWayArray
+	ARRAY self.logs_menu_array
+	ARRAY self.logs_program_array
+	ARRAY self.shut_title_array
+	ARRAY self.shut_bg_array
+	ARRAY self.bg_title_array
+	ARRAY self.start_bg_array
+	ARRAY self.stop_bg_array
+
+	{ ------------------------------ }
+	{ First make start.stop category }
+	{ ------------------------------ }
+
+	self.bg_title_array[1] = internal_MSG ( "BG_W_CATEGORY_SMIDI", 1 )
+	self.start_bg_array[1] = G_TYPE_SMIDI
+	self.stop_bg_array [1] = G_TYPE_SMIDI
+
+	self.bg_title_array[2] = internal_MSG ( "BG_W_CATEGORY_BG_MGR", 1 )
+	self.start_bg_array[2] = G_TYPE_BG_MGR
+	self.stop_bg_array [2] = G_TYPE_BG_MGR
+
+	{ ---------------------------------------------------------------------------- }
+	{ Buttons where "prompt id" is what is used by SC command to start/stop srvc   }
+	{ ---------------------------------------------------------------------------- }
+
+	path = SELECT SMP_BACKGROUND.SERVICE
+	       WHERE active         = TRUE
+	       AND   create_service = FALSE
+	       AND   removeflag     = FALSE
+	       ORDER ON service ASCENDING
+
+	WHILE ( path <> EMPTY ) DO
+
+		len = SELECT smp_background.description
+
+		IF ( len <> EMPTY ) AND NOT BLANK ( len )
+
+			status = SIZE_OF_ARRAY ( self.bg_title_array ) + 1
+			self.bg_title_array[status] = len
+			self.start_bg_array[status] = path
+			self.stop_bg_array [status] = path
+
+			status = SIZE_OF_ARRAY ( self.logs_menu_array ) + 1
+			self.logs_program_array[status] = SELECT smp_background.logfile_mask
+			self.logs_menu_array[status]    = len
+
+			IF ( SELECT smp_background.service_category = G_SMIDI_CATEGORY )
+
+				status                        = SIZE_OF_ARRAY ( self.shut_title_array ) + 1
+				self.shut_title_array[status] = len
+				self.shut_bg_array   [status] = path
+
+			ENDIF
+
+		ENDIF
+
+		NEXT SMP_BACKGROUND
+		path = SELECT smp_background.service
+
+	ENDWHILE
+
+	{ ------------------------------ }
+	{ Tack on shutdown all services  }
+	{ ------------------------------ }
+
+	status                        = SIZE_OF_ARRAY ( self.shut_title_array ) + 1
+	self.shut_title_array[status] = internal_MSG ( "BG_W_SHUTFLAG_ALL", 1 )
+
+	{ ------------------------------------------------- }
+	{ Tack on logfiles RPT files                        }
+	{ ------------------------------------------------- }
+
+	status                          = SIZE_OF_ARRAY ( self.logs_program_array ) + 1
+	self.logs_program_array[status] = "SMP$TEXTREPORTS\*.rpt"
+	status                          = SIZE_OF_ARRAY ( self.logs_menu_array ) + 1
+	self.logs_menu_array   [status] = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_3", 1 )
+
+	{ ------------------------------------------------- }
+	{ IF SMidi is installed tack on all these logfiles  }
+	{ ------------------------------------------------- }
+
+	IF VALID_TABLE ( "SMIDI_SYSTEM" )
+
+		status                            = SIZE_OF_ARRAY ( self.logs_program_array ) + 1
+		self.logs_program_array[status]   = "SMP$LOGFILES\smidi\*max*.log"
+		self.logs_program_array[status+1] = "SMP$LOGFILES\smidi\*.smidi*"
+		self.logs_program_array[status+2] = "SMP$LOGFILES\smidi\*.log"
+
+		status                         = SIZE_OF_ARRAY ( self.logs_menu_array ) + 1
+		self.logs_menu_array[status]   = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_1", 1 )
+		self.logs_menu_array[status+1] = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_2", 1 )
+		self.logs_menu_array[status+2] = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_4", 1 )
+
+	ENDIF
+
+	{ ----------------------------------------------------------------------------- }
+	{ Tack on logfiles for SM10+                                                    }
+	{ ----------------------------------------------------------------------------- }
+
+	IF self.smp_version <> "921"
+
+		status                            = SIZE_OF_ARRAY ( self.logs_program_array ) + 1
+		self.logs_program_array[status]   = "SMP$LOGFILES\Samplemanagerbatch*.log"
+		self.logs_program_array[status+1] = "SMP$LOGFILES\Samplemanagerservererror*.log"
+		self.logs_program_array[status+2] = "SMP$LOGFILES\Samplemanagercommand*.log"
+		self.logs_program_array[status+3] = "SMP$LOGFILES\Samplemanagertimerqueueservice*.log"
+
+		status                            = SIZE_OF_ARRAY ( self.logs_menu_array ) + 1
+		self.logs_menu_array[status]      = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_5", 1 )
+		self.logs_menu_array[status+1]    = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_6", 1 )
+		self.logs_menu_array[status+2]    = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_7", 1 )
+		self.logs_menu_array[status+3]    = internal_msg ( "BG_LOGS_SUBMENU_CAPTION_8", 1 )
+
+	ENDIF
+
+	{ ----------------------------------------------------------------------------- }
+	{ Build the command strings to find users and kill users                        }
+	{ ----------------------------------------------------------------------------- }
+
+	path = lib_utils_logical_containing_file ( "SMP$PROGRAMS", "SMP.EXE" )
+
+	IF ( self.show_all_users )
+
+		self.smp_cmd = ASCII(34) : path : "\smp" : ASCII(34) : " -users "
+
+	ELSE
+
+		self.smp_cmd = ASCII(34) : path : "\smp" : ASCII(34) : " -users -instance " : self.instance
+
+	ENDIF
+
+	IF self.os_version >= 5.1
+
+		self.task_cmd_prefix      = "tasklist /v /nh /fo " : ASCII(34):"CSV":ASCII(34):" /fi " : ASCII(34 ) : "imagename eq "
+		self.task_cmd_suffix      = ASCII(34) : " >> " : ASCII(34) : self.output : ASCII(34)
+		self.task_cmd_suffix_no32 = self.task_cmd_suffix
+
+		{ -------------------  cater to the 64 bit architecture ---------------------- }
+
+		IF ( TOUPPER ( LOGICAL ( "PROCESSOR_ARCHITECTURE" )) = "AMD64" ) OR ( TOUPPER ( LOGICAL ( "PROCESSOR_ARCHITEW6432" )) = "AMD64" )
+
+			{ Support mentioned the *32 may be required, but testing this did not work Oct 18 2012     }
+			{ self.task_cmd_suffix = " *32" : ASCII(34) : " >> " : ASCII(34) : self.output : ASCII(34) }
+
+		ENDIF
+
+		self.task_cmd = self.task_cmd_prefix : "smp.exe"                     : ASCII(34) : " > "  : ASCII(34) : self.output : ASCII(34) : " & "  :
+                                self.task_cmd_prefix : "SampleManager.exe"           : self.task_cmd_suffix                                     : " & "  :
+                                self.task_cmd_prefix : "SampleManagerCommand.exe"    : self.task_cmd_suffix                                     : " & "  :
+                                self.task_cmd_prefix : "SampleManagerServerHost.exe" : self.task_cmd_suffix
+
+		FILE FIND self.system_root : "\taskkill.exe", search_array, status
+
+		IF status <> EMPTY
+
+			FILE FIND self.system_root : "\system32\taskkill.exe", search_array, status
+
+		ENDIF
+
+		IF ( status = EMPTY )
+
+			self.kill_cmd = "taskkill  /f /pid"
+
+		ENDIF
+
+	ELSE
+
+		FILE FIND self.system_root : "\kill.exe", search_array, status
+
+		IF status <> EMPTY
+
+			FILE FIND self.system_root : "\system32\kill.exe", search_array, status
+
+		ENDIF
+
+		IF ( status = EMPTY )
+
+			self.kill_cmd = "kill"
+
+		ENDIF
+
+	ENDIF
+
+	{ ----------------------------------------------------------------------------- }
+	{ Build Menu options that replace Server Manager                                }
+	{ ----------------------------------------------------------------------------- }
+
+	ARRAY self.SvrMgrMenuArray
+
+	self.SvrMgrMenuArray[ 1] = internal_msg ( "SERVER_MANAGER_HEADER", 1 )
+
+	self.SvrMgrMenuArray[ 2] = internal_msg ( "BG_CREATEMESSAGE" , 1 )
+	self.SvrMgrMenuArray[ 3] = internal_msg ( "BG_EDITMESSAGE"   , 1 )
+	self.SvrMgrMenuArray[ 4] = internal_msg ( "BG_EDIT1MSGFILE"  , 1 )
+
+	self.SvrMgrMenuArray[ 5] = internal_msg ( "BG_EDITSTRUCTURE" , 1 )
+	self.SvrMgrMenuArray[ 6] = internal_msg ( "BG_CREATEENTITY"  , 1 )
+	self.SvrMgrMenuArray[ 7] = internal_msg ( "BG_CONVERTANALYZE", 1 )
+	self.SvrMgrMenuArray[ 8] = internal_msg ( "BG_CONVERTTABLE"  , 1 )
+	self.SvrMgrMenuArray[ 9] = internal_msg ( "BG_CONVERTINDEXES", 1 )
+	self.SvrMgrMenuArray[10] = internal_msg ( "BG_CONVERT1TABLE" , 1 )
+
+	self.SvrMgrMenuArray[11] = internal_msg ( "BG_TABLE_LOAD"    , 1 )
+	self.SvrMgrMenuArray[12] = internal_msg ( "BG_TABLE_SAVE"    , 1 )
+
+	self.SvrMgrMenuArray[13] = internal_msg ( "BG_IMPORT_EXPORT" , 1 )
+	self.SvrMgrMenuArray[14] = internal_msg ( "BG_IMPORT_MODE"   , 1 )
+	self.SvrMgrMenuArray[15] = internal_msg ( "BG_IMPORT_BUILD"  , 1 )
+	self.SvrMgrMenuArray[16] = internal_msg ( "BG_EXPORT_MODE"   , 1 )
+	self.SvrMgrMenuArray[17] = internal_msg ( "BG_EXPORT_BUILD"  , 1 )
+	self.SvrMgrMenuArray[18] = internal_msg ( "BG_LOAD_MTB"      , 1 )
+	self.SvrMgrMenuArray[19] = internal_msg ( "BG_LOAD_PKG"      , 1 )
+	self.SvrMgrMenuArray[20] = internal_msg ( "BG_XFER_PKG"      , 1 )
+	self.SvrMgrMenuArray[21] = internal_msg ( "BG_FIND_PKG"      , 1 )
+	self.SvrMgrMenuArray[22] = internal_msg ( "BG_LAB_DELETE"    , 1 )
+	self.SvrMgrMenuArray[23] = internal_msg ( "BG_LAB_SHEET"     , 1 )
+	self.SvrMgrMenuArray[24] = internal_msg ( "BG_SYSTEM_CONFIG" , 1 )
+	self.SvrMgrMenuArray[25] = internal_msg ( "BG_SYSTEM_SETUP"  , 1 )
+
+	ARRAY self.SvrMgrArray
+
+	self.SvrMgrArray[ 1] = "internalSvrMgr_btn"
+	self.SvrMgrArray[ 2] = "internal_run_Create_Message"
+	self.SvrMgrArray[ 3] = "internal_EditMessage"
+	self.SvrMgrArray[ 4] = "internal_Edit_1_MsgFile"
+	self.SvrMgrArray[ 5] = "internal_Edit_Structure"
+	self.SvrMgrArray[ 6] = "internal_run_create_structure"
+	self.SvrMgrArray[ 7] = "internal_run_convert_table_analyze"
+	self.SvrMgrArray[ 8] = "internal_run_convert_table_convert"
+	self.SvrMgrArray[ 9] = "internal_run_convert_table_indexes"
+	self.SvrMgrArray[10] = "internal_run_convert_table_interactive"
+
+	self.SvrMgrArray[11] = "internal_run_table_load"
+	self.SvrMgrArray[12] = "internal_run_table_save"
+
+	self.SvrMgrArray[13] = "internal_edit_import_export"
+	self.SvrMgrArray[14] = "internal_run_import_mode"
+	self.SvrMgrArray[15] = "internal_run_import_build"
+	self.SvrMgrArray[16] = "internal_run_export_mode"
+	self.SvrMgrArray[17] = "internal_run_export_build"
+	self.SvrMgrArray[18] = "internal_run_load_mtb"
+	self.SvrMgrArray[19] = "internal_run_load_pkg"
+	self.SvrMgrArray[20] = "internal_run_xfer_pkg"
+	self.SvrMgrArray[21] = "internal_run_find_pkg"
+	self.SvrMgrArray[22] = "internal_run_lab_delete"
+	self.SvrMgrArray[23] = "internal_run_lab_sheet"
+	self.SvrMgrArray[24] = "internal_run_SMConfig"
+	self.SvrMgrArray[25] = "internal_run_SMSetup"
+
+	{ ----------------------------------------------------------------------------- }
+	{ Tack on information from the license manager                                  }
+	{ ----------------------------------------------------------------------------- }
+
+	IF ( FILE EXISTS ( LOGICAL ("SMP$LICENSE") :"\": G_UTIL_LICE_EXE ))
+
+		aDrive         = lib_utils_logical_to_string ("SMP$LICENSE"  )
+		command        = aDrive : "\": G_UTIL_LICE_EXE : G_UTIL_LICE_PARAM
+		cmd_out        = lib_utils_logical_to_string ("SMP$LOGFILES" ) : "\licence-" : GLOBAL ("PROCESS_ID") : ".bat"
+		log_out        = lib_utils_logical_to_string ("SMP$LOGFILES" ) : "\licence-" : GLOBAL ("PROCESS_ID") : ".log"
+		aPos           = INDEX ( aDrive, ":" )
+		aDrive         = LEFTSTRING ( aDrive, aPos )
+		self.lice_mess = ""
+
+		FILE DELETE cmd_out, status
+		FILE DELETE log_out, status
+
+		FILE CREATE cmd_out, status
+		FILE EXTEND cmd_out, status
+
+		FILE WRITE  cmd_out, aDrive, status
+		FILE WRITE  cmd_out, "cd \", status
+		FILE WRITE  cmd_out, "cd " : lib_utils_logical_to_string ("SMP$LICENSE"), status
+		FILE WRITE  cmd_out, command: " >> " : log_out : " 2>&1", status
+
+		FILE CLOSE  cmd_out, status
+
+		SPAWN cmd_out, status QUIETLY
+
+		FILE OPEN log_out, status
+		FILE READ log_out, line_var, status
+
+		WHILE ( status = EMPTY ) DO
+
+			FILE READ log_out, line_var, status
+			line_var = STRIP ( line_var ) # ASCII(13) # ASCII(11)
+
+			window_set_status ( line_var )
+
+			IF ( INDEX ( line_var, "Users of " ) > 0 )
+
+				IF BLANK ( self.lice_mess )
+
+					self.lice_mess = line_var # "Users of " # " licenses" # " license"
+				ELSE
+
+					self.lice_mess = self.lice_mess : G_UTIL_LICE_DELIM : line_var # "Users of " # " licenses" # " license"
+				ENDIF
+			ENDIF
+
+		ENDWHILE
+
+		FILE CLOSE  log_out, status
+		FILE DELETE log_out, status
+		FILE DELETE cmd_out, status
+
+	ENDIF
+
+ENDROUTINE { BG_TASK_FORM_class_initialisation }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_process_list ( self )
+
+	DECLARE status
+
+	ARRAY self.data ARRAYSIZE ( 0, 9 )
+
+	status = lib_utils_spawn_with_log ( self.smp_cmd, self.output )
+
+	IF ( status <> EMPTY )
+
+		FILE DELETE self.output
+		fatal_error ( status )
+
+	ENDIF
+
+	self.parse_sm()
+
+	IF self.os_version >= 5.1
+
+		SPAWN self.task_cmd, status QUIETLY
+
+		IF ( status <> EMPTY )
+
+			FILE DELETE self.output
+			fatal_error ( status )
+
+		ENDIF
+
+		self.parse_tasklist()
+		self.process_backgrounds()
+
+	ENDIF
+
+	self.pop_list()
+
+ENDROUTINE { BG_TASK_FORM_action_process_list }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_process_backgrounds ( self )
+
+	DECLARE a_rec, status
+
+	a_rec = self.task_cmd_prefix : "SampleManagerCommand.exe" : self.task_cmd_suffix
+
+	SPAWN a_rec, status QUIETLY
+
+	IF ( status <> EMPTY )
+
+		FILE DELETE self.output
+		fatal_error ( status )
+
+	ELSE
+
+		self.parse_tasklist()
+
+	ENDIF
+
+ENDROUTINE    { BG_TASK_FORM_action_process_backgrounds }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_parse_sm ( self )
+
+	DECLARE status, line_in, loop, instance
+
+	loop        = 0
+	self.id_ref = "         "
+
+	IF FILE EXISTS (self.output)
+
+		ARRAY self.data
+
+		FILE OPEN self.output, status
+
+		FILE READ self.output, line_in, status    { Get past title bars, get to first line of users }
+		FILE READ self.output, line_in, status
+		FILE READ self.output, line_in, status    { Starting with this line, parse into the fields  }
+
+		WHILE ( line_in <> EMPTY ) AND ( status = EMPTY ) DO
+
+			instance = STRIP ( SUBSTRING ( line_in, 18, 10 ) )
+
+			IF ( instance = self.instance ) OR ( self.show_all_users )
+
+				{ -----------
+
+				Count Mode       Instance   SM User    Node Name       OS User         ID      
+				----- ---------- ---------- ---------- --------------- --------------- --------
+				12345 7890123456 89X1234567 89X1234567 89X123456789x12 456789x12345678 x1234567
+				         1         2          3          4         5         6         7
+				      1234567890 1234567890 1234567890 123456789x12345 123456789x12345 12345678
+				    1 Foreground S1001      SYSTEM     usphi-mmadlp2   mike.maddox         6356
+
+				1.5   7.10       18.10      28.10      38.15           54.15           70.8
+
+				----------- }
+
+				loop                  = loop + 1
+				self.data [ loop, 1 ] = STRIP ( SUBSTRING ( line_in, 7,  10 ) )                      { Mode     }
+				self.data [ loop, 2 ] = instance                                                     { Instance }
+				self.data [ loop, 3 ] = STRIP ( SUBSTRING ( line_in, 28, 10 ) )                      { SM User  }
+				self.data [ loop, 4 ] = STRIP ( SUBSTRING ( line_in, 70, 10 ) )                      { PID      }
+				self.data [ loop, 7 ] = STRIP ( SUBSTRING ( line_in, 54, 15 ) )                      { OS User  }
+				self.data [ loop, 9 ] = STRIP ( SELECT PERSONNEL.DESCRIPTION WHERE IDENTITY = self.data[loop,3] )
+
+				{ - - - - - - catenate all ID's with space padded to 10 to cross search this list - - - - - - - }
+
+				self.id_ref = self.id_ref : PAD ( self.data [ loop, 4 ], " ", 10 )
+
+				IF ( self.data[loop,3] = "BACKGROUND" ) OR ( self.data[loop,3] = "BATCH" )
+
+					status = SELECT smp_background.description WHERE current_pid = self.data[loop,4]
+
+					IF status = EMPTY   { not found, then use what SM gives us (not much) }
+
+						self.data[loop,9] = internal_msg ( "BG_WDT", 1 )
+
+					ELSE    { found cross reference in smp_background by current pid, use values from this table }
+
+						self.data[loop,3] = STRIP ( SELECT smp_background.service )
+						self.data[loop,9] = STRIP ( status )
+
+					ENDIF
+
+				ENDIF
+
+			ENDIF
+
+			FILE READ self.output, line_in, status
+
+		ENDWHILE
+
+		FILE CLOSE self.output, status
+
+		IF loop = 0
+			FILE SEND self.output, "DISPLAY/"
+		ELSEIF G_DEBUG = TRUE
+			FILE SEND self.output, "DISPLAY/"
+		ELSE
+			FILE DELETE self.output, status
+		ENDIF
+
+	ELSE
+
+		status = internal_MSG ( "BG_NO_SMP_SPAWN", 1 )
+		fatal_error ( status )
+
+	ENDIF
+
+ENDROUTINE { BG_TASK_FORM_action_parse_sm }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_parse_tasklist ( self )
+
+	DECLARE row, status, line_in, ndex
+
+	self.a_imagename   = ""
+	self.a_pid         = ""
+	self.a_SessionName = ""
+	self.a_SessionNo   = ""
+	self.a_memory      = ""
+	self.a_status      = ""
+	self.a_domain_user = ""
+	self.a_cpu         = ""
+	self.a_title       = ""
+
+	FILE OPEN self.output, status
+	FILE READ self.output, line_in, status
+
+	WHILE ( line_in <> EMPTY ) AND ( status = EMPTY ) DO
+
+		IF  ( NOT BLANK ( line_in )                     )
+		AND ( INDEX ( line_in, G_NO_TASKS_RUNNING ) = 0 )
+
+			IF self.os_version <= 5.1
+
+				self.a_pid = STRIP ( SUBSTRING ( line_in, 27, 6 ) )
+
+			ELSE
+
+				self.parse_taskCSV ( line_in )
+
+			ENDIF
+
+			row = INDEX ( self.id_ref, self.a_pid ) / 10   { find smp -users PID }
+
+			IF ( row > 0 )
+
+				self.data [ row, 10 ] = self.a_imagename
+				self.data [ row, 11 ] = self.a_title
+
+				IF self.os_version <= 5.1
+
+					self.data [ row, 5 ] = STRIP ( SUBSTRING ( line_in,  60, 12 ) )
+					self.data [ row, 6 ] = STRIP ( SUBSTRING ( line_in, 140, 12 ) )
+					self.data [ row, 8 ] = STRIP ( SUBSTRING ( line_in,  89, 49 ) )
+
+				ELSE
+
+					self.data [ row, 5 ] = self.a_memory
+					self.data [ row, 6 ] = self.a_cpu
+					self.data [ row, 8 ] = self.a_domain_user
+
+				ENDIF
+
+			ELSEIF  ( self.os_version > 5.1                                     )
+			AND NOT ( internal_array_2_slice ( self.data, self.a_pid, ndex, 4 ) )
+			AND     ( self.show_all_users                                       )
+
+				row                   = SIZE_OF_ARRAY ( self.data ) + 1
+				self.data [ row, 1  ] = "SM-Client"
+				self.data [ row, 2  ] = self.a_SessionName
+				self.data [ row, 3  ] = self.a_SessionNo
+				self.data [ row, 4  ] = self.a_pid
+				self.data [ row, 5  ] = self.a_memory
+				self.data [ row, 6  ] = self.a_cpu
+				self.data [ row, 8  ] = self.a_domain_user
+				self.data [ row, 9  ] = self.a_imagename
+				self.data [ row, 10 ] = self.a_imagename
+				self.data [ row, 11 ] = self.a_title
+
+			ENDIF
+
+		ENDIF  { blank line }
+
+		FILE READ self.output, line_in, status
+
+	ENDWHILE
+
+	FILE CLOSE self.output, status
+
+	IF G_DEBUG = TRUE
+		FILE SEND self.output, "Display/"
+	ENDIF
+
+	FILE DELETE self.output, status
+
+ENDROUTINE { BG_TASK_FORM_action_parse_tasklist }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_parse_TaskCSV ( self, VALUE line_in )
+
+	self.a_imagename   = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_pid         = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_SessionName = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_SessionNo   = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_memory      = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_status      = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_domain_user = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_cpu         = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+	self.a_title       = SUBSTITUTE ( SUBSTITUTE ( get_token ( line_in, ASCII(34):"," ), ASCII(34), "" ), "," , "" )
+
+ENDROUTINE   { BG_TASK_FORM_action_parse_TaskCSV }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_pop_list ( self )
+
+	DECLARE arr_size, loop
+
+	IF NOT self.SnapShotMode
+
+		self.list.remove_all_items()
+
+	ENDIF
+
+	loop     = 0
+	arr_size = SIZE_OF_ARRAY ( self.data )
+
+	WHILE ( loop < arr_size ) DO
+
+		loop = loop + 1
+
+		IF self.SnapShotMode
+
+			self.StoreSnapShot( loop )
+
+		ELSE
+
+			self.list.insert_item ( self.data [ loop, 1 ] , 0 )
+			self.list.set_item ( 2, self.data [ loop, 2 ] )
+			self.list.set_item ( 3, self.data [ loop, 3 ] )
+			self.list.set_item ( 4, self.data [ loop, 4 ] )
+			self.list.set_item ( 5, self.data [ loop, 5 ] )
+			self.list.set_item ( 6, self.data [ loop, 6 ] )
+			self.list.set_item ( 7, self.data [ loop, 7 ] )
+			self.list.set_item ( 8, self.data [ loop, 8 ] )
+			self.list.set_item ( 9, self.data [ loop, 9 ] )
+
+		ENDIF
+
+	ENDWHILE
+
+	IF self.SnapShotMode
+
+		FLASH_MESSAGE ( "BG_W_SNAPSHOTSERVERDONE", TRUE )
+
+	ELSE
+
+		self.ProcessListGateway()
+
+	ENDIF
+
+ENDROUTINE { BG_TASK_FORM_action_pop_list }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_StoreSnapShot ( self, loop )
+
+	DECLARE aRec, aDate, aHour, aMinute, ServDate, status, aUser, aMem, aCpu, aMode, aCmd, aTitle
+
+	ServDate = NOW
+	aUser    = self.data[loop, 3]
+	aMem     = self.data[loop, 5] # "K" # "M"
+	aCpu     = self.data[loop, 6]
+	aMode    = self.data[loop, 1] = internal_msg ( "BG_FOREGROUND", 1 )
+	aTitle   = self.data[loop, 9]
+	aCmd     = self.data[loop,10]
+
+	IF NUMTEXT ( aMem )
+		aMem = NUMERIC ( aMem )
+	ELSE
+		aMem = -1
+	ENDIF
+
+	IF is_interval ( aCpu )
+		aCPU = interval ( aCpu )
+	ELSE
+		aCPU = interval ( "0 00:00:00" )
+	ENDIF
+
+	START WRITE TRANSACTION C_TRANSACTION_SNAPSHOT
+
+	SET DATE FORMAT "MON-DZ-YYYZ"
+		aDate = STRIP ( ServDate )
+	RESTORE DATE FORMAT
+
+	SET DATE FORMAT "H24"
+		aHour = STRIP ( ServDate )
+	RESTORE DATE FORMAT
+
+	SET DATE FORMAT "MI"
+		aMinute = STRIP ( ServDate )
+	RESTORE DATE FORMAT
+
+	aRec = PACKED_DECIMAL ( self.data[loop,4] ) : aDate : aHour : aMinute
+
+	RESERVE ENTRY smp_sessions, aRec, status
+
+	IF status = EMPTY
+
+		window_set_status ( aRec )
+
+		ASSIGN smp_sessions.session_operator = aUser
+		ASSIGN smp_sessions.session_memory   = aMem
+		ASSIGN smp_sessions.session_cpu      = aCpu
+		ASSIGN smp_sessions.session_mode     = aMode
+		ASSIGN smp_sessions.session_cmd      = aCmd
+		ASSIGN smp_sessions.session_title    = aTitle
+		ASSIGN smp_sessions.server_date      = ServDate
+		ASSIGN smp_sessions.session_date     = aDate : "-" : aHour : "-" : aMinute
+		ASSIGN smp_sessions.session_day_hr   = aDate : "-" : aHour
+
+		UPDATE smp_sessions, status
+
+		IF status <> EMPTY
+
+			FLASH_MESSAGE ( aRec:" ":status, TRUE )
+
+		ENDIF
+
+	ELSE
+
+		FLASH_MESSAGE ( aRec:" ":status, TRUE )
+
+	ENDIF
+
+	COMMIT
+
+ENDROUTINE   { bg_task_form_action_storesnapshot }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_ProcessListGateway ( self )
+
+	IF ( VALID_TABLE ( "SMIDI_SYSTEM" ) )
+
+		self.CheckGateway()
+		self.PopListGateway()
+
+	ENDIF
+
+ENDROUTINE { BG_TASK_FORM_action_ProcessListGateway }
+
+{***************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_PopListGateway ( stform )
+
+	DECLARE cnt
+
+	stform.ListGateWay.remove_all_items()
+
+	cnt = 1
+
+	WHILE ( stform.GateWayArray[cnt,1] <> EMPTY ) DO
+
+		stform.listGateway.insert_item ( stform.GatewayArray [ cnt, 1 ] , 0 )
+		stform.listGateway.set_item    ( 2, stform.GateWayArray [ cnt, 2 ]  )
+		stform.listGateway.set_item    ( 3, stform.GateWayArray [ cnt, 3 ]  )
+		stform.listGateway.set_item    ( 4, stform.GateWayArray [ cnt, 5 ]  )
+		stform.listGateway.set_item    ( 5, stform.GateWayArray [ cnt, 6 ]  )
+		stform.listGateway.set_item    ( 6, stform.GateWayArray [ cnt, 7 ]  )
+		cnt = cnt + 1
+
+	ENDWHILE
+
+ENDROUTINE { BG_TASK_FORM_action_PopListGateway }
+
+{******************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_CheckGateway ( self )
+
+	DECLARE count, a_reg, srv_count
+
+	ARRAY self.GatewayArray
+	ARRAY self.data
+
+	srv_count           = 0
+	count               = 1
+	retval              = FALSE
+	a_reg               = registry_enum_key ( HKEY_LOCAL_MACHINE, G_REG_THERMO_SOFTWARE, srv_count )
+
+	WHILE ( a_reg <> EMPTY ) DO
+
+		IF ( TOUPPER ( LEFTSTRING ( a_reg, 5 ) ) = C_GATEWAY_PREFIX )
+
+			self.GatewayArray[count,1] = a_reg
+			self.GatewayArray[count,2] = registry_get_value ( HKEY_LOCAL_MACHINE, G_REG_THERMO_SOFTWARE :"\": STRIP ( a_reg ) :"_instance", "smp$programs" )
+			self.GatewayArray[count,3] = internal_get_dll_version ( self.GatewayArray[count,2] )
+			self.GatewayArray[count,4] = registry_get_value ( HKEY_LOCAL_MACHINE, G_REG_THERMO_SOFTWARE :"\": STRIP ( a_reg ) :"_instance", "smp$logfiles" )
+
+			self.gateway_os_pid ( count, a_reg )
+
+			count = count + 1
+
+		ENDIF
+
+		srv_count = srv_count + 1
+		a_reg     = registry_enum_key ( HKEY_LOCAL_MACHINE, G_REG_THERMO_SERVICES, srv_count )
+
+
+	ENDWHILE
+
+ENDROUTINE      {  BG_TASK_FORM_action_check_gateway }
+
+{******************************************************************************}
+
+ROUTINE BG_TASK_FORM_action_gateway_os_pid ( self, VALUE count, VALUE a_id )
+
+	DECLARE a_rec, status
+
+	a_rec = self.service_cmd_prefix : a_id : self.task_cmd_suffix_no32
+
+	SPAWN a_rec, status QUIETLY
+
+	IF ( status <> EMPTY )
+
+		FILE DELETE self.output
+		fatal_error ( status )
+
+	ELSE
+
+		self.id_ref = "      "
+		self.parse_tasklist()
+
+	ENDIF
+
+	self.GatewayArray[count,5] = self.a_pid
+	self.GatewayArray[count,6] = self.a_memory
+	self.GatewayArray[count,7] = self.a_cpu
+
+ENDROUTINE   { BG_TASK_FORM_action_gateway_os_pid }
+
+{*****************************************************************************}
+
+ROUTINE internal_services_need_create
+
+	DECLARE a_rec
+
+	a_rec = SELECT SMP_BACKGROUND.SERVICE
+	        WHERE create_service = TRUE
+	        and   removeflag     = FALSE
+	        and   date_created   = NULL
+
+	RETURN ( a_rec <> EMPTY )
+
+ENDROUTINE     { internal_services_need_create }
+
+{*****************************************************************************}
+
+ROUTINE internal_click_gateway_btn ( self )
+
+	DECLARE item_num, a_dir, a_gate, ndex
+
+	item_num = self.get_first_selected ( spare )
+
+	IF ( item_num <> EMPTY )
+
+	    	a_gate = self.get_item ( item_num, 0 )
+
+		IF ( internal_array_2_slice ( self.parentprompt.GatewayArray, a_gate, ndex, 1 ) )
+
+			a_dir = self.parentprompt.GatewayArray[ndex,2]
+
+			MenuFileManage ( a_dir : "\*.trc" )
+
+		ENDIF
+	ENDIF
+
+ENDROUTINE   { internal_click_gateway_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_RFCLogDebug_btn ( self )
+
+	DECLARE a_dir, ndex
+
+	IF ( internal_find_smp_gateway( spare ) )
+
+		IF ( internal_array_2_slice ( self.parentprompt.GatewayArray, spare, ndex, 1 ) )
+
+			a_dir = self.parentprompt.GatewayArray[ndex,4]
+
+			MenuFileManage ( a_dir : "\*.log" )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE    { internal_RFCLogFiles_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_RFCLogFiles_btn ( self )
+
+	DECLARE a_dir, ndex
+
+	IF ( internal_find_smp_gateway( spare ) )
+
+		IF ( internal_array_2_slice ( self.parentprompt.GatewayArray, spare, ndex, 1 ) )
+
+			a_dir = self.parentprompt.GatewayArray[ndex,2]
+
+			MenuFileManage ( a_dir : "\*.trc" )
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE    { internal_RFCLogFiles_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_GateWay_btn ( self )
+
+	smp_bg_restart_gateway ( "NotUsed" )
+
+ENDROUTINE   { internal_GateWay_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_EditServices_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_EDIT_SERVICES ) )
+
+ENDROUTINE   { internal_EditServices_btn }
+
+{*****************************************************************************}
+
+ROUTINE internalAbout_btn ( self )
+
+	DECLARE AboutArray
+
+	ARRAY AboutArray
+
+	AboutArray[1] = internal_msg ( "BG_ABOUT_SERVER", 1 ) : self.parent_prompt.aServer
+	AboutArray[2] = internal_msg ( "BG_ABOUT_CLIENT", 1 ) : self.parent_prompt.aClient
+	AboutArray[3] = internal_msg ( "BG_ABOUT_OSVERS", 1 ) : self.parent_prompt.os_version
+	AboutArray[4] = internal_msg ( "BG_ABOUT_PRDUCT", 1 ) : self.parent_prompt.ProductName
+	AboutArray[5] = internal_msg ( "BG_ABOUT_INSTAN", 1 ) : self.parent_prompt.instance
+	AboutArray[6] = internal_msg ( "BG_ABOUT_OWNPID", 1 ) : self.parent_prompt.own_pid
+	AboutArray[7] = "..."
+	AboutArray[8] = smp_version_text()
+
+	flash_messages( internal_msg ( "BG_W_ABOUT",1 ), "", AboutArray, FALSE )
+
+ENDROUTINE   { internalAbout_btn }
+
+{*****************************************************************************}
+
+ROUTINE internalSvrMgr_btn ( self )
+
+	MENUPROC ( G_MENUPROC_SERVER_MANAGER )
+
+ENDROUTINE   { internalSvrMgr_btn }
+
+{*****************************************************************************}
+
+ROUTINE internalSvrMgrMenu_btn ( self )
+
+	DECLARE i, action, aProgram
+
+	action = client_do_popup_menu ( self.parent_prompt.SvrMgrMenuArray, 0, 0, 0 )
+	i      = 1
+
+	WHILE i <= SIZE_OF_ARRAY ( self.parent_prompt.SvrMgrMenuArray ) DO
+
+		IF action = self.parent_prompt.SvrMgrMenuArray[i]
+
+			aProgram = self.parent_prompt.SvrMgrArray[i]
+			i        = 999999
+
+			CALL_ROUTINE aProgram IN LIBRARY "$BACKGROUND_MANAGER" USING self
+
+		ENDIF
+
+		i = i + 1
+
+	ENDWHILE
+
+ENDROUTINE   { internalSvrMgr_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_CreateServices_btn ( self )
+
+	IF ( internal_services_need_create() )
+
+		internal_create_background_services()
+		self.enabled = FALSE
+
+	ELSE
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_W_NO_SERVICES_TO_CREATE", 1 ), TRUE )
+
+	ENDIF
+
+ENDROUTINE   { internal_CreateServices_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_Logs_btn ( self )
+
+	DECLARE i, action
+
+	action = client_do_popup_menu ( self.parent_prompt.logs_menu_array, 0, 0, 0 )
+	i      = 1
+
+	WHILE i <= SIZE_OF_ARRAY ( self.parent_prompt.logs_menu_array ) DO
+
+		IF action = self.parent_prompt.logs_menu_array[i]
+
+			MenuFileManage ( self.parent_prompt.logs_program_array[i] )
+
+		ENDIF
+
+		i = i + 1
+
+	ENDWHILE
+
+ENDROUTINE   { internal_Logs_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_shutdown_btn ( self )
+
+	internal_toggle_shutdown ( "SHUTDOWN_ENABLED" )
+	self.parent_prompt.process_list()
+
+ENDROUTINE   { internal_shutdown_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_shut_btn ( self )
+
+	DECLARE i, action
+
+	IF ( SIZE_OF_ARRAY ( self.parent_prompt.shut_title_array ) = 0 )
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_W_NO_SERVICES_CREATED", 1 ), TRUE )
+
+	ELSE
+
+		action = client_do_popup_menu ( self.parent_prompt.shut_title_array, 0, 0, 0 )
+		i      = 1
+
+		WHILE i <= SIZE_OF_ARRAY ( self.parent_prompt.shut_title_array ) DO
+
+			IF ( action = self.parent_prompt.shut_title_array[i]     )
+			OR ( action = internal_MSG ( "BG_W_SHUTFLAG_ALL", 1 ) )
+
+				internal_toggle_shutdown ( G_SHUTDOWN_PREFIX : self.parent_prompt.shut_bg_array[i] )
+
+				IF ( action <> internal_MSG ( "BG_W_SHUTFLAG_ALL", 1 ) )
+
+					i = SIZE_OF_ARRAY ( self.parent_prompt.shut_title_array )
+
+				ENDIF
+			ENDIF
+
+			i = i + 1
+
+			IF ( self.parent_prompt.shut_bg_array[i] = EMPTY )
+
+				i = SIZE_OF_ARRAY ( self.parent_prompt.shut_title_array ) + 1
+
+			ENDIF
+
+		ENDWHILE
+
+	ENDIF
+
+	self.parent_prompt.process_list()
+
+ENDROUTINE   { internal_shut_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_start_btn ( self )
+
+	DECLARE i, action
+
+	IF ( SIZE_OF_ARRAY ( self.parent_prompt.bg_title_array ) = 0 )
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_W_NO_SERVICES_CREATED", 1 ), TRUE )
+
+	ELSE
+
+		action = client_do_popup_menu ( self.parent_prompt.bg_title_array, 0, 0, 0 )
+		i      = 1
+
+		WHILE i <= SIZE_OF_ARRAY ( self.parent_prompt.bg_title_array ) DO
+
+			IF action = self.parent_prompt.bg_title_array[i]
+
+				smp_background_services ( self, self.parent_prompt.smp_version, self.parent_prompt.start_bg_array[i], "START" )
+				i = SIZE_OF_ARRAY ( self.parent_prompt.bg_title_array )
+
+			ENDIF
+
+			i = i + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	self.parent_prompt.process_list()
+
+ENDROUTINE   { internal_start_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_stop_btn ( self )
+
+	DECLARE i, action
+
+	IF ( SIZE_OF_ARRAY ( self.parent_prompt.bg_title_array ) = 0 )
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_W_NO_SERVICES_CREATED", 1 ), TRUE )
+
+	ELSE
+
+		action = client_do_popup_menu ( self.parent_prompt.bg_title_array, 0, 0, 0 )
+		i      = 1
+
+		WHILE i <= SIZE_OF_ARRAY ( self.parent_prompt.bg_title_array ) DO
+
+			IF action = self.parent_prompt.bg_title_array[i]
+
+				smp_background_services ( self, self.parent_prompt.smp_version, self.parent_prompt.stop_bg_array[i], "STOP" )
+				i = SIZE_OF_ARRAY ( self.parent_prompt.stop_bg_array )
+
+			ENDIF
+
+			i = i + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	self.parent_prompt.process_list()
+
+ENDROUTINE   { internal_stop_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_start_all_btn ( self )
+
+	smp_background_services ( self, self.parent_prompt.smp_version, G_TYPE_ALL, "START" )
+
+ENDROUTINE {  internal_start_all_btn  }
+
+{*****************************************************************************}
+
+ROUTINE internal_stop_all_btn ( self )
+
+	smp_background_services ( self, self.parent_prompt.smp_version, G_TYPE_ALL, "STOP" )
+
+ENDROUTINE {  internal_stop_all_btn  }
+
+{*****************************************************************************}
+
+ROUTINE internal_start_smidi_btn ( self )
+
+	smp_background_services ( self, self.parent_prompt.smp_version, G_TYPE_SMIDI, "START" )
+
+ENDROUTINE {  internal_start_smidi_btn  }
+
+{*****************************************************************************}
+
+ROUTINE internal_stop_smidi_btn ( self )
+
+	smp_background_services ( self, self.parent_prompt.smp_version, G_TYPE_SMIDI, "STOP" )
+
+ENDROUTINE {  internal_stop_smidi_btn  }
+
+{*****************************************************************************}
+
+ROUTINE MENU_start_all_smidi ( a_menu )
+
+	a_menu = SUBSTITUTE ( SUBSTITUTE ( smp_version_number(), " ", "" ), ".", "" )
+
+	smp_background_services ( a_menu, a_menu, G_TYPE_SMIDI, "START" )
+
+ENDROUTINE {  MENU_start_all_smidi  }
+
+{*****************************************************************************}
+
+ROUTINE MENU_stop_all_smidi ( a_menu )
+
+	a_menu = SUBSTITUTE ( SUBSTITUTE ( smp_version_number(), " ", "" ), ".", "" )
+
+	smp_background_services ( a_menu, a_menu, G_TYPE_SMIDI, "STOP" )
+
+ENDROUTINE {  MENU_stop_all_smidi  }
+
+{*****************************************************************************}
+
+ROUTINE internal_start_1_service ( self )
+
+	smp_service_spawn ( self.prompt_id, "START" )
+
+ENDROUTINE {  internal_start_1_service  }
+
+{*****************************************************************************}
+
+ROUTINE internal_stop_1_service ( self )
+
+	smp_service_spawn ( self.prompt_id, "STOP" )
+
+ENDROUTINE {  internal_stop_1_service  }
+
+{*****************************************************************************}
+
+ROUTINE internal_start_WDT ( self )
+
+	wake_up_background
+
+	IF CONFIRM_WITH_TEXT ( internal_MSG ( "BG_W_START_WDT", 1 ) )
+
+		smp_service_spawn ( self.prompt_id, "START" )
+
+	ENDIF
+
+ENDROUTINE {  internal_start_WDT  }
+
+{*****************************************************************************}
+
+ROUTINE internal_stop_WDT ( self )
+
+	bsmp_rept_stop ( self.prompt_id )
+
+	IF CONFIRM_WITH_TEXT ( internal_MSG ( "BG_W_STOP_WDT", 1 ) )
+
+		smp_service_spawn ( self.prompt_id, "STOP" )
+
+	ENDIF
+
+ENDROUTINE {  internal_stop_WDT  }
+
+{*****************************************************************************}
+
+ROUTINE internal_refresh_users_btn ( self )
+
+	self.parent_prompt.process_list()
+
+ENDROUTINE {  internal_refresh_users_btn  }
+
+{*****************************************************************************}
+
+ROUTINE internal_orphans_btn ( self )
+
+	WDT_monitor_orphans ( self )
+
+ENDROUTINE { internal_orphans_btn }
+
+{******************************************************************************}
+
+ROUTINE internalSnapShot_btn ( self )
+
+	self.parent_prompt.SnapShotMode = TRUE
+
+	self.parent_prompt.process_list()
+
+	self.parent_prompt.SnapShotMode = FALSE
+
+ENDROUTINE   { InternalSnapShot_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_kill_btn ( self )
+
+	internal_kill_routine ( self.parent_prompt.list )
+
+ENDROUTINE { internal_kill_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_kill_routine ( self )
+
+	DECLARE item_num, process_mode, pid, status
+
+	item_num = self.get_first_selected ( process_mode )
+
+	IF ( item_num = EMPTY )
+
+		FLASH_MESSAGE ( "BG_W_KILL_PICK_REQUIRED", EMPTY )
+
+	ELSE
+
+		pid = self.get_item ( item_num, 3 )
+
+		IF STRIP(pid) = self.parent_prompt.own_pid
+
+			FLASH_MESSAGE ( "BG_W_KILL_YOURSELF", EMPTY )
+
+		ELSE
+
+			item_num = internal_MSG ( "BG_W_CONFIRM_KILL", 1 )
+
+			IF ( confirm_with_text ( item_num : " " : STRIP( pid ) ) )
+
+				SPAWN self.parent_prompt.kill_cmd : " " : pid, status QUIETLY
+
+				IF ( status <> EMPTY )
+					flash_message ( status, EMPTY )
+				ENDIF
+
+			ENDIF
+
+		ENDIF
+
+	ENDIF
+
+	self.parent_prompt.process_list()
+
+ENDROUTINE { internal_kill_routine }
+
+{******************************************************************************}
+
+ROUTINE internal_toggle_shutdown ( VALUE the_id )
+
+	DECLARE key0, status, a_table
+
+	status = LOCKED
+
+	IF ( the_id = "SHUTDOWN_ENABLED" )
+
+		a_table = "CONFIG_HEADER"
+		key0    = SELECT CONFIG_HEADER.VALUE FOR UPDATE WHERE IDENTITY = the_id
+
+	ELSE
+
+		a_table = "SMIDI_CONFIG_HEADER"
+		key0    = SELECT 'a_table'.VALUE FOR UPDATE WHERE IDENTITY = the_id
+
+	ENDIF
+
+	IF ( key0 <> EMPTY ) AND ( key0 <> LOCKED )
+
+		START WRITE TRANSACTION "SMP_SHUTDOWN"
+
+		ASSIGN 'a_table'.VALUE = NOT key0
+		UPDATE 'a_table', status
+
+		IF status = EMPTY
+
+			COMMIT
+			FLASH_MESSAGE ( a_table : " " : the_id : " " : NOT key0, TRUE )
+
+		ELSE
+
+			FLASH_MESSAGE ( a_table : " " : the_id : " " : status, TRUE )
+			ROLLBACK
+
+		ENDIF
+
+	ELSE
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_W_NO_SMP_SPAWN", 1 ) : " " : the_id, TRUE )
+
+	ENDIF
+
+	RETURN ( status = EMPTY )
+
+ENDROUTINE  { internal_toggle_shutdown }
+
+{******************************************************************************}
+
+ROUTINE smp_background_services ( self, VALUE smp_version, VALUE theType, VALUE mode )
+
+	DECLARE backgroundRec
+
+	window_set_status ( "Please wait...." )
+
+	IF theType = G_TYPE_ALL
+
+		backgroundRec = SELECT smp_background.service WHERE active = TRUE AND removeflag = FALSE
+
+	ELSEIF theType = G_TYPE_SMIDI
+
+		backgroundRec = SELECT smp_background.service WHERE active = TRUE AND removeflag = FALSE AND service_category = theType
+
+	ELSEIF theType = G_TYPE_BG_MGR
+
+		backgroundRec = SELECT smp_background.service WHERE active = TRUE AND removeflag = FALSE AND service_category = theType
+
+	ELSE
+
+		backgroundRec = SELECT smp_background.service WHERE service = theType AND active = TRUE AND removeflag = FALSE
+
+	ENDIF
+
+	IF backgroundRec <> EMPTY
+
+		WHILE ( backgroundRec <> EMPTY ) DO
+
+			IF smp_version = 921
+
+				backgroundRec = G_BG_PREFIX_921 : STRIP ( GLOBAL ( "INSTANCE" ) ) : "_" : STRIP ( backgroundRec )
+
+			ELSE
+
+				backgroundRec = G_BG_PREFIX : STRIP ( GLOBAL ( "INSTANCE" ) ) : "_" : STRIP ( backgroundRec )
+
+			ENDIF
+
+			smp_service_spawn ( backgroundRec, mode )
+
+			NEXT smp_background
+			backgroundRec = SELECT smp_background.service
+
+		ENDWHILE
+
+	ELSE
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_BACKGROUND_BG_29", 1 ), TRUE )
+
+	ENDIF
+
+	{ ---------------------------------------------------------------- }
+	{ Called from a menu you do not have the dashboard....             }
+	{ ---------------------------------------------------------------- }
+
+	IF ( STRIP ( TOUPPER ( VARIABLE_GET_TYPE ( self ) ) ) = "OBJECT" )
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_BACKGROUND_BG_FINISHED", 1 ):" ":C_SLEEP_REFRESH_INTERVAL, TRUE )
+
+		SLEEP FOR C_SLEEP_REFRESH_INTERVAL
+
+		internal_refresh_users_btn ( self )
+
+	ENDIF
+
+	window_set_status ( "All Done...." )
+
+ENDROUTINE   {  smp_background_services  }
+
+{******************************************************************************}
+
+ROUTINE smp_service_spawn ( VALUE svrName, VALUE mode )
+
+	DECLARE cmd, cmdlog, a_srv
+
+	global_server_name  ( a_srv )
+
+	cmdlog    = lib_utils_logical_to_string ( "smp$logfiles" ): "\start_stop_service.log"
+	cmd       = "sc \\" : a_srv : " " : mode : " " : svrName
+	tmpString = lib_utils_spawn_with_log ( cmd, cmdLog )
+
+	IF tmpString <> EMPTY
+
+		FLASH_MESSAGE ( tmpString, TRUE )
+
+	ELSE
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_W_FINISHED",1 ) : " " : a_srv : " " : svrName, TRUE )
+
+	ENDIF
+
+ENDROUTINE   { smp_service_spawn }
+
+{******************************************************************************}
+
+ROUTINE internal_create_background_services
+
+	DECLARE backgroundRec, upd_array, upd_cnt, a_cs, a_srv
+
+	global_client_server_names  ( a_cs, a_srv )
+
+	ARRAY upd_array
+
+	upd_cnt       = 0
+	backgroundRec = SELECT smp_background.service
+	                WHERE active       = TRUE
+	                AND removeflag     = FALSE
+	                AND create_service = TRUE
+	                AND date_created   = NULL
+
+	IF ( backgroundRec <> EMPTY )
+
+		WHILE ( backgroundRec <> EMPTY ) DO
+
+			upd_cnt              = upd_cnt + 1
+			upd_array[upd_cnt,1] = backgroundRec
+			upd_array[upd_cnt,2] = SELECT smp_background.vgl_library
+			upd_array[upd_cnt,3] = ( SELECT smp_background.service_category = G_SMIDI_CATEGORY )
+			upd_array[upd_cnt,4] = SELECT smp_background.service_type = G_TASK_VGL
+			upd_array[upd_cnt,5] = SELECT smp_background.service_category
+			upd_array[upd_cnt,6] = SELECT smp_background.user_id
+
+			NEXT smp_background
+			backgroundRec = SELECT smp_background.service
+
+		ENDWHILE
+
+		upd_cnt = 1
+
+		WHILE ( upd_array[upd_cnt,1] <> EMPTY ) DO
+
+			IF internal_smp_create_1_bg ( a_srv, upd_array, upd_cnt )
+
+				START WRITE TRANSACTION G_CREATE_BACKGROUND : upd_array[upd_cnt,1]
+
+				backgroundRec = SELECT smp_background.service FOR UPDATE WHERE service = upd_array[upd_cnt,1]
+
+				window_set_status ( backgroundRec )
+
+				IF ( backgroundRec <> EMPTY ) AND ( backgroundRec <> LOCKED )
+
+					ASSIGN smp_background.create_service = FALSE
+					ASSIGN smp_background.date_created   = NOW
+					UPDATE smp_background
+
+				ENDIF
+
+				COMMIT
+
+			ENDIF
+
+			upd_cnt = upd_cnt + 1
+
+		ENDWHILE
+
+	ELSE
+
+		FLASH_MESSAGE ( internal_MSG ( "BG_BACKGROUND_BG_28", 1 ), TRUE )
+
+	ENDIF
+
+	FLASH_MESSAGE ( internal_MSG ( "BG_BACKGROUND_BG_FINISHED", 1 ), TRUE )
+
+ENDROUTINE  { internal_create_background_services }
+
+{******************************************************************************}
+
+ROUTINE internal_smp_create_1_bg ( VALUE a_srv, upd_array, upd_cnt )
+
+	DECLARE svrName, cmd, cmdLog, tmpString, binPath, retval, smp_vers, bgService, aTask, isVGL, isSMidi, srvCat
+
+	bgService = upd_array[upd_cnt,1]
+	aTask     = upd_array[upd_cnt,2]
+	isSMidi   = upd_array[upd_cnt,3]
+	isVGL     = upd_array[upd_cnt,4]
+	srvCat    = upd_array[upd_cnt,5]
+	smp_vers  = SUBSTITUTE ( smp_version_number(), " ", "" )
+	smp_vers  = SUBSTITUTE ( smp_version_number(), ".", "" )
+	retval    = FALSE
+	cmdLog    = LIB_UTILS_LOGICAL_TO_STRING ( "smp$logfiles" ) : "\bg_create_service.log"
+
+	{ ---------------------------------------------------- }
+	{ 921 SM works different for background/regkeys        }
+	{ ---------------------------------------------------- }
+
+	IF smp_vers = "921"
+
+		svrName   = G_BG_PREFIX_921 : STRIP ( GLOBAL ( "INSTANCE" ) ) : "_" : STRIP ( bgService )
+		tmpString = lib_utils_logical_containing_file ( "smp$programs", G_SMP_BACKGROUND_921 )
+
+		IF tmpString <> EMPTY
+
+			binpath = ASCII(34) : tmpString :"\": G_SMP_BACKGROUND_921 : ASCII(34)
+			cmd     = tmpString :"\": G_SMP_BATCH_EXE_921 : STRIP(GLOBAL("INSTANCE"))
+
+		ELSE
+
+			binpath = G_ERROR_BACKGROUND
+			cmd     = G_ERROR_BACKGROUND
+
+		ENDIF
+
+	ELSEIF isVGL
+
+		svrName = G_BG_PREFIX : STRIP ( GLOBAL ( "INSTANCE" ) ) : "_" : STRIP ( bgService )
+		binPath = ASCII(34) : lib_utils_logical_to_string ( "smp$programs" ) :"\": G_SMP_BATCH_EXE : ASCII(34)
+
+		IF is_SMidi
+
+			cmd = G_SERVICE_KEY1 : STRIP ( GLOBAL("INSTANCE")) : G_SERVICE_KEY2 : STRIP ( bgService ) : ")"
+
+		ELSEIF CONFIRM_WITH_TEXT ( internal_msg ( "BG_MANAGER_SERVICE_OR_TASK", 1 ) : " [" : STRIP(bgService) : " ] / < " : STRIP(aTask) : " >" )
+
+			cmd = G_SERVICE_KEY1 : STRIP ( GLOBAL("INSTANCE")) : G_SERVICE_KEY2 : STRIP ( bgService ) : ")"
+
+		ELSE
+
+			cmd = G_SERVICE_KEY1 : STRIP ( GLOBAL("INSTANCE")) : G_SERVICE_KEY2 : STRIP ( aTask ) : ")"
+
+		ENDIF
+
+	ELSE
+
+		svrName = G_BG_PREFIX : STRIP ( GLOBAL ( "INSTANCE" ) ) : "_" : STRIP ( bgService )
+		binPath = ASCII(34) : lib_utils_logical_to_string ( "smp$programs" ) :"\": G_SMP_BATCH_EXE : ASCII(34)
+		cmd     = G_SERVICE_KEY1 : STRIP ( GLOBAL("INSTANCE")) : G_SERVICE_KEY2 : STRIP ( aTask ) : ")"
+
+	ENDIF
+
+	{ ---------------------------------------------------- }
+	{ Now use the SC windows command to create the service }
+	{ ---------------------------------------------------- }
+
+	IF NOT BLANK ( cmd )
+
+		retval    = internal_smp_create_1_regkey ( svrname, bgService, cmd, smp_vers, srvCat )
+		cmd       = "sc \\":a_srv: " create ":svrName:" binpath= ":binPath:" DisplayName= ":svrName:" ":G_SERVICE_CREATE
+		tmpString = lib_utils_spawn_with_log ( cmd, cmdLog )
+
+		IF ( tmpString = EMPTY ) AND ( retval )
+
+			FLASH_MESSAGE ( cmd, TRUE )
+
+		ENDIF
+
+	ELSE
+
+		retval = FALSE
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE   { internal_smp_create_1_bg }
+
+{******************************************************************************}
+
+ROUTINE internal_smp_create_1_regkey ( VALUE svrname, VALUE bgService, VALUE cmd, VALUE smp_vers, VALUE srvCat )
+
+	DECLARE status    ,
+                a_key     ,
+                a_log_dir ,
+                a_reg     ,
+                logfile   ,
+                regfile   ,
+                a_spawn
+
+	retval    = FALSE
+	a_log_dir = lib_utils_logical_to_string ( "SMP$LOGFILES" )
+	logfile   = a_log_dir : "\" : "SMP_INSTALL_REG_KEY" : "_" : STRIP ( GLOBAL ( "INSTANCE" ) ) : svrname : ".log"
+	regfile   = a_log_dir : "\" : "SMP_INSTALL_REG_KEY" : "_" : STRIP ( GLOBAL ( "INSTANCE" ) ) : svrname : ".bat"
+
+	IF ( TOUPPER ( LOGICAL ( "PROCESSOR_ARCHITECTURE" )) = "AMD64" ) OR
+           ( TOUPPER ( LOGICAL ( "PROCESSOR_ARCHITEW6432" )) = "AMD64" )
+
+		a_reg = G_REG_THERMO_64_SOFTWARE
+
+	ELSE
+
+		a_reg = G_REG_THERMO_SOFTWARE
+
+	ENDIF
+
+	FILE DELETE regfile, status
+	FILE CREATE regfile, status
+	FILE EXTEND regfile, status
+
+	IF status = EMPTY
+
+		a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /f "
+
+		FILE WRITE regfile, a_key, status
+
+		a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v Instance /d " :  GLOBAL ( "INSTANCE" ): " /f "
+
+		FILE WRITE regfile, a_key, status
+
+		a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v Description /d " : ASCII(34) : srvCat :" ": bgService : ASCII(34) : " /f "
+
+		FILE WRITE regfile, a_key, status
+
+		a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v CommandLine /d " : ASCII(34) : cmd : ASCII(34) : " /f "
+
+		FILE WRITE regfile, a_key , status
+
+		IF smp_vers = "921"
+
+			a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v " : ASCII(34) : "Backgrounds Active" : ASCII(34) : " /d Yes /f "
+			FILE WRITE regfile, a_key, status
+
+			a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v " : ASCII(34) : "Batch Active 1" : ASCII(34) : " /d Yes /f "
+			FILE WRITE regfile, a_key, status
+
+			a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v " : ASCII(34) : "Batch Process 1" : ASCII(34) : " /d ":bgService:" /f "
+			FILE WRITE regfile, a_key, status
+
+			a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v " : ASCII(34) : "Number Of Backgrounds" : ASCII(34) : " /t REG_DWORD /d 0 /f "
+			FILE WRITE regfile, a_key, status
+
+			a_key = G_REG_KEY_ADD_REGKEY : ASCII(34) : "HKLM\" : a_reg : svrname : ASCII(34) : " /v " : ASCII(34) : "Number Of Batch Processes" : ASCII(34) : " /t REG_DWORD /d 1 /f"
+			FILE WRITE regfile, a_key, status
+
+		ENDIF
+
+		FILE WRITE regfile, "exit", status
+
+		IF status = EMPTY
+
+			FILE CLOSE regfile, status
+
+			IF status = EMPTY
+
+				a_spawn = ASCII(34): regfile :ASCII(34) : " >> " : ASCII(34): STRIP (log_file) :ASCII(34) : " 2>&1"
+
+				SPAWN "cmd /E:ON /D /A /C " : a_spawn, status QUIETLY
+
+				IF status = EMPTY
+
+					retval = TRUE
+
+				ELSE
+
+					FLASH_MESSAGE ( "BG_ERROR_REGBAT" : status, TRUE )
+
+				ENDIF
+
+			ENDIF  { file close status }
+
+		ENDIF  { only last write should be ok }
+
+	ENDIF  { file extend }
+
+	RETURN ( retval )
+
+ENDROUTINE   { internal_smp_create_1_regkey }
+
+{******************************************************************************}
+
+ROUTINE smp_check_service ( backgroundServ )
+
+	DECLARE count, a_reg, a_val, reg_serv_Array, self, instance
+
+	ARRAY reg_serv_Array
+
+	count    = 0
+	retval   = FALSE
+	instance = STRIP ( GLOBAL ( "INSTANCE" ) )
+	a_val    = G_BG_PREFIX     : STRIP ( instance ) : "_" : STRIP ( backgroundServ )
+	self     = G_REG_THERMO_SOFTWARE : STRIP ( instance ) : "\"      { <-- READING does not matter.... wow6432... }
+	a_reg    = registry_enum_key ( HKEY_LOCAL_MACHINE, self, count )
+
+	WHILE ( a_reg <> EMPTY ) AND ( NOT retval ) DO
+
+		reg_serv_Array[count] = a_reg
+		count                 = count + 1
+
+		IF ( a_reg = a_val )
+
+			retval = TRUE
+			a_reg  = EMPTY
+
+		ELSE
+
+			a_reg = registry_enum_key ( HKEY_LOCAL_MACHINE, self, count )
+
+		ENDIF
+
+	ENDWHILE
+
+	RETURN ( retval )
+
+ENDROUTINE      {  smp_check_service }
+
+{******************************************************************************}
+
+ROUTINE smp_check_gateway_name ( backgroundServ )
+
+	DECLARE count, a_reg, a_val, reg_serv_Array, self
+
+	ARRAY reg_serv_Array
+
+	count    = 0
+	retval   = FALSE
+	a_val    = STRIP ( backgroundServ )
+	self     = G_REG_THERMO_SOFTWARE
+	a_reg    = registry_enum_key ( HKEY_LOCAL_MACHINE, self, count )
+
+	WHILE ( a_reg <> EMPTY ) AND ( NOT retval ) DO
+
+		reg_serv_Array[count] = a_reg
+		count                 = count + 1
+
+		IF ( a_reg = a_val )
+
+			retval = TRUE
+			a_reg  = EMPTY
+
+		ELSE
+
+			a_reg = registry_enum_key ( HKEY_LOCAL_MACHINE, self, count )
+
+		ENDIF
+
+	ENDWHILE
+
+	RETURN ( retval )
+
+ENDROUTINE      {  smp_check_gateway_name }
+
+{******************************************************************************}
+
+ROUTINE internal_get_dll_version ( VALUE a_file )
+
+	DECLARE fso       ,
+	        DllVersion
+
+	DllVersion = a_file : "\" : G_LIBRFC32DLL_FILE
+
+	IF ( FILE EXISTS ( DllVersion ) )
+
+		CREATE OBJECT "STD_OLE_AUTOMATION_SERVER", fso
+		fso.create ( "Scripting.FileSystemObject" )
+
+		DllVersion = fso.GetFileVersion ( DllVersion )
+
+	ELSE
+
+		DllVersion = G_DLL_VERSION_NO_FILE
+
+	ENDIF
+
+	RETURN ( DllVersion )
+
+ENDROUTINE    { internal_get_dll_version }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_restart_gateway ( VALUE a_menu )
+
+	IF ( internal_find_smp_gateway( spare ) )
+
+		tmpString = LIB_UTILS_LOGICAL_TO_STRING ( "smp$logfiles" ) : "\netstop_gateway.log"
+		tmpString = lib_utils_spawn_with_log ( "sc stop ":spare, tmpString )
+
+		SLEEP FOR "0 00:00:01"
+
+		tmpString = LIB_UTILS_LOGICAL_TO_STRING ( "smp$logfiles" ) : "\netstart_gateway.log"
+		tmpString = lib_utils_spawn_with_log ( "sc start ":spare, tmpString )
+
+		FLASH_MESSAGE ( "Started-> " : spare, TRUE )
+
+	ENDIF
+
+ENDROUTINE  { smp_bg_restart_gateway }
+
+{******************************************************************************}
+
+ROUTINE internal_find_smp_gateway ( spare )
+
+	DECLARE select_array, retval
+
+	retval = FALSE
+
+	{ ---------------------------------------------------------------------------------- }
+	{ ----------- Get the gateway's referenced in the smidi system table         ------- }
+	{ ---------------------------------------------------------------------------------- }
+
+	ARRAY select_array
+	ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_EQ, "REMOVEFLAG", FALSE )
+
+	spare = ARRAY_SELECT_COUNT_DISTINCT ( "SMIDI_SYSTEM", "SMIDI_SERVICE", select_array )
+
+	IF ( NUMTEXT ( spare ) ) AND ( NUMERIC ( spare ) > 1 )
+
+		IF ( vgl_prompt_in_window_criteria ( "SMIDI_SYSTEM", "Gateway", "Gateway", EMPTY, select_array, spare ) )
+
+			spare = SELECT 'C_SMIDI_SYSTEM'.smidi_service WHERE IDENTITY = spare
+
+			IF ( spare <> EMPTY ) AND ( NOT BLANK ( spare ) )
+
+				retval = TRUE
+
+			ENDIF
+
+		ENDIF
+
+	ELSE
+
+		spare  = SELECT 'C_SMIDI_SYSTEM'.smidi_service WHERE REMOVEFLAG = FALSE
+		retval = spare <> EMPTY
+
+	ENDIF
+
+	{ ---------------------------------------------------------------------------------- }
+	{ ---------------- database may have a gateway that is not installed yet.... ------- }
+	{ ---------------------------------------------------------------------------------- }
+
+	IF retval
+
+		IF NOT ( smp_check_gateway_name ( spare ) )
+
+			retval = FALSE
+			FLASH_MESSAGE ( internal_msg ( "SMIDI_GATEWAY_INVALID", 1) : " " : spare, TRUE )
+
+		ENDIF
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE  { internal_find_smp_gateway }
+
+{******************************************************************************}
+
+ROUTINE internal_registry ( VALUE aMask )
+
+	DECLARE form            ,
+                list            ,
+                val_Array       ,
+                cnt             ,
+                a_cs, a_srv
+
+	global_client_server_names ( a_cs, a_srv )
+
+	set_up_std_prompt_list_class()
+
+	CREATE OBJECT "STD_FORM", form
+		form.row    = 1
+		form.column = 1
+		form.width  = 110
+		form.height = 18
+
+	CREATE OBJECT PROMPT_LIST_CLASS, list
+		list.row    = 1
+		list.column = 1
+		list.width  = form.width  - 2
+		list.height = form.height - 2
+		list.add_column( "Key"  , -2 )
+		list.add_column( "Value", -2 )
+
+	ARRAY val_Array
+
+	IF aMask = "smp$"
+
+		form.header = STRIP ( a_srv ) : "\\" : C_REG_HKEY_LOCAL_MACHINE :"\": C_REG_THERMO_INSTANCE :"\": STRIP(GLOBAL("INSTANCE")):" ":a_cs
+		form.prompt_id = a_srv
+
+		internal_registry_instance_values ( val_Array, aMask, TRUE, FALSE, TRUE )
+
+	ELSE
+
+		form.header = STRIP ( a_srv ) : "\\" : C_REG_HKEY_LOCAL_MACHINE :"\": C_REG_THERMO_INSTANCE
+		form.prompt_id = a_cs
+
+		internal_registry_enum_keys ( val_Array, aMask )
+
+	ENDIF
+
+	cnt = 1
+
+	WHILE ( val_Array[cnt,1] <> EMPTY ) DO
+
+		list.insert_item( val_Array[cnt,1], -1 )
+
+		IF ( INDEX ( TOUPPER ( val_Array[cnt,1] ), G_SMP_ORACLE_DB    ) > 0 ) 
+		OR ( INDEX ( TOUPPER ( val_Array[cnt,1] ), G_SMP_SQLSERVER_DB ) > 0 ) 
+
+			list.set_item( 2, "* * * * * * *" )
+
+		ELSE
+
+			list.set_item( 2, val_Array[cnt,2] )
+
+		ENDIF
+
+		cnt = cnt + 1
+
+	ENDWHILE
+
+	form.add_prompt( list )
+	form.start_prompt()
+	form.wait_prompt()
+	form.end_prompt()
+
+ENDROUTINE  {  internal_registry }
+
+{*****************************************************************************}
+
+ROUTINE internal_registry_instance_values (       val_Array       ,
+                                            VALUE a_mask          ,
+                                            VALUE make_upper      ,
+                                            VALUE id_only         ,
+                                            VALUE is_server       )
+
+	DECLARE count, value_name, value_data, cnt2
+
+	{ ------------------------------------------------------------- }
+	{ Go through registry and get all data into an array            }
+	{ ------------------------------------------------------------- }
+
+	cnt2  = 0
+	count = 0
+
+	IF ( is_server )
+
+		value_name = registry_enum_value ( C_REG_HKEY_LOCAL_MACHINE, C_REG_THERMO_INSTANCE:"\":STRIP(GLOBAL("INSTANCE")), count )
+
+	ELSE
+
+		value_name = client_registry_enum_value ( C_REG_HKEY_LOCAL_MACHINE, C_REG_THERMO_INSTANCE:"\":STRIP(GLOBAL("INSTANCE")), count )
+
+	ENDIF
+
+	WHILE value_name <> EMPTY DO
+
+		IF ( is_server )
+
+			value_data = registry_get_value ( C_REG_HKEY_LOCAL_MACHINE, C_REG_THERMO_INSTANCE:"\":STRIP(GLOBAL("INSTANCE")), value_name )
+
+		ELSE
+
+			value_data = client_registry_get_value ( C_REG_HKEY_LOCAL_MACHINE, C_REG_THERMO_INSTANCE:"\":STRIP(GLOBAL("INSTANCE")), value_name )
+
+		ENDIF
+
+		IF make_upper
+
+			value_name = STRIP ( TOUPPER ( value_name ) )
+			a_mask     = STRIP ( TOUPPER ( a_mask ) )
+
+		ENDIF
+
+		IF ( BLANK ( a_mask ) )
+
+			cnt2              = cnt2 + 1
+			val_Array[cnt2,1] = value_name
+
+		ELSEIF ( INDEX ( value_name, a_mask ) > 0 )
+
+			cnt2              = cnt2 + 1
+			val_Array[cnt2,1] = value_name
+		ENDIF
+
+		IF ( id_only )
+
+			val_Array[cnt2,2] = value_name
+
+		ELSE
+
+			val_Array[cnt2,2] = value_data
+
+		ENDIF
+
+		count = count + 1
+
+		IF ( is_server )
+
+			value_name = registry_enum_value ( C_REG_HKEY_LOCAL_MACHINE, C_REG_THERMO_INSTANCE:"\":STRIP(GLOBAL("INSTANCE")), count )
+
+		ELSE
+
+			value_name = client_registry_enum_value ( C_REG_HKEY_LOCAL_MACHINE, C_REG_THERMO_INSTANCE:"\":STRIP(GLOBAL("INSTANCE")), count )
+
+		ENDIF
+
+	ENDWHILE
+
+ENDROUTINE    {  internal_registry_instance_values }
+
+{*****************************************************************************}
+
+ROUTINE internal_registry_enum_keys (       val_Array ,
+                                      VALUE a_mask    )
+
+	DECLARE count, c2, val, regkey, data
+
+	c2     = 0
+	count  = 0
+	a_mask = STRIP ( TOUPPER ( a_mask ) )
+	regkey = C_REG_THERMO_INSTANCE
+	val    = regkey
+
+	WHILE val <> EMPTY DO
+
+		val = registry_enum_key ( C_REG_HKEY_LOCAL_MACHINE, regkey, count )
+
+		IF ( val <> EMPTY )
+
+			IF ( INDEX ( STRIP ( TOUPPER ( val ) ), a_mask ) > 0 )
+
+				c2   = c2 + 1
+				data = registry_get_value ( C_REG_HKEY_LOCAL_MACHINE, regkey:"\":val, "CommandLine" )
+
+				IF ( data = EMPTY ) OR ( BLANK ( data ) )
+
+					data = registry_get_value ( C_REG_HKEY_LOCAL_MACHINE, regkey:"\":val, "Report" )
+
+				ENDIF
+
+				val_Array[c2,1] = val
+				val_Array[c2,2] = data
+
+			ENDIF
+
+		ENDIF
+
+		count = count + 1
+
+	ENDWHILE
+
+ENDROUTINE    {  internal_registry_enum_keys }
+
+{*****************************************************************************}
+
+ROUTINE internal_MapProfile_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_MOD_MAP_PROFILE ) )
+
+ENDROUTINE   { internal_MapProfile_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_ModifyServer_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_MOD_SMIDI_SYSTEM ) )
+
+ENDROUTINE   { internal_ModifyServer_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_TestPassWord_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_TEST_PASSWORD ) )
+
+ENDROUTINE   { internal_TestPassWord_btn }
+{*****************************************************************************}
+
+ROUTINE internal_ConfigSystem_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_CONFIG_SYSTEM ) )
+
+ENDROUTINE   { internalConfigSystembtn }
+
+{*****************************************************************************}
+
+ROUTINE internal_ConfigServer_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_CONFIG_SERVER ) )
+
+ENDROUTINE   { internalConfigServerbtn }
+
+{*****************************************************************************}
+
+ROUTINE internal_ConfigQuery_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_CONFIG_QUERY ) )
+
+ENDROUTINE   { internalConfigQuerybtn }
+
+{*****************************************************************************}
+
+ROUTINE internal_GetPhrases_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_GET_PHRASES ) )
+
+ENDROUTINE   { internalGetPhrasesbtn }
+
+{*****************************************************************************}
+
+ROUTINE internal_GetLot_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_GET_LOT ) )
+
+ENDROUTINE   { internal_GetLot_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_ProcLot_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_PROCESS_LOT ) )
+
+ENDROUTINE   { internal_ProcLot_btn }
+
+{*****************************************************************************}
+
+ROUTINE internal_UpRes_btn ( self )
+
+	MENUPROC ( MENUNUMBER ( G_MENUPROC_UPLOAD_RESULTS ) )
+
+ENDROUTINE   { internal_UpRes_btn }
+
+{******************************************************************************}
+{                                                                              }
+{        MENU - parameter passes directory and mask of files to search for..   }
+{                                                                              }
+{ This is used @ sites that cannot get to the server and need to see files     }
+{                                                                              }
+{******************************************************************************}
+
+ROUTINE MenuFileManage ( VALUE a_procedure  )
+
+	DECLARE fileSpecification,
+	        button,
+	        list,
+	        form
+
+	fileSpecification = a_procedure
+
+	IF GLOBAL ( "PARAM_ACTIVE" )
+
+		PROMPT FOR fileSpecification
+
+	ENDIF
+
+	PROMPT OBJECT form CLASS PROMPT_CLASS_FORM
+		form.row          = 1
+		form.column       = 1
+		form.height       = 24
+		form.width        = 120
+		form.header       = fileSpecification
+		form.button_style = FORM_BUTTON_NONE
+		form.prompt_id    = "FileManage"
+
+	set_up_std_prompt_list_class()
+
+	PROMPT OBJECT list CLASS PROMPT_LIST_CLASS
+		list.row                  = 3
+		list.column               = 1
+		list.width                = 118
+		list.height               = 20
+		list.vgl_library          = GLOBAL( "current_library" )
+		list.double_click_routine = "doubleClick"
+
+	form.add_prompt( list )
+	list.add_column( internal_msg ( "BG_FILE"         , 1 ), 32 )
+	list.add_column( internal_msg ( "BG_FILE_FOLDER"  , 1 ), 32 )
+	list.add_column( internal_msg ( "BG_FILE_MODIFIED", 1 ), 16 )
+
+	internaladdFilesToList( form, fileSpecification )
+
+	PROMPT OBJECT button CLASS PROMPT_CLASS_BUTTON AT 1,1
+		button.width               = 3
+		button.flat                = TRUE
+		button.tooltip             = internal_msg ( "BG_DISPLAY_FILE", 1 )
+		button.tab_stop            = FALSE
+		button.mouse_click_routine = "FileDisplayButton"
+		button.use_images( EMPTY, 16, ICON_FILE_OPEN )
+		button.set_image_resource( 0 )
+
+	form.add_prompt( button )
+
+	IF role_lib_has_privilege ( 9521 )
+
+		PROMPT OBJECT button CLASS PROMPT_CLASS_BUTTON AT 8,1
+			button.width               = 3
+			button.flat                = TRUE
+			button.tooltip             = internal_msg ( "BG_DELETE_FILE", 1 )
+			button.mouse_click_routine = "FileDeleteButton"
+			button.tab_stop            = FALSE
+			button.use_images( EMPTY, 16, ICON_DELETE_ITEM )
+			button.set_image_resource( 0 )
+
+		form.add_prompt( button )
+
+	ENDIF
+
+	PROMPT OBJECT button CLASS PROMPT_CLASS_BUTTON AT 16,1
+		button.width        = 3
+		button.flat         = TRUE
+		button.tooltip      = internal_msg ( "BG_EXIT", 1 )
+		button.send_lastkey = "EXIT"
+		button.tab_stop     = FALSE
+		button.use_images( EMPTY, 16, ICON_CLOSE )
+		button.set_image_resource( 0 )
+		form.add_prompt( button )
+
+	form.add_frame( "", (5), 1, 1, 0)
+	form.add_frame( "", (13), 1, 1, 0)
+
+	form.start_prompt()
+	form.wait_prompt()
+	form.end_prompt()
+
+ENDROUTINE     { MenuFileManage  }
+
+{******************************************************************************}
+
+ROUTINE internaladdFilesToList ( form, VALUE fileSpecification )
+
+	DECLARE files, fileCounter
+
+	ARRAY files ARRAY_SIZE(0,6)
+
+	internalgetFiles( fileSpecification, files )
+
+	fileCounter = 1
+
+	WHILE ( fileCounter <= SIZE_OF_ARRAY( files ) )
+
+		form.prompt_objects[1].insert_item( files[fileCounter,2], fileCounter )     { file name only }
+
+		form.prompt_objects[1].set_item ( (2), files[fileCounter,3] )               { just directory }
+		form.prompt_objects[1].set_item ( (3), files[fileCounter,5] )               { date modified  }
+
+		fileCounter = fileCounter + 1
+
+	ENDWHILE
+
+	RETURN
+
+ENDROUTINE    { internaladdFilesToList  }
+
+{******************************************************************************}
+
+ROUTINE internalgetFiles ( VALUE fileSpecification, files )
+
+	DECLARE token         ,
+                status        ,
+                i             ,
+                j             ,
+                FileAttributes,
+                FileCreated   ,
+                FileModified  ,
+                FileHighSize  ,
+                FileLowSize   ,
+                temp
+
+	ARRAY temp  ARRAY_SIZE(0)
+
+	j = 0
+
+	WHILE ( NOT BLANK ( fileSpecification ) )
+
+		token = get_token( fileSpecification, "," )
+
+		IF ( NOT blank( token ) )
+
+			FILE FIND token, temp, status
+
+			IF ( status = EMPTY )
+
+				i = 1
+				WHILE ( i <= SIZE_OF_ARRAY( temp ) )
+
+					GET_FILE_ATTRIBUTES ( temp[i], FileAttributes, FileCreated, FileModified, FileHighSize, FileLowSize )
+
+					j          = j + 1
+					files[j,1] = temp[i]
+					files[j,2] = internalstripFileFromPath( temp[i] )
+					files[j,3] = temp[i] # files[j,2]
+					files[j,4] = FileCreated
+					files[j,5] = FileModified
+					files[j,6] = FileHighSize
+					i          = i + 1
+
+				ENDWHILE
+
+			ELSE
+
+				FLASH_MESSAGE( status, TRUE )
+
+			ENDIF
+
+		ENDIF
+
+	ENDWHILE
+
+	RETURN
+
+ENDROUTINE   { internalgetFiles   }
+
+{******************************************************************************}
+
+ROUTINE internalstripFileFromPath (  VALUE fullFilename )
+
+	DECLARE position,
+                filename
+
+	filename = STRIP( fullFilename )
+	position = INDEX( filename , "\" )
+
+	WHILE ( position > 0 )
+
+		filename = RIGHTSTRING( filename , ( LENGTH( filename ) - position ) )
+		position = INDEX( filename , "\" )
+
+	ENDWHILE
+
+	RETURN( filename )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE doubleClick ( list )
+
+	fileDisplay( list, FALSE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE fileDisplayButton ( button )
+
+	fileDisplay( button.parent_prompt.prompt_objects[1], FALSE )
+
+ENDROUTINE    { fileDisplayButton }
+
+{******************************************************************************}
+
+ROUTINE fileDisplay ( list, VALUE doEdit )
+
+	DECLARE firstSelected,
+                fileName     ,
+                filePath     ,
+                fullFileName
+
+	firstSelected = list.get_first_selected( fileName )
+
+	IF ( firstSelected <> EMPTY )
+
+		filePath = list.get_item( firstSelected, 1 )
+		fullFileName = filePath : fileName
+
+		IF ( FILE EXISTS( fullFileName ) )
+
+			IF doEdit
+				FILE SEND fullFileName, "edit/"
+			ELSE
+				FILE SEND fullFileName, "display/"
+			ENDIF
+
+		ELSE
+
+			flash_message( "BG_FILE_DELETED", TRUE )
+			list.remove_item( firstSelected )
+
+		ENDIF
+
+	ENDIF
+
+	RETURN
+
+ENDROUTINE    { fileDisplay  }
+
+{******************************************************************************}
+
+ROUTINE fileDeleteButton ( button )
+
+	DECLARE form        ,
+                list        ,
+                selected    ,
+                deleteFiles ,
+                fileName    ,
+                filePath    ,
+                fullFileName,
+                status      ,
+                i
+
+	ARRAY deleteFiles   ARRAY_SIZE(0,2)
+
+	form     = button.parent_prompt
+	list     = form.prompt_objects[1]
+	i        = 0
+	selected = list.get_first_selected( fileName )
+
+	WHILE( selected <> EMPTY )
+
+		filePath         = list.get_item( selected, 1 )
+		fullFileName     = filePath : fileName
+		i                = i + 1
+		deleteFiles[i,1] = selected
+		deleteFiles[i,2] = fullFileName
+		selected         = list.get_next_selected( fileName )
+
+	ENDWHILE
+
+	i = SIZE_OF_ARRAY( deleteFiles )
+
+	WHILE ( i > 0 )
+
+		IF ( FILE EXISTS( deleteFiles[i,2] ) )
+
+			FILE DELETE deleteFiles[i,2], status
+
+			IF ( status = EMPTY )
+
+				list.remove_item( deleteFiles[i,1] )
+
+			ELSE
+
+				flash_message( status, TRUE )
+
+			ENDIF
+
+		ELSE
+
+			list.remove_item( deleteFiles[i,1] )
+
+		ENDIF
+
+		i = i - 1
+
+	ENDWHILE
+
+	RETURN
+
+ENDROUTINE   { fileDeleteButton }
+
+{******************************************************************************}
+
+ROUTINE global_server_name ( a_server )
+
+	DECLARE S_obj
+
+	CREATE OBJECT "STD_OLE_AUTOMATION_SERVER", S_obj
+		S_obj.create ("WScript.Network")
+		a_server = toupper(S_obj.ComputerName)
+
+	S_obj = EMPTY
+
+ENDROUTINE  { global_server_name }
+
+{******************************************************************************}
+
+ROUTINE global_client_name ( a_client )
+
+	DECLARE C_obj
+
+	IF ( GLOBAL ( "MODE" ) = "INTERACTIVE" )
+
+		CREATE OBJECT "STD_OLE_AUTOMATION", C_obj
+			C_obj.create ("WScript.Network")
+			a_client = toupper(C_obj.ComputerName)
+			C_obj = EMPTY
+
+	ELSE
+		a_client = "N.A"
+
+	ENDIF
+	
+ENDROUTINE  { global_client_name }
+
+{******************************************************************************}
+
+ROUTINE global_client_server_names ( a_client, a_server )
+
+	global_client_name ( a_client )
+	global_server_name ( a_server )
+
+ENDROUTINE  { global_client_server_names }
+
+{******************************************************************************}
+
+ROUTINE internal_get_exe_path (        exe_path ,
+                                 VALUE exe_name )
+
+	DECLARE extension_pos, stlen, a_msg
+
+	exe_path      = LOGICAL ( "SMP$PROGRAMS" )   { do not use logical to string }
+	extension_pos = INDEX ( exe_path, ";" )
+	stlen         = STRINGLENGTH ( exe_path )
+
+	IF ( extension_pos > 0 )
+
+		exe_path = SUBSTRING ( exe_path, extension_pos + 1, stlen )
+
+	ENDIF
+
+	exe_path = exe_path : "\" : STRIP ( exe_name )
+	exe_name = exe_path : ".exe"
+
+	IF NOT FILE EXISTS ( exe_name )
+
+		exe_path = ""
+		a_msg    = internal_MSG ("SERVER_MANAGER_ERROR_OPTION", 1) : STRIP ( exe_name )
+		flash_message ( a_msg, TRUE )
+
+	ELSE
+		exe_path = ascii ( 34 ) : exe_path : ascii ( 34 ) : " -instance " : GLOBAL ( "INSTANCE" )
+	ENDIF
+
+	RETURN ( exe_path <> "" )
+
+ENDROUTINE   { internal_get_exe_path }
+
+{ *************************************************************************** }
+
+ROUTINE internal_reset_increments_main ( self )
+
+	DECLARE a_list_editor, a_id, a_EMPTY
+
+	a_id    = "%"
+	a_EMPTY = EMPTY
+
+	lib_grid_initialise()
+
+	IF list_editor_create_object ( a_list_editor )
+
+		START WRITE TRANSACTION "SMP_INCREMENT_RESET"
+
+		a_list_editor.compatability   = PROMPT_DETAILS_310
+		a_list_editor.table           = "INCREMENTS"
+		a_list_editor.header          = internal_msg ( "BG_W_RESET_INCREMENT", 1 )
+		a_list_editor.pre_insert      = EMPTY
+		a_list_editor.post_insert     = EMPTY
+		a_list_editor.delete          = EMPTY
+		a_list_editor.deletes_enabled = TRUE
+		a_list_editor.inserts_enabled = FALSE
+		a_list_editor.select          = EMPTY
+		a_list_editor.select_callback = "$BACKGROUND_MANAGER/internal_select_increments"
+		a_list_editor.library         = GLOBAL ( "CURRENT_REPORT" )
+
+		ARRAY a_list_editor.prompt_details
+
+		a_list_editor.prompt_details [ 1 , 2 ] = "DISPLAY"
+		a_list_editor.prompt_details [ 1 , 3 ] = "INCREMENTS"
+		a_list_editor.prompt_details [ 1 , 4 ] = "MAJOR"
+		a_list_editor.prompt_details [ 1 , 5 ] = internal_msg ( "BG_INC_MAJOR", 1  )
+		a_list_editor.prompt_details [ 1 , 6 ] = 30
+
+		a_list_editor.prompt_details [ 2 , 2 ] = "DISPLAY"
+		a_list_editor.prompt_details [ 2 , 3 ] = "INCREMENTS"
+		a_list_editor.prompt_details [ 2 , 4 ] = "MINOR"
+		a_list_editor.prompt_details [ 2 , 5 ] = internal_msg ( "BG_INC_MINOR", 1  )
+		a_list_editor.prompt_details [ 2 , 6 ] = 20
+
+		a_list_editor.prompt_details [ 3 , 2 ] = "ROUTINE"
+		a_list_editor.prompt_details [ 3 , 3 ] = GLOBAL ( "CURRENT_LIBRARY" )
+		a_list_editor.prompt_details [ 3 , 4 ] = "internal_prompt_inc_val"
+		a_list_editor.prompt_details [ 3 , 5 ] = internal_msg ( "BG_INC_LAST_VALUE", 1  )
+		a_list_editor.prompt_details [ 3 , 6 ] = 12
+
+		a_list_editor.prompt_details [ 4 , 2 ] = "FORMAT"
+		a_list_editor.prompt_details [ 4 , 3 ] = "INCREMENTS"
+		a_list_editor.prompt_details [ 4 , 4 ] = "CACHING"
+		a_list_editor.prompt_details [ 4 , 5 ] = internal_msg ( "BG_INC_CACHING", 1  )
+		a_list_editor.prompt_details [ 4 , 6 ] = 8
+
+		a_list_editor.operation ( a_id, a_EMPTY, "READ_FOR_MODIFY" )
+
+		IF ( a_list_editor.operation ( a_id, a_EMPTY, "MODIFY" ) )
+
+			a_list_editor.labtable_save ()
+
+			COMMIT
+
+		ELSE
+
+			ROLLBACK
+
+		ENDIF
+
+		a_list_editor.destroy_screens ()
+		a_list_editor.labtable_quit ()
+
+	ENDIF   { list editor create }
+
+	RETURN
+
+ENDROUTINE   { internal_reset_increments_main }
+
+{******************************************************************************}
+
+ROUTINE internal_select_increments ( self, select_array )
+
+	ARRAY select_array
+
+	ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_ORDER, "MAJOR", ARRAY_SELECT_ASCENDING )
+	ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_ORDER, "MINOR", ARRAY_SELECT_ASCENDING )
+
+ENDROUTINE  { internal_select_increments }
+
+{******************************************************************************}
+
+ROUTINE internal_prompt_inc_val (       object      ,
+                                        grid        ,
+                                  VALUE cell_column ,
+                                  VALUE cell_row    ,
+                                  VALUE column      ,
+                                  VALUE row         ,
+                                  VALUE cell_width  ,
+                                        screen      ,
+                                  VALUE is_display  )
+
+	DECLARE val, save_val, a_major, a_minor
+
+	a_major  = STRIP ( SELECT increments.major   IN OBJECT object )
+	a_minor  = STRIP ( SELECT increments.minor   IN OBJECT object )
+	val      =         SELECT increments.lastval IN OBJECT object
+	save_val = val
+
+	IF ( is_display )
+
+		DISPLAY val ON LINE row FROM column TO column + cell_width - 1 IN WINDOW screen
+
+	ELSEIF ( internal_find_max_inc ( a_major: "-" : a_minor, val ) )
+
+		PROMPT FOR val ON LINE row FROM column TO column + cell_width - 1 IN WINDOW screen
+
+		IF ( val <> save_val )
+
+			ASSIGN increments.lastval IN OBJECT object = val
+
+		ENDIF
+
+	ELSE
+
+		PROMPT FOR val ON LINE row FROM column TO column + cell_width - 1 IN WINDOW screen
+
+		IF ( val <> save_val )
+
+			ASSIGN increments.lastval IN OBJECT object = val
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE   { internal_prompt_inc_val }
+
+{******************************************************************************}
+
+ROUTINE internal_find_max_inc ( VALUE a_key, val )
+
+	DECLARE retval, new_val
+
+	retval = TRUE
+
+	window_set_status ( " Searching for MAX increment on " :a_key )
+
+	IF     ( a_key = "ACCESS_LOG-KEY0"                    )
+
+		new_val = SELECT MAX access_log.session_id WHERE session_id > 1
+
+	ELSEIF ( a_key = "AUDITOR-DATA"                       )
+
+		new_val = SELECT MAX audit_data.data WHERE data > 1
+
+	ELSEIF ( a_key = "AUDITOR-EVENT"                      )
+
+		new_val = SELECT MAX audit_event.event WHERE event > 1
+
+	ELSEIF ( a_key = "AUDITOR-TRANSACTION"                )
+
+		new_val = SELECT MAX audit_transaction.transaction WHERE transaction > 1
+
+	ELSEIF ( a_key = "MLP_COMPS-ENTRY_CODE"               )
+
+		new_val = SELECT MAX mlp_components.entry_code WHERE entry_code > 1
+
+	ELSEIF ( a_key = "SAMPLE-KEY0"                        )
+
+		new_val = SELECT MAX sample.id_numeric WHERE id_numeric > 1
+
+	ELSEIF ( a_key = "TEST-TEST_NUMBER"                   )
+
+		new_val = SELECT MAX test.test_number WHERE test_number > 1
+
+	ELSEIF ( a_key = "TIMERQUEUE-ENTRY_NUMBER"            )
+
+		new_val = SELECT MAX timerqueue.entry_number WHERE entry_number > 1
+
+	ELSE
+
+		retval = FALSE  { must be a user defined entry... }
+
+	ENDIF
+
+	{ -------------------------------------------------------------- }
+	{ Let the user know when we found something different            }
+	{ -------------------------------------------------------------- }
+
+	IF ( retval ) AND ( new_val <> EMPTY )
+
+		IF ( val <> new_val )
+
+			FLASH_MESSAGE ( a_key : val : "  -- found -> ":new_val, TRUE )
+			val = new_val + 1                  {  add one more all the time so we can track when this program updated increments... }
+
+		ENDIF
+
+	ELSEIF ( retval ) AND ( new_val = EMPTY )
+
+		FLASH_MESSAGE ( a_key : val : " will be retained the lookup of the key did not find any records", TRUE )
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE   { internal_find_max_inc }
+
+{******************************************************************************}
+
+ROUTINE internal_Compile_all ( self )
+
+	DECLARE form
+
+	SET DATE FORMAT "YYYZ-MON-DZ-H24-MI"
+
+	logfile = "smp$logfiles":C_PATH_SEP:"compile_all_" : substitute( strip( NOW ),"-","_" ): ".log"
+
+	SET NAME logfile
+
+	RESTORE DATE FORMAT
+
+	internal_create_form ( form )
+
+	form.start_prompt ()
+	form.wait_prompt ()
+
+	IF form.get_last_key() = "DO"
+
+		setup_status_message ( form )
+
+		IF form.prompt_objects[1].value = TRUE
+
+			internal_find_all (form)
+
+		ENDIF
+
+		internal_compile_all_form(form)
+
+		form.userinfo.status_end()
+
+		FLUSH_LITERAL
+		FILE CLOSE logfile
+		FILE SEND logfile, "DISPLAY/"
+
+	ENDIF
+
+	form.end_prompt()
+
+	RETURN
+
+ENDROUTINE  { internal_compile_all }
+
+{******************************************************************************}
+
+ROUTINE internal_compile_all_form( form )
+
+	DECLARE syn_fail, lim_fail, cal_fail, sig_fail, lis_fail, rep_fail
+
+	syn_fail = 0
+	lim_fail = 0
+	cal_fail = 0
+	sig_fail = 0
+	lis_fail = 0
+	rep_fail = 0
+
+	IF form.prompt_objects[4].value = TRUE
+
+		rep_fail = internal_compile ( LIBRARY_REPORT, ".rpf", "Report", "smp$reports", form )
+
+	ENDIF
+
+	IF form.prompt_objects[5].value = TRUE
+
+		cal_fail = internal_compile ( LIBRARY_CALCULATION, ".caf", "Calculation", "smp$calculations", form )
+
+	ENDIF
+
+	IF form.prompt_objects[6].value = TRUE
+
+		lim_fail = internal_compile ( LIBRARY_LIMIT_CALCULATION, ".laf", "Limit_Calculation", "smp$limit_calculations", form )
+
+	ENDIF
+
+	IF form.prompt_objects[7].value = TRUE
+
+		lis_fail = internal_compile ( LIBRARY_LIST_RESULT, ".lrf", "List_Result_Format", "smp$list_results", form )
+
+	ENDIF
+
+	IF form.prompt_objects[8].value = TRUE
+
+		syn_fail = internal_compile ( LIBRARY_SYNTAX, ".sxf", "Syntax", "smp$syntaxes", form )
+
+	ENDIF
+
+	IF form.prompt_objects[9].value = TRUE
+
+		sig_fail = internal_compile ( LIBRARY_SIG_FIGS, ".sff", "Sig_Figs", "smp$sig_figs", form)
+
+	ENDIF
+
+	internal_summary( syn_fail, lim_fail, cal_fail, sig_fail, lis_fail, rep_fail, form )
+
+ENDROUTINE { internal_compile_all }
+
+{******************************************************************************}
+
+ROUTINE internal_compile ( VALUE lib, VALUE ext, VALUE table_nom, VALUE path, form )
+
+	DECLARE id, compiled, fail, found, Aray_remove, a_cnt
+
+	id       = SELECT 'table_nom'.identity WHERE removeflag = FALSE ORDER ON identity
+	fail     = 0
+	a_cnt    = 0
+	ARRAY Aray_remove
+
+	WHILE ( id <> EMPTY ) DO
+
+		compiled = FALSE
+		found    = FALSE
+		id       = strip ( id )
+
+		IF FILE EXISTS ( path:C_PATH_SEP:id:ext )
+
+			compiled = VGL_COMPILE_VGL ( lib, id, TRUE )
+			found    = TRUE
+
+		ENDIF
+
+		IF NOT ( found )
+
+			internal_log_mess ( "File Not Found : ":path:C_PATH_SEP:id:ext, FALSE, form )
+			fail = fail + 1
+
+			IF ( form.prompt_objects[2].value )
+
+				a_cnt                = a_cnt + 1
+				Aray_remove[a_cnt,1] = id
+				Aray_remove[a_cnt,2] = table_nom
+
+			ENDIF
+
+		ELSEIF NOT ( compiled )
+
+			internal_log_mess ( "Not Compiled : ":table_nom:" - ":id, FALSE, form )
+			fail = fail + 1
+
+		ELSE
+
+			internal_log_mess ( "Success : ":table_nom:" - ":id, TRUE, form )
+
+		ENDIF
+
+		NEXT 'table_nom'
+		id = SELECT 'table_nom'.identity
+
+	ENDWHILE
+
+	{ ------------------------------------------------------------ }
+	{ if we have any records to remove from the table delete them  }
+	{ ------------------------------------------------------------ }
+
+	IF ( SIZE_OF_ARRAY ( Aray_remove ) > 0 )
+
+		internal_remove_database_record ( Aray_remove )
+
+	ENDIF
+
+	fail = STRIP ( NUMBER_TO_TEXT ( fail , "9999" ))
+
+	RETURN ( fail )
+
+ENDROUTINE  { internal_compile }
+
+{******************************************************************************}
+
+ROUTINE internal_remove_database_record ( Aray_remove )
+
+	DECLARE a_cnt, a_rec, a_table
+
+	START WRITE TRANSACTION "Remove invalid records"
+
+	a_cnt = 1
+
+	WHILE ( Aray_remove[a_cnt] <> EMPTY ) DO
+
+		a_rec   = Aray_remove[a_cnt,1]
+		a_table = Aray_remove[a_cnt,2]
+
+		window_set_status ( a_table : " " : a_rec )
+
+		a_rec = SELECT 'a_table'.identity FOR UPDATE WHERE identity = a_rec
+
+		IF ( a_rec <> EMPTY )
+
+			DELETE 'a_table'
+
+		ENDIF
+
+		a_cnt = a_cnt + 1
+
+	ENDWHILE
+
+	COMMIT
+
+ENDROUTINE  { internal_removed_database_record }
+
+{******************************************************************************}
+
+ROUTINE internal_log_mess( VALUE message, VALUE success, form )
+
+	IF form <> EMPTY
+
+		form.display_objects[1].set_text( message )
+
+		IF ( form.prompt_objects[11].value ) AND ( success )
+
+			form.userinfo.status_message ( message, MSG_LOW )
+
+		ELSEIF NOT ( success )
+
+			form.userinfo.status_message ( message, MSG_HIGH )
+		ENDIF
+
+	ENDIF
+
+LITERAL
+$message_________________________________________________________________________________________________________________________
+$ENDLITERAL
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE internal_summary( VALUE syn_fail,
+                          VALUE lim_fail,
+                          VALUE cal_fail,
+                          VALUE sig_fail,
+                          VALUE lis_fail,
+                          VALUE rep_fail,
+                                form    )
+
+	DECLARE summ_mess, sep
+
+	summ_mess = "Compilation Complete. ":chr( 13 ):chr( 10 )
+	sep       = FALSE
+
+	IF syn_fail > 0
+		summ_mess = summ_mess : syn_fail:" SXF "
+		sep = TRUE
+	ENDIF
+
+	IF lim_fail > 0
+		IF sep = TRUE
+			summ_mess = summ_mess : ", "
+		ENDIF
+		summ_mess = summ_mess : lim_fail:" LAF "
+		sep = TRUE
+	ENDIF
+
+	IF cal_fail > 0
+		IF sep = TRUE
+			summ_mess = summ_mess : ", "
+		ENDIF
+		summ_mess = summ_mess : cal_fail:" CAF "
+		sep = TRUE
+	ENDIF
+
+	IF sig_fail > 0
+		IF sep = TRUE
+			summ_mess = summ_mess : ", "
+		ENDIF
+		summ_mess = summ_mess : sig_fail:" SFF "
+		sep = TRUE
+	ENDIF
+
+	IF lis_fail > 0
+		IF sep = TRUE
+			summ_mess = summ_mess : ", "
+		ENDIF
+		summ_mess = summ_mess : lis_fail : " LRF "
+		sep = TRUE
+	ENDIF
+
+	IF rep_fail > 0
+		IF sep = TRUE
+			summ_mess = summ_mess : ", "
+		ENDIF
+		summ_mess = summ_mess : rep_fail : " RPF "
+		sep = TRUE
+	ENDIF
+
+	IF sep = TRUE
+		summ_mess = summ_mess : " failed to compile.":chr( 13 ):chr( 10 )
+	ENDIF
+
+	IF form.prompt_objects[10].text = TRUE
+		summ_mess = summ_mess : "Logfile: " : LOGFILE:chr( 13 ):chr( 10 )
+	ENDIF
+
+	LITERAL
+$summ_mess_________________________________________________________________________________________________________________
+	$ENDLITERAL
+
+	FLASH_MESSAGE ( summ_mess, true )
+
+ENDROUTINE   { internal_summary }
+
+{******************************************************************************}
+
+ROUTINE internal_find_all ( form )
+
+	IF form.prompt_objects[4].value = TRUE
+
+		internal_find_files ( ".rpf", "smp$reports", "REPORT", form )
+
+	ENDIF
+
+	IF form.prompt_objects[5].value = TRUE
+
+		internal_find_files ( ".caf", "smp$calculations", "CALCULATION", form )
+
+	ENDIF
+
+	IF form.prompt_objects[6].value = TRUE
+
+		internal_find_files ( ".laf", "smp$limit_calculations", "LIMIT_CALCULATION", form )
+
+	ENDIF
+
+	IF form.prompt_objects[7].value = TRUE
+
+		internal_find_files ( ".lrf", "smp$list_results", "LIST_RESULT_FORMAT", form )
+
+	ENDIF
+
+	IF form.prompt_objects[8].value = TRUE
+
+		internal_find_files ( ".sxf", "smp$syntaxes", "SYNTAX", form )
+
+	ENDIF
+
+	IF form.prompt_objects[9].value = TRUE
+
+		internal_find_files ( ".sff", "smp$sig_figs", "SIG_FIGS", form )
+
+	ENDIF
+
+ENDROUTINE  { internal_find_all }
+
+{******************************************************************************}
+
+ROUTINE internal_find_files( VALUE file_ext, VALUE location, VALUE table_nom, form )
+
+	DECLARE status        ,
+	        files         ,
+	        idx           ,
+	        file_name     ,
+	        add_id        ,
+	        add_dir       ,
+	        check_ok      ,
+	        check_id      ,
+	        FileAttributes,
+	        FileCreated   ,
+	        FileModified  ,
+	        FileHighSize  ,
+	        FileLowSize
+
+	file_ext  = TOUPPER ( file_ext )
+	file_name = location:C_PATH_SEP:"*":file_ext
+
+	ARRAY files
+
+	FILE FIND file_name, files, status
+
+	idx = 1
+
+	IF ( files[idx] = EMPTY ) OR ( status <> EMPTY )
+
+		IF status = EMPTY
+
+			status = "EMPTY"
+
+		ENDIF
+
+		internal_log_mess ( internal_msg ( "BG_MANAGER_NO_FILES", 1 ) :table_nom:" ":status, FALSE, form )
+
+	ELSE
+
+		WHILE files[idx] <> EMPTY DO
+
+			add_dir  = internal_dir_only ( files[idx] )
+			add_id   = TOUPPER ( files[idx] )
+			add_id   = internal_file_name_only ( add_id )
+			check_id = SELECT 'table_nom'.identity FOR UPDATE WHERE identity = add_id
+
+			GET_FILE_ATTRIBUTES ( files[idx], FileAttributes, FileCreated, FileModified, FileHighSize, FileLowSize )
+
+			IF check_id = EMPTY
+
+				RESERVE ENTRY 'table_nom', add_id, check_ok
+
+				IF ( check_ok <> EMPTY )
+
+					internal_log_mess ( "RESERVE ENTRY Failed to add : ":add_id:" to ":table_nom:" ":check_ok, FALSE, form )
+
+				ELSE
+
+					internal_log_mess ( "RESERVE ENTRY Added : ":add_id:" to ":table_nom, TRUE, form )
+
+					START WRITE TRANSACTION C_TRANSACTION_ADD_COMPILE:"-":add_id:"-":table_nom
+
+					IF VALID_FIELD ( table_nom, C_SOURCE_DIR_FIELD )
+
+						ASSIGN 'table_nom'.'C_SOURCE_DIR_FIELD' = add_dir
+
+					ENDIF
+
+					IF VALID_FIELD ( table_nom, C_SOURCE_FILE_MOD_FIELD )
+
+						ASSIGN 'table_nom'.'C_SOURCE_FILE_MOD_FIELD' = fileModified
+
+					ENDIF
+
+					UPDATE 'table_nom'
+					COMMIT
+
+				ENDIF
+
+			ELSEIF check_id <> LOCKED
+
+				START WRITE TRANSACTION C_TRANSACTION_ADD_COMPILE:"-":add_id:"-":table_nom
+
+				IF VALID_FIELD ( table_nom, C_SOURCE_DIR_FIELD )
+
+					ASSIGN 'table_nom'.'C_SOURCE_DIR_FIELD' = add_dir
+
+				ENDIF
+
+				IF VALID_FIELD ( table_nom, C_SOURCE_FILE_MOD_FIELD )
+
+					ASSIGN 'table_nom'.'C_SOURCE_FILE_MOD_FIELD' = fileModified
+
+				ENDIF
+
+				UPDATE 'table_nom'
+				COMMIT
+
+			ENDIF
+
+			idx = idx + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( status )
+
+ENDROUTINE  { internal_find_files }
+
+{******************************************************************************}
+
+ROUTINE internal_dir_only ( VALUE fd_only )
+
+	DECLARE tmp, stlen, dir_only
+
+	dir_only = ""
+	fd_only  = STRIP(fd_only)
+	stlen    = STRINGLENGTH ( fd_only )
+	tmp      = INDEX ( fd_only, "\" )
+
+	WHILE ( tmp > 0 ) DO
+
+		dir_only = dir_only : STRIP ( LEFTSTRING ( fd_only, tmp ) )
+		fd_only  = RIGHTSTRING ( fd_only, stlen - tmp )
+		stlen    = STRINGLENGTH ( fd_only )
+		tmp      = INDEX ( fd_only, "\" )
+
+	ENDWHILE
+
+	RETURN ( dir_only )
+
+ENDROUTINE  { internal_dir_only }
+
+{******************************************************************************}
+
+ROUTINE internal_file_name_only ( VALUE fd_only )
+
+	DECLARE tmp, stlen
+
+	fd_only = STRIP(fd_only)
+	tmp     = INDEX ( fd_only, "\"   )
+	stlen   = STRINGLENGTH ( fd_only )
+
+	WHILE ( tmp > 0 ) DO
+
+		fd_only = STRIP ( RIGHTSTRING ( fd_only, stlen - tmp ) )
+		tmp     = INDEX ( fd_only, "\" )
+		stlen   = STRINGLENGTH ( fd_only )
+
+	ENDWHILE
+
+	tmp = INDEX ( fd_only, "." )
+
+	IF tmp > 0 
+
+		fd_only = LEFTSTRING ( fd_only, tmp - 1 )
+
+	ENDIF
+
+	RETURN ( fd_only )
+
+ENDROUTINE   { internal_file_name_only }
+
+{******************************************************************************}
+
+ROUTINE internal_create_form ( form )
+
+	DECLARE prompt_object
+
+	PROMPT OBJECT form CLASS "STD_FORM"
+		form.header               = internal_msg ( "BG_COMPILE_ALL", 1 )  { "Compile All VGL Source" }
+		form.height               = 20
+		form.width                = 60
+		form.row                  = find_max_number((GLOBAL ( "GUI_HEIGHT"  ) - form.height)/2,1)
+		form.column               = find_max_number((GLOBAL ( "GUI_WIDTH"  ) - form.width)/2,1)
+		form.vgl_library          = GLOBAL ( "CURRENT_LIBRARY" )
+		form.button_style         = FORM_BUTTON_OK_CANCEL
+		form.return_behaviour     = FORM_RETURN_STAY
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 1 }
+		prompt_object.row             = 1
+		prompt_object.column          = 2
+		prompt_object.height          = 1
+		prompt_object.width           = 1
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_radio        = TRUE
+		prompt_object.toggled_routine = "radio123_toggled"
+		prompt_object.value           = TRUE
+		prompt_object.prompt_id       = "FIND_AND_ADD"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ( "BG_FIND_FILES_COMPILE", 1 ), 5 , 1, PROMPT_RENDITION_NORMAL )  { "Find on Disk, Add to the Database,  Compile " }
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 2 }
+		prompt_object.row             = 2
+		prompt_object.column          = 2
+		prompt_object.height          = 1
+		prompt_object.width           = 1
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_radio        = TRUE
+		prompt_object.toggled_routine = "radio123_toggled"
+		prompt_object.value           = FALSE
+		prompt_object.prompt_id       = "REMOVE_NOFILE"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_REMOVE_RECORDS", 1), 5 , 2, PROMPT_RENDITION_NORMAL )  {"Remove records with no file "}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 3 }
+		prompt_object.row             = 3
+		prompt_object.column          = 2
+		prompt_object.height          = 1
+		prompt_object.width           = 1
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_radio        = TRUE
+		prompt_object.toggled_routine = "radio123_toggled"
+		prompt_object.value           = FALSE
+		prompt_object.prompt_id       = "COMPILE_ONLY_REPORT_TABLE"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ( "BG_COMPILE_REPORT_ONLY", 1) , 5 , 3, PROMPT_RENDITION_NORMAL )   {"Compile Only Entities in the Database "}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 4 }
+		prompt_object.row         = 6
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 1
+		prompt_object.vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check    = TRUE
+		prompt_object.value       = TRUE
+		prompt_object.prompt_id   = "COMPILE_REPORT"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_COMPILE_REPORT", 1 ), 5 , 6, PROMPT_RENDITION_NORMAL )   {"Reports             "}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 5 }
+		prompt_object.row         = 7
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 1
+		prompt_object.vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check    = TRUE
+		prompt_object.value       = TRUE
+		prompt_object.prompt_id   = "COMPILE_CALC"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ( "BG_COMPILE_CALC", 1 ), 5 , 7, PROMPT_RENDITION_NORMAL )   {"Calculations"}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 6 }
+		prompt_object.row         = 8
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 1
+		prompt_object.vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check    = TRUE
+		prompt_object.value       = TRUE
+		prompt_object.prompt_id   = "COMPILE_LIMIT_CALC"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_COMPILE_LIMIT_CALC", 1), 5 , 8, PROMPT_RENDITION_NORMAL )  {"Limit Calculations"}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 7 }
+		prompt_object.row         = 9
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 1
+		prompt_object.vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check    = TRUE
+		prompt_object.value       = TRUE
+		prompt_object.prompt_id   = "COMPILE_LIST_RESULTS"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ( "BG_COMPILE_LIST_RESULTS", 1), 5 , 9, PROMPT_RENDITION_NORMAL )   {"List Result Calculations"}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 8 }
+		prompt_object.row         = 10
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 1
+		prompt_object.vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check    = TRUE
+		prompt_object.value       = TRUE
+		prompt_object.prompt_id   = "COMPILE_SYNTAX"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_COMPILE_SYNTAX", 1), 5 , 10, PROMPT_RENDITION_NORMAL )   {"Syntaxes"}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 9 }
+		prompt_object.row         = 11
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 1
+		prompt_object.vgl_library = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check    = TRUE
+		prompt_object.value       = TRUE
+		prompt_object.prompt_id   = "COMPILE_SIG_FIGS"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_COMPILE_SIG_FIGS", 1), 5 , 11, PROMPT_RENDITION_NORMAL )   {"Significant Figure Filters"}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 10 }
+		prompt_object.row             = 14
+		prompt_object.column          = 2
+		prompt_object.height          = 1
+		prompt_object.width           = 1
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_radio        = TRUE
+		prompt_object.toggled_routine = "radio_log_toggled"
+		prompt_object.value           = TRUE
+		prompt_object.prompt_id       = "DISPLAY_TO_SCREEN"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_DISPLAY_SCREEN", 1), 5 , 14, PROMPT_RENDITION_NORMAL ) {"Display to Screen"}
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 11 }
+		prompt_object.row             = 15
+		prompt_object.column          = 2
+		prompt_object.height          = 1
+		prompt_object.width           = 1
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_radio        = TRUE
+		prompt_object.toggled_routine = "radio_log_toggled"
+		prompt_object.value           = FALSE
+		prompt_object.prompt_id       = "LOGFILE"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( LOGFILE , 5 , 15, PROMPT_RENDITION_NORMAL )
+
+	PROMPT OBJECT prompt_object BROWSE ON BOOLEAN    { Prompt 12 } 
+		prompt_object.row             = 16
+		prompt_object.column          = 2
+		prompt_object.height          = 1
+		prompt_object.width           = 1
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.is_check        = TRUE
+		prompt_object.value           = TRUE
+		prompt_object.prompt_id       = "INCLUDE_SUCCESS"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ("BG_INCLUDE_SUCCESS", 1), 5 , 16, PROMPT_RENDITION_NORMAL )   {"Include Success"}
+
+	PROMPT OBJECT prompt_object FORMAT TEXT    { Prompt 13 }
+		prompt_object.row         = 20
+		prompt_object.column      = 2
+		prompt_object.height      = 1
+		prompt_object.width       = 37
+		prompt_object.value       = internal_msg ("BG_WAIT_START", 1)   {"Waiting to Start..."}
+		prompt_object.lowered     = TRUE
+		prompt_object.prompt_id   = "STATUS_BOX"
+
+	form.add_display ( prompt_object )
+
+	form.add_frame ( internal_msg ( "BG_DISCOVER"    , 1), 1 , 1 , 3, form.width - 2  )   {"Discovery Options"                  }
+	form.add_frame ( internal_msg ( "BG_COMPILE_OPTS", 1), 1 , 6 , 6, form.width - 2  )   {"Entities to Discover and/or Compile"}
+	form.add_frame ( internal_msg ( "BG_OUTPUT"      , 1), 1 , 14, 3, form.width - 2  )   {"Output" }
+	form.add_frame ( internal_msg ( "BG_STATUS"      , 1), 1 , 20, 1, form.width - 2  )   {"Status"}
+
+ENDROUTINE  { internal_create_form }
+
+{******************************************************************************}
+
+ROUTINE radio123_toggled ( self )
+
+	self.parent_prompt.prompt_objects [1].set_text ( FALSE )
+	self.parent_prompt.prompt_objects [2].set_text ( FALSE )
+	self.parent_prompt.prompt_objects [3].set_text ( FALSE )
+	self.parent_prompt.prompt_objects [ self.tag ].set_text ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE radio_log_toggled ( self )
+
+	self.parent_prompt.prompt_objects [10].set_text ( FALSE )
+	self.parent_prompt.prompt_objects [11].set_text ( FALSE )
+	self.parent_prompt.prompt_objects [ self.tag ].set_text ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE setup_status_message ( form )
+
+	status_window_define_class ( )
+
+	CREATE OBJECT STATUS_WINDOW_CLASS, form.userinfo
+		form.userinfo.status_use_grid      = FALSE
+		form.userinfo.status_frame_text    = internal_msg ( "BG_COMPILE_ALL", 1 )  { "Compile All...." }
+		form.userinfo.status_initialise()
+		form.userinfo.status_form.header   = internal_msg ( "BG_DETAILS", 1 )      { "Details..." }
+		form.userinfo.status_debug_mode    = STATUS_WINDOW_MSG_ALL
+		form.userinfo.status_start ( )
+
+ENDROUTINE  { setup_status_message }
+
+{******************************************************************************}
+{*                                                                            *}
+{*                                                                            *}
+{*                                                                            *}
+{*   SERVER_MANAGER - create/convert/messages                                 *}
+{*                                                                            *}
+{*                                                                            *}
+{*                                                                            *}
+{******************************************************************************}
+
+ROUTINE internal_EditStructure ( self )
+
+	DECLARE aFile, status
+
+	aFile = lib_utils_logical_containing_file ( "smp$datafiles", "structure.txt" )
+
+	IF aFile <> EMPTY
+
+		FILE SEND aFile:"\structure.txt", "EDIT/", status
+
+	ELSE
+
+		FLASH_MESSAGE ( "BG_NO_FIND_FILE", TRUE )
+
+	ENDIF
+
+ENDROUTINE   {  internal_EditStructure  }
+
+{******************************************************************************}
+
+ROUTINE internal_run_create_structure ( self )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_STARTING", 1 ) )
+
+	internal_structure ( "CreateEntityDefinition ", "OK", "" )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_DONE", 1 ) )
+
+ENDROUTINE   { internal_run_create_structure }
+
+{******************************************************************************}
+
+ROUTINE internal_run_convert_table_analyze ( self )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_STARTING", 1 ) )
+
+	internal_structure ( "convert_table ", "SAVEFILE", "-mode ANALYSE -tables * -noconfirm" )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_DONE", 1 ) )
+
+ENDROUTINE   { internal_run_convert_table_analyze }
+
+{******************************************************************************}
+
+ROUTINE internal_run_convert_table_convert ( self )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_STARTING", 1 ) )
+
+	internal_structure ( "convert_table ", "SAVEFILE", "-mode CONVERT -tables * -noconfirm" )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_DONE", 1 ) )
+
+ENDROUTINE   { internal_run_convert_table_convert }
+
+{******************************************************************************}
+
+ROUTINE internal_run_convert_table_indexes ( self )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_STARTING", 1 ) )
+
+	internal_structure ( "convert_table ", "SAVEFILE", "-mode INDEXES -tables * -noconfirm" )
+
+	window_set_status ( internal_msg ( "BG_DATABASE_DONE", 1 ) )
+
+ENDROUTINE   { internal_run_convert_table_indexes }
+
+{******************************************************************************}
+
+ROUTINE internal_run_convert_table_interactive ( self )
+
+	DECLARE form    ,
+                a_mode  ,
+                a_table ,
+                modes   ,
+                exe_path,
+                ext_pos ,
+                a_msg
+
+	CREATE OBJECT "STD_FORM", form
+	form.header             = internal_msg ("SERVER_MANAGER_HEADER", 1)
+	form.height             = 2
+	form.width              = 50
+	form.row                = 4
+	form.column             = 20
+	form.vgl_library        = GLOBAL ( "CURRENT_LIBRARY" )
+	form.button_style       = FORM_BUTTON_OK_CANCEL
+	form.prompt_id          = "CONVERT1TABLE"
+
+	ARRAY modes
+	modes[1,1] = "ANALYSE"
+	modes[1,2] = "ANALYSE"
+	modes[2,1] = "CONVERT"
+	modes[2,2] = "CONVERT"
+	modes[3,1] = "INDEXES"
+	modes[3,2] = "INDEXES"
+	modes[4,1] = "SCRIPTFILE"
+	modes[4,2] = "SCRIPTFILE"
+	modes[5,1] = "NEWTABLE"
+	modes[5,2] = "NEWTABLE"
+	modes[6,1] = "BUILD"
+	modes[6,2] = "BUILD"
+	modes[7,1] = "RECOVER"
+	modes[7,2] = "RECOVER"
+	modes[8,1] = "INDEXES -SCRIPTFILE"
+	modes[8,2] = "INDEXES -SCRIPTFILE"
+
+	PROMPT OBJECT a_mode  AT 30, 1 TO form.width - 1 CHOOSE OUTOF modes
+	PROMPT OBJECT a_table AT 30, 2 TO form.width - 1 BROWSE ON smp_table_export.table_name
+
+	form.add_display ( LEFTSTRING ( internal_msg ( "SERVER_MANAGER_STATUS_CONV_MODE", 1), 29 ), 1, a_mode.row , PROMPT_RENDITION_RAISED )
+	form.add_display ( LEFTSTRING ( internal_msg ( "BG_DATABASE_TABLE_NAME"         , 1), 29 ), 1, a_table.row, PROMPT_RENDITION_RAISED )
+	form.add_prompt ( a_mode  )
+	form.add_prompt ( a_table )
+
+	form.start_prompt ()
+
+	REPEAT
+
+		form.wait_prompt ()
+
+	UNTIL ( form.get_lastkey() = "EXIT" ) OR ( form.get_lastkey() = "DO" )
+
+	form.end_prompt ()
+
+	IF ( form.get_lastkey() = "DO" )
+
+		IF ( BLANK ( a_mode.value ) )
+
+			a_mode.value = "ANALYSE"
+
+		ENDIF
+
+		IF NOT BLANK ( a_table.value )
+
+			IF ( INDEX ( a_mode.value, "SCRIPTFILE" ) > 0 )
+
+				exe_path     = LOGICAL ( "SMP$PROGRAMS" )
+				ext_pos      = INDEX ( exe_path, ";" )
+
+				IF ( ext_pos > 0 )
+					exe_path = SUBSTRING ( exe_path, 1, ext_pos - 1 )
+				ENDIF
+
+				exe_path = exe_path :"\":STRIP ( a_table.value ):".sql"
+
+				IF a_mode.value = "SCRIPTFILE"
+					a_msg = "-":STRIP(a_mode.value):" ":exe_path:" -tables ":a_table.value:" -noconfirm"
+				ELSE
+					a_msg = "-mode ":STRIP(a_mode.value):" ":exe_path:" -tables ":a_table.value:" -noconfirm"
+				ENDIF
+
+				internal_structure ( "convert_table ", "SAVEFILE", a_msg )
+
+			ELSE
+
+				internal_structure ( "convert_table ", "SAVEFILE", "-mode " : a_mode.value : " -tables " : a_table.value : " -noconfirm" )
+
+			ENDIF
+
+		ENDIF { value not blank }
+
+	ENDIF  { do key }
+
+ENDROUTINE   { internal_run_convert_table_interactive }
+
+{ ************************************************************************************************* }
+
+ROUTINE internal_structure ( VALUE a_program      ,
+                             VALUE success_string ,
+                             VALUE a_qualifier    )
+
+	DECLARE exe_path     ,
+                ext_pos      ,
+                ext_len      ,
+                logfile      ,
+                log_array    ,
+                i            ,
+                save_date    ,
+                status
+
+	{ ---------------------------------------------------------------------------- }
+	{ Build from logicals/regkeys how to get to the create_structure to spawn      }
+	{ ---------------------------------------------------------------------------- }
+
+	ARRAY log_array
+
+	SET DATE FORMAT "-DZ-MON-H24-MI"
+
+	save_date = STRIP ( NOW )
+
+	RESTORE DATE FORMAT
+
+	retval   = FALSE
+	logfile  = lib_utils_logical_to_string ( "SMP$TEXTREPORTS"):"\":STRIP(a_program):save_date:".log"
+	exe_path = LOGICAL ( "SMP$PROGRAMS" )  { do not use logical to string }
+	ext_pos  = INDEX ( exe_path, ";" )
+	ext_len  = STRINGLENGTH ( exe_path )
+
+	IF ( ext_pos > 0 )
+		exe_path = SUBSTRING ( exe_path, ext_pos + 1, ext_len )
+	ENDIF
+
+	exe_path  = exe_path : "\":STRIP(a_program) : ".exe"
+
+	IF NOT FILE EXISTS ( exe_path )
+
+		flash_message ( internal_msg ( "SERVER_MANAGER_ERROR_OPTION", 1 ) : STRIP ( exe_path ), TRUE )
+
+	ELSE
+
+		exe_path = ascii(34) : exe_path : ascii(34) : " -instance " : GLOBAL ( "INSTANCE" ) : " ":a_qualifier
+
+		{ ---------------------------------------------------------------------------- }
+		{ Got the spawn, now run the command and save the output from the spawn        }
+		{ ---------------------------------------------------------------------------- }
+
+		FILE DELETE logfile, status
+
+		status = lib_utils_spawn_with_log ( exe_path, logfile )
+
+	        IF status <> EMPTY
+
+	            flash_message ( internal_msg ( "SERVER_MANAGER_ERROR_COMMAND", 1 ) : status, TRUE )
+
+	        ELSEIF FILE EXISTS ( logfile )
+
+			FILE OPEN logfile, status
+
+			IF status = EMPTY
+
+				i = 1
+				FILE READ logfile, log_array[i], status
+
+				WHILE status = EMPTY DO
+
+					i = i + 1
+					FILE READ logfile, log_array[i], status
+
+					IF ( INDEX ( log_array[i], success_string ) > 0 ) AND ( i <=5 )
+
+						retval = TRUE
+
+					ENDIF
+
+				ENDWHILE
+
+			ENDIF
+
+			FILE CLOSE logfile, status
+			FILE SEND logfile, "DISPLAY/"
+
+		ELSE
+
+			flash_message ( internal_msg ("SERVER_MANAGER_ERROR_LOGFILE", 1), TRUE )
+
+		ENDIF  { logfile output from create structure }
+
+	ENDIF  { build command }
+
+	RETURN ( retval )
+
+ENDROUTINE {  internal_structure }
+
+{******************************************************************************}
+
+ROUTINE internal_run_create_message ( self )
+
+	DECLARE spawn_str   ,
+                retval      ,
+                file_status
+
+	retval    = FALSE
+	spawn_str = ""
+	logfile   = lib_utils_logical_to_string ( "SMP$TEXTREPORTS" ) : "\spawn" : STRIP ( GLOBAL ( "PROCESS_ID" )) : ".create_message"
+
+	{ ------------------------------------------------------------- }
+	{ Build command string                                          }
+	{ ------------------------------------------------------------- }
+
+        IF internal_get_exe_path ( spawn_str, "create_message" )
+
+		file_status = lib_utils_spawn_with_log ( spawn_str, LOGFILE )
+
+		IF file_status <> EMPTY
+
+			flash_message ( internal_msg ( "SERVER_MANAGER_ERROR_COMMAND", 1 ) : file_status, TRUE )
+
+		ELSEIF FILE EXISTS ( LOGFILE )
+
+			FILE SEND LOGFILE, "DISPLAY/"
+			retval = TRUE
+			user_login_reconnect()
+
+		ELSE
+
+			flash_message ( internal_msg ( "SERVER_MANAGER_ERROR_LOGFILE", 1 ), TRUE )
+
+		ENDIF  { file exists }
+
+	ENDIF   { spawn_str is ok }
+
+	RETURN ( retval )
+
+ENDROUTINE   { internal_run_create_message }
+
+{******************************************************************************}
+
+ROUTINE internal_EditMessage ( self )
+
+	DECLARE aFile, status
+
+	aFile = lib_utils_logical_containing_file ( "smp$messages", "message.txt" )
+
+	IF aFile <> EMPTY
+
+		FILE SEND aFile:"\message.txt", "EDIT/", status
+
+	ELSE
+
+		FLASH_MESSAGE ( "BG_NO_FIND_FILE", TRUE )
+
+	ENDIF
+
+ENDROUTINE   {  internal_EditMessage  }
+
+{******************************************************************************}
+
+ROUTINE internal_Edit_1_MsgFile ( self )
+
+	DECLARE form, prompt_object, aLast
+
+	PROMPT OBJECT form CLASS "STD_FORM"
+		form.header               = internal_msg ( "BG_EDIT_1_MESSAGE", 1 )
+		form.height               = 2
+		form.width                = 140
+		form.row                  = find_max_number((GLOBAL ( "GUI_HEIGHT"  ) - form.height)/2,1)
+		form.column               = find_max_number((GLOBAL ( "GUI_WIDTH"  ) - form.width)/2,1)
+		form.vgl_library          = GLOBAL ( "CURRENT_LIBRARY" )
+		form.button_style         = FORM_BUTTON_OK_CANCEL
+		form.return_behaviour     = FORM_RETURN_STAY
+		form.prompt_id            = "EDIT1MSGFILE"
+
+	PROMPT OBJECT prompt_object BROWSE ON FILE
+		prompt_object.row             = 1
+		prompt_object.column          = 20
+		prompt_object.height          = 1
+		prompt_object.width           = 100
+		prompt_object.vgl_library     = GLOBAL ( "CURRENT_LIBRARY" )
+		prompt_object.prompt_id       = "FIND_MSG_FILE"
+		prompt_object.file_directory  = "smp$messages:"
+		prompt_object.file_extension  = "txt"
+
+	form.add_prompt ( prompt_object )
+	form.add_display ( internal_msg ( "BG_EDIT_MSG_FILE", 1 ), 5 , 1, PROMPT_RENDITION_NORMAL )
+
+	form.start_prompt()
+
+	REPEAT
+
+		form.wait_prompt()
+		aLast = form.get_lastkey()
+
+	UNTIL ( aLast = "DO" ) OR ( aLast = "EXIT" )
+
+	IF aLast = "DO"
+
+		FILE SEND prompt_object.value, "edit/", aLast
+
+	ENDIF
+
+ENDROUTINE   {  internal_Edit_1_MsgFile  }
+
+{******************************************************************************}
+
+ROUTINE internal_run_table_load ( self )
+
+	MENUPROC ( 15049 )
+
+ENDROUTINE     {  internal_run_table_load   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_table_save ( self )
+
+	MENUPROC ( 15051 )
+
+ENDROUTINE     {  internal_run_table_save   }
+
+{******************************************************************************}
+
+ROUTINE internal_Edit_import_export ( self )
+
+	MENUPROC ( 35289 )
+	
+ENDROUTINE     {  internal_edit_import_export   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_import_mode ( self )
+
+	MENUPROC ( 35288 )
+	
+ENDROUTINE     {  internal_run_import_mode   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_import_build ( self )
+
+	MENUPROC ( 35287 )
+
+ENDROUTINE     {  internal_run_import_build   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_export_mode ( self )
+
+	MENUPROC ( 35286 )
+
+ENDROUTINE     {  internal_run_export_mode   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_export_build ( self )
+
+	MENUPROC ( 35285 )
+
+ENDROUTINE     {  internal_run_export_build   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_load_mtb ( self )
+
+	MENUPROC ( 15778 )
+
+ENDROUTINE     {  internal_run_load_mtb   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_load_pkg ( self )
+
+	MENUPROC ( 35281 )
+
+ENDROUTINE     {  internal_run_load_pkg   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_xfer_pkg ( self )
+
+	MENUPROC ( 35282 )
+
+ENDROUTINE     {  internal_run_xfer_pkg   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_find_pkg ( self )
+
+	MENUPROC ( 35283 )
+
+ENDROUTINE     {  internal_run_find_pkg   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_lab_delete ( self )
+
+	vgl_generate_report ( "$LAB_DEL", "", FALSE, "" )
+
+ENDROUTINE     {  internal_run_lab_delete   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_lab_sheet ( self )
+
+	MENUPROC ( 435 )
+
+ENDROUTINE     {  internal_run_lab_sheet   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_SMConfig ( self )
+
+	MENUPROC ( 10865 )
+
+ENDROUTINE     {  internal_run_SMConfig   }
+
+{******************************************************************************}
+
+ROUTINE internal_run_SMSetup ( self )
+
+	DECLARE aDir, status
+
+	aDir = lib_utils_logical_containing_file ( "SMP$PROGRAMS", "setup.exe" )
+
+	dde_winexec ( aDir:"\setup.exe","SW_SHOW", status )
+
+	internal_REGISTRY( "smpbatch" )
+
+ENDROUTINE     {  internal_run_SMConfig   }
+
+{**************************************************************************** }
+
+ROUTINE InternalOpenDirectory( self )
+
+	DECLARE status
+
+	dde_winexec ( "explorer ":STRIP(self.value),"SW_SHOW", status )
+
+ENDROUTINE  { InternalOpenDirectory }
+
+{******************************************************************************}
+{*                                                                            *}
+{*                                                                            *}
+{*                                                                            *}
+{*   Background - DDLTE prompts for services                                  *}
+{*                                                                            *}
+{*                                                                            *}
+{*                                                                            *}
+{******************************************************************************}
+
+ROUTINE smp_bg_prompt_library ( VALUE column, VALUE row, VALUE cell_width, window, VALUE is_display )
+
+	DECLARE object, aVal, aType
+
+	object = EMPTY
+	aVal   = SELECT smp_background.vgl_library
+	aType  = SELECT smp_background.service_type
+
+	internal_smp_bg_prompt ( column, row, cell_width, window, is_display, "VGL_LIBRARY", object, aVal, aType )
+
+ENDROUTINE  { smp_bg_prompt_library }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_LIST_prompt_vgl_library (       self        ,
+                                               grid        ,
+                                         VALUE cell_column ,
+                                         VALUE cell_row    ,
+                                         VALUE column      ,
+                                         VALUE row         ,
+                                         VALUE cell_width  ,
+                                               window      ,
+                                         VALUE is_display   )
+
+	DECLARE aVal, aType
+
+	aVal  = SELECT smp_background.vgl_library  IN OBJECT self
+	aType = SELECT smp_background.service_type IN OBJECT self
+
+	internal_smp_bg_prompt ( column, row, cell_width, window, is_display, "VGL_LIBRARY", self, aVal, aType )
+
+ENDROUTINE  { smp_bg_prompt_library }
+
+{******************************************************************************}
+
+ROUTINE internal_smp_bg_prompt ( VALUE column, VALUE row, VALUE cell_width, window, VALUE is_display, VALUE a_field, object, VALUE aVal, VALUE aType )
+
+	DECLARE cur_val
+
+	cur_val = aVal
+
+	IF NOT is_display
+
+		IF ( aType = "NET" )
+
+			PROMPT FOR aVal IN WINDOW window ON LINE row FROM column
+
+		ELSE
+
+			PROMPT FOR aVal IN WINDOW window ON LINE row FROM column FORMAT smp_background.vgl_library
+
+		ENDIF
+
+	ELSE
+
+		DISPLAY a_val IN WINDOW window ON LINE row FROM column
+
+	ENDIF
+
+	IF aVal <> cur_val
+
+		IF object <> EMPTY 
+
+			ASSIGN smp_background.vgl_library IN OBJECT object = aVal
+
+		ELSE
+
+			ASSIGN smp_background.vgl_library = aVal
+
+		ENDIF
+
+	ENDIF
+
+ENDROUTINE   { internal_smp_bg_prompt }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_LTE_prompt_vgl_routine( VALUE column, VALUE row, VALUE cell_width, window, VALUE is_display )
+
+	DECLARE a_record, a_create, lib_name, lib_type, a_MT
+
+	a_record = SELECT smp_background.vgl_routine
+	a_create = SELECT smp_background.create_service
+	lib_name = SELECT smp_background.vgl_library
+	lib_type = SELECT smp_background.service_type
+	a_MT     = EMPTY
+
+	smp_bg_prompt_vgl_routine ( column, row, cell_width, window, is_display, a_record, a_create, lib_name, lib_type, a_MT )
+
+ENDROUTINE   { smp_bg_LTE_prompt_vgl_routine }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_LIST_prompt_vgl_routine (       self        ,
+                                               grid        ,
+                                         VALUE cell_column ,
+                                         VALUE cell_row    ,
+                                         VALUE column      ,
+                                         VALUE row         ,
+                                         VALUE cell_width  ,
+                                               window      ,
+                                         VALUE is_display   )
+
+	DECLARE a_record, a_create, lib_name, lib_type
+
+	a_record = SELECT smp_background.vgl_routine    IN OBJECT self
+	a_create = SELECT smp_background.create_service IN OBJECT self
+	lib_name = SELECT smp_background.vgl_library    IN OBJECT self
+	lib_type = SELECT smp_background.service_type   IN OBJECT self
+
+	smp_bg_prompt_vgl_routine ( column, row, cell_width, window, is_display, a_record, a_create, lib_name, lib_type, self )
+
+ENDROUTINE   { smp_bg_LIST_prompt_vgl_routine }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_prompt_vgl_routine( VALUE column, VALUE row, VALUE cell_width, window, VALUE is_display, a_record, a_create, lib_name, lib_type, object )
+
+	DECLARE tmpString, bg_array, bg_counter, routine_array
+
+	IF is_display
+
+		DISPLAY a_record IN WINDOW window ON LINE row FROM column
+
+	ELSE
+
+		ARRAY bg_array
+
+		IF lib_type = "NET"
+
+			bg_counter = 0
+			tmpString  = SELECT phrase.phrase_id WHERE phrase_type = C_PHRASE_TASKS
+
+			WHILE ( tmpString <> EMPTY ) DO
+
+				bg_counter             = bg_counter + 1
+				bg_array[bg_counter,1] = tmpString
+				bg_array[bg_counter,2] = tmpString
+
+				NEXT phrase
+				tmpString = SELECT phrase.phrase_id
+
+			ENDWHILE
+
+		ELSEIF ( lib_type = "VGL" ) AND NOT BLANK ( lib_name )
+
+			ARRAY routine_array
+
+			vgl_find_routines ( lib_name, routine_array )
+
+			bg_counter = 1
+
+			WHILE ( VARIABLE_IS_ASSIGNED ( routine_array[bg_counter] ) ) AND ( routine_array[bg_counter] <> EMPTY ) DO
+
+				bg_array[bg_counter,1] = routine_array[ bg_counter ]
+				bg_array[bg_counter,2] = routine_array[ bg_counter ]
+				bg_counter             = bg_counter + 1
+
+			ENDWHILE
+
+			bg_array[bg_counter,1] = ""
+			bg_array[bg_counter,2] = ""
+
+		ELSE
+
+			DISPLAY "<VGL_ROUTINE>" IN WINDOW window ON LINE row FROM column
+
+			bg_array[1,1] = "VGL_ROUTINE"
+			bg_array[1,2] = "VGL_ROUTINE"
+			bg_array[2,1] = ""
+			bg_array[2,2] = ""
+
+		ENDIF
+
+		PROMPT FOR a_record IN WINDOW window ON LINE row FROM column CHOOSE OUTOF bg_array
+
+		IF object <> EMPTY
+
+			ASSIGN smp_background.vgl_routine IN OBJECT object = a_record
+
+		ELSE
+
+			ASSIGN smp_background.vgl_routine = a_record
+
+		ENDIF
+
+	ENDIF  { is_display }
+
+	RETURN ( a_record )
+
+ENDROUTINE  { smp_bg_prompt_vgl_routine }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_prompt_user_password( VALUE identity, VALUE copied_identity, VALUE operation )
+
+	DECLARE pwd_form ,
+	        retval   ,
+	        new_pass2,
+	        new_pass1,
+	        labtable
+
+	CALL_ROUTINE "labtablib_get_labtable" IN LIBRARY "$LABTABLIB" USING labtable
+	retval    = TRUE
+
+	IF ( operation = "MODIFY" )
+
+		CREATE OBJECT "STD_FORM", pwd_form
+			pwd_form.height           = 2
+			pwd_form.width            = 60
+			pwd_form.row              = 12
+			pwd_form.column           = 12
+			pwd_form.header           = internal_MSG("BG_BACKGROUND_PW_HEADER",1)
+			pwd_form.border           = TRUE
+			pwd_form.return_behaviour = FORM_RETURN_STAY
+			pwd_form.add_frame( "", 1, 1, 2, 60 )
+
+		PROMPT OBJECT pwd_form.promptobjects[1] ON LINE 1 FROM 40 FORMAT PASSWORD.CRYPTPASS WITH ( zap_on_first=TRUE, silent_mode=TRUE )
+		PROMPT OBJECT pwd_form.promptobjects[2] ON LINE 2 FROM 40 FORMAT PASSWORD.CRYPTPASS WITH ( zap_on_first=TRUE, silent_mode=TRUE )
+
+		pwd_form.add_display( pad( internal_MSG("BG_BACKGROUND_PW1",1), " ", 30 ),3, 1, PROMPT_RENDITION_BOLD + PROMPT_RENDITION_RAISED )
+		pwd_form.add_display( pad( internal_MSG("BG_BACKGROUND_PW2",1), " ", 30 ),3, 2, PROMPT_RENDITION_BOLD + PROMPT_RENDITION_RAISED )
+
+		pwd_form.start_prompt()
+		pwd_form.wait_prompt()
+		pwd_form.end_prompt()
+
+		{ -------------------------------------------------------- }
+		{ If the user enters all correctly,  update the LTE    }
+		{ -------------------------------------------------------- }
+
+		new_pass1 = pwd_form.prompt_objects[1].value
+		new_pass2 = pwd_form.prompt_objects[2].value
+
+		IF ( pwd_form.getlastkey() <> "DO" )
+
+			FLASH_MESSAGE ( internal_MSG("BG_BACKGROUND_PW3",1), TRUE )
+
+		ELSEIF ( new_pass1 <> new_pass2 )
+
+			FLASH_MESSAGE ( internal_MSG("BG_BACKGROUND_PW4",1), TRUE )
+
+		ELSE
+
+			labtable.approve_as = new_pass1
+			retval              = TRUE
+
+		ENDIF
+
+	ELSEIF ( operation = "SAVE" ) AND ( VARIABLE_IS_ASSIGNED ( labtable.approve_as ) )
+
+		retval = smp_bg_update_password( identity, labtable.approve_as )
+
+	ENDIF  { operation must be modify }
+
+	RETURN ( retval )
+
+ENDROUTINE  { smp_bg_prompt_user_password }
+
+{******************************************************************************}
+
+ROUTINE smp_bg_update_password ( VALUE identity, VALUE new_password )
+
+	DECLARE valid_user, status
+
+	status     = ""
+	valid_user = SELECT password.cryptpass WHERE identity = identity
+
+	IF user_login_change_any_password ( identity, new_password, status )
+
+		valid_user = SELECT password.cryptpass WHERE IDENTITY = identity
+
+		IF ( valid_user = EMPTY)
+
+			FLASH_MESSAGE ( "BG_BACKGROUND_PW5", TRUE )
+
+		ELSE
+
+			status = TRUE
+			FLASH_MESSAGE ( "BG_BACKGROUND_PW7", TRUE )
+
+		ENDIF
+
+	ELSE
+
+		FLASH_MESSAGE ( "BG_BACKGROUND_PW6", TRUE )
+
+	ENDIF	{  valid_user = EMPTY...}
+
+	RETURN ( status = TRUE )
+
+ENDROUTINE { smp_bg_update_password }
+
+{******************************************************************************}
+{*                                                                            *}
+{*                                                                            *}
+{*                                                                            *}
+{*  Internal routines used throughout this library                            *}
+{*                                                                            *}
+{*                                                                            *}
+{*                                                                            *}
+{******************************************************************************}
+
+GLOBAL ROUTINE internal_start_message ( VALUE msg_String, VALUE StartFileLog )
+
+	DECLARE status
+
+	IF ( FILE EXISTS ( StartFileLog ) )
+		FILE EXTEND StartFileLog, status
+	ELSE
+		FILE CREATE StartFileLog, status
+	ENDIF
+
+	FILE WRITE StartFileLog, STRIP ( NOW ) : " | " :  msg_String, status
+	FILE CLOSE StartFileLog, status
+
+	IF ( GLOBAL ( "MODE" ) = "INTERACTIVE" )
+
+		FLASH_MESSAGE ( msg_String, TRUE )
+
+	ENDIF
+
+ENDROUTINE { internal_start_message }
+
+{******************************************************************************}
+
+ROUTINE internal_array_2_slice (       test_array    ,
+                                 VALUE nested_id     ,
+                                       index_found   ,
+                                 VALUE array_element )
+
+	DECLARE count, retval
+
+	retval      = FALSE
+	count       = 0
+	index_found = 0
+
+	IF ( SIZE_OF_ARRAY ( test_array ) > 0 )
+
+		WHILE ( count < SIZE_OF_ARRAY ( test_array ) ) DO
+
+			count = count + 1
+
+			IF ( test_array[count,array_element] = nested_id )
+
+				retval      = TRUE
+				index_found = count
+				count       = SIZE_OF_ARRAY ( test_array )  { get outta while }
+
+			ENDIF
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE   { end of internal_array_2_slice }
+
+{ **************************************************************************** }
+
+ROUTINE internal_msg ( VALUE message, VALUE msg_pointer )
+
+	DECLARE val        ,
+                stlen      ,
+                save_text  ,
+                a_amper    ,
+                do_pointer
+
+	do_pointer  = FALSE
+	save_text   = GLOBAL ( "FORMAT_TEXT" )
+	message     = STRIP ( message )
+	a_amper     = INDEX ( message, "&&" )
+	stlen       = STRINGLENGTH ( message )
+
+	IF ( GLOBAL_EXISTS ( G_MESSAGE_POINTERS ) )
+
+		do_pointer  = GLOBAL ( G_MESSAGE_POINTERS )
+
+	ENDIF
+
+	IF NOT do_pointer
+
+		SET FORMAT "9999"
+
+		IF ( a_amper > 1 )
+
+			msg_pointer = STRIP ( RIGHTSTRING ( message, stlen - ( a_amper + 1 ) ) )
+			message     = STRIP ( LEFTSTRING ( message, a_amper - 1 ) )
+
+			IF ( NUMTEXT ( msg_pointer ) )
+
+				msg_pointer = NUMERIC ( msg_pointer )
+
+			ELSE
+
+				msg_pointer = 1
+
+			ENDIF
+
+		ELSE
+
+			msg_pointer = 1
+
+		ENDIF
+
+		IF ( INDEX ( message, "MESSAGE_PRN" ) > 0 )
+
+			message = ROUND ( message # "MESSAGE_PRN_" )
+
+			val = GET MESSAGE ( message, msg_pointer )
+
+		ELSE
+
+			val = GET_USER_MESSAGE ( message, msg_pointer )
+
+
+		ENDIF
+
+		IF val = ERROR
+
+			val = STRIP ( message )
+
+		ENDIF
+
+		SET FORMAT save_text
+
+	ELSE
+
+		val = STRIP ( message )
+
+	ENDIF   { when do_pointer do not do anything... allows you to run application with message id's }
+
+	RETURN ( val )
+
+ENDROUTINE  { internal_msg }
+
+{******************************************************************************}
+
+ROUTINE validation_routine            { <- * for type LTE validation, not LIST * }
+
+	DECLARE table         ,
+                interface     ,
+                field         ,
+                message       ,
+                is_valid      ,
+                labtable      ,
+                message_array ,
+                msg_required  ,
+                message_count
+
+	ARRAY message_array
+
+	CALL_ROUTINE "labtablib_get_labtable" IN LIBRARY "$LABTABLIB" USING labtable
+
+	is_valid      = TRUE
+	table         = labtable.name_of_table
+	interface     = labtable.interface
+	msg_required  = internal_MSG ( "BG_REQUIRED_FIELD", 1 )
+	message_count = 0
+
+	field = SELECT interface_field.field_name
+                WHERE table_name = table
+                AND   interface  = interface
+                ORDER ON order_number
+
+	 WHILE field  <> EMPTY DO
+
+		IF ( SELECT interface_field.mandatory ) AND ( BLANK ( SELECT 'table'.'field' ) )
+
+			is_valid                        = FALSE
+			message_count                   = message_count + 1
+			message                         = SELECT interface_field.message
+			message_array [ message_count ] = msg_required : internal_MSG ( message, 1 )
+
+		ENDIF
+
+		NEXT interface_field
+		field = SELECT interface_field.field_name
+
+	ENDWHILE
+
+	IF NOT is_valid
+
+		flash_messages ( "BG_REQUIRED_TITLE", EMPTY, message_array, TRUE )
+
+	ENDIF
+
+	RETURN ( is_valid )
+
+ENDROUTINE       { validation_routine }
+
+{ **************************************************************************** }
+{                                                                              }
+{                                                                              }
+{        B A C K G R O U N D  --  stop/start//maximum attempts                 }
+{                                                                              }
+{                                                                              }
+{ **************************************************************************** }
+
+ROUTINE bg_trigger_lib ( VALUE aRoutine, VALUE aReport, VALUE bgRoutine, VALUE bgProcess, VALUE bgRetryCount, VALUE bgShutdown, VALUE StartFileLog )
+
+	DECLARE aRec
+
+	aRec = SELECT report.identity WHERE IDENTITY = TOUPPER ( C_BG_USER_TRIGGER_LIBRARY )
+
+	IF ( aRec <> EMPTY ) AND ( VGL_VALIDATE_ROUTINE ( C_BG_USER_TRIGGER_LIBRARY, aRoutine ) )
+
+		IF aRoutine = "MAX_PROCESS"
+
+			CALL_ROUTINE aRoutine IN LIBRARY C_BG_USER_TRIGGER_LIBRARY USING bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog
+
+		ELSEIF aRoutine = "STOP_SERVICE"
+
+			CALL_ROUTINE aRoutine IN LIBRARY C_BG_USER_TRIGGER_LIBRARY USING bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog
+
+		ELSEIF aRoutine = "START_SERVICE"
+
+			CALL_ROUTINE aRoutine IN LIBRARY C_BG_USER_TRIGGER_LIBRARY USING bgReport, bgRoutine, bgProcess, bgRetryCount, bgShutdown, StartFileLog
+
+		ENDIF
+
+	ELSE
+
+		FLASH_MESSAGE ( internal_msg ( "BG_BACKGROUND_BG_33", 1 ) : C_BG_USER_TRIGGER_LIBRARY:"/":aRoutine, TRUE )
+
+	ENDIF
+
+ENDROUTINE  { bg_trigger_lib }
+
+{***************************************************************************************}
+
+ROUTINE WDTOrphanSleep ( not_used )
+
+	DECLARE aSleep, isShutdown
+
+	aSleep     = C_SLEEP_SNAPSHOT
+	isShutdown = GLOBAL ( "SHUTDOWN_ENABLED" )
+
+	WHILE NOT isShutdown
+
+		WDT_monitor_orphans ( aSleep )
+
+		IF GLOBAL_EXISTS ( "SMP_SESSION_SLEEP" )
+
+			aSleep = GLOBAL ( "SMP_SESSION_SLEEP" )
+
+		ENDIF
+
+		SLEEP FOR aSleep
+
+		isShutdown = SELECT config_header.value WHERE identity = "SHUTDOWN_ENABLED"
+
+	ENDWHILE
+
+
+ENDROUTINE  { WDTOrphanSleep }
+
+{***************************************************************************************}
+
+ROUTINE WDTMonitorOrphans ( not_used )
+
+	DECLARE cmd          ,
+	        pid_file     ,
+	        pid_value    ,
+	        line_count   ,
+	        check_ok     ,
+	        netstat_file ,
+	        netstat_value,
+	        orphan_log
+
+	pid_file     = lib_utils_logical_to_string ( "SMP$LOGFILES" ) : "\issue\process_id.out"
+	netstat_file = lib_utils_logical_to_string ( "SMP$LOGFILES" ) : "\issue\netstat.out"
+	orphan_log   = lib_utils_logical_to_string ( "SMP$LOGFILES" ) : "\issue\orphans.log"
+
+	IF NOT FILE EXISTS ( orphan_log )
+
+		FILE CREATE orphan_log, check_ok
+
+	ENDIF
+
+	FILE EXTEND orphan_log, check_ok
+	FILE WRITE  orphan_log, "WDTMonitorOrphans Checking SMP processes ":NOW, check_ok
+
+	FILE DELETE pid_file, check_ok
+
+	{ ------------------------------------------------------------------------ }
+	{ Get all the current SampleManager programs that are on the server        }
+	{ ------------------------------------------------------------------------ }
+
+	IF ( TOUPPER ( LOGICAL ( "PROCESSOR_ARCHITECTURE" )) = "AMD64" ) OR ( TOUPPER ( LOGICAL ( "PROCESSOR_ARCHITEW6432" )) = "AMD64" )
+
+		cmd = "FOR /F ":ASCII(34):"skip=3 tokens=2":ASCII(34):" %G IN ('tasklist /FI ":ASCII(34):"IMAGENAME eq SampleManagerServerHost.exe *32":ASCII(34):"') DO @echo %G >> ":ASCII(34):pid_file:ASCII(34)
+	ELSE
+
+		cmd = "FOR /F ":ASCII(34):"skip=3 tokens=2":ASCII(34):" %G IN ('tasklist /FI ":ASCII(34):"IMAGENAME eq SampleManagerServerHost.exe":ASCII(34):"') DO @echo %G >> ":ASCII(34):pid_file:ASCII(34)
+	ENDIF
+
+	SPAWN cmd QUIETLY
+
+	FILE OPEN pid_file, check_ok
+
+	WHILE ( check_ok = EMPTY ) DO
+
+		line_count = 0
+
+		{ ------------------------------------------------------------------- }
+		{ Read each PID, check the network status of this pid to see if ok    }
+		{ ------------------------------------------------------------------- }
+
+		FILE DELETE netstat_file, check_ok
+		FILE READ   pid_file, pid_value, check_ok
+
+		IF check_ok = EMPTY
+
+			{ ------------------------------------------------------------------------ }
+			{ Search net status for any tasks that have this pid, should have >=2      }
+			{ ------------------------------------------------------------------------ }
+
+			cmd = "FOR /F ":ASCII(34):"tokens=5":ASCII(34):" %G IN ('netstat -aon') DO @echo %G_ | findstr /b ":STRIP(pid_value):"_ >> ":ASCII(34):netstat_file:ASCII(34)
+
+			SPAWN cmd QUIETLY
+
+			FILE OPEN netstat_file, check_ok
+
+			WHILE ( check_ok = EMPTY ) DO
+
+				FILE READ netstat_file, netstat_value, check_ok
+
+				IF netstat_value <> EMPTY
+
+					line_count = line_count + 1
+
+				ENDIF
+
+			ENDWHILE
+
+			{ ------------------------------------------------------------------- }
+			{ If we don't have lines in the netstat for that PID something wrong  }
+			{ ------------------------------------------------------------------- }
+
+			IF line_count <= 1
+
+				FILE WRITE orphan_log, " netstat -aon insufficient-> " : pid_value, check_ok
+
+				IF ( GLOBAL_EXISTS ( C_REMOVE_ORPHANS ) )
+
+					IF GLOBAL ( C_REMOVE_ORPHANS ) = TRUE
+
+						cmd = "taskkill /f /pid " : pid_value : " >> " : ASCII(34) : orphan_log : ASCII(34) : " 2>&1"
+						SPAWN cmd QUIETLY
+
+						FILE WRITE orphan_log, "WDTMonitorOrphans Submitted terminate command for orphan -> ":pid_value:" ":cmd, check_ok
+
+					ENDIF
+
+				ELSE
+
+					FLASH_MESSAGE ( "WDTMonitorOrphans Configuration item does not exist ":C_REMOVE_ORPHANS, TRUE )
+
+				ENDIF
+
+			ENDIF
+
+			FILE CLOSE  netstat_file, check_ok
+			FILE DELETE netstat_file, check_ok
+
+		ENDIF
+
+	ENDWHILE
+
+	FLASH_MESSAGE ( "WDTMonitorOrphans completed _____________" : NOW, TRUE )
+
+	FILE CLOSE  orphan_log, check_ok
+	FILE CLOSE  pid_file  , check_ok
+	FILE DELETE pid_file  , check_ok
+
+ENDROUTINE     { WDTMonitorOrphans }
+
+{******************************************************************************}
+
+ROUTINE MENUEditBGServices ( a_procedure )
+
+	DECLARE a_view     ,
+                a_table    ,
+                a_interface,
+                collection ,
+                a_mode     ,
+                a_delete_ok,
+                a_insert_ok,
+                a_select   ,
+                retval
+
+	retval = TRUE
+
+	PROMPT FOR a_interface          { 1  DDLTE interface              }
+	PROMPT FOR a_view               { 2  table/view for input records }
+	PROMPT FOR a_table              { 3  table to modify / save       }
+	PROMPT FOR a_mode               { 4  post save callback           }
+	PROMPT FOR a_delete_ok          { 5  delete allowed on table      }
+	PROMPT FOR a_insert_ok          { 6  insert allowed on table      }
+
+	a_delete_ok = GET_CHARACTER_AT ( a_delete_ok, 1 ) = "T"
+	a_insert_ok = GET_CHARACTER_AT ( a_insert_ok, 1 ) = "T"
+
+	ARRAY a_select
+
+	IF ( VALID_FIELD ( a_table, "REMOVEFLAG" ) )
+
+		ARRAY_SELECT_ADD ( a_select, ARRAY_SELECT_EQ, "REMOVEFLAG", FALSE )
+
+	ENDIF
+
+	CREATE OBJECT G_STD_OBJECT_DATABASE, collection
+	collection.initialise ( a_view )
+	collection.select ( a_select )
+
+	retval = internal_list_edit ( a_interface, a_view, a_table, a_mode, a_delete_ok, a_insert_ok, collection )
+
+	RETURN ( retval )
+
+ENDROUTINE   { MENUEditBgServices }
+
+{******************************************************************************}
+
+ROUTINE internal_list_edit ( a_interface, a_view, a_table, a_mode, VALUE a_delete_ok, VALUE a_insert_ok, collection )
+
+	DECLARE a_empty      ,
+                a_list_editor,
+                a_prefix     ,
+                retval
+
+	a_prefix = ""
+	a_EMPTY  = EMPTY
+	retval   = TRUE
+
+	IF  ( internal_valid_table_view ( a_table, a_view ) ) AND ( list_editor_create_object ( a_list_editor ) )
+
+		IF ( internal_read_list_header ( a_list_editor, collection, a_table, a_view, a_interface, a_delete_ok, a_insert_ok )  )
+
+			IF ( internal_read_list_prompts ( a_list_editor, a_table, a_interface ) )
+
+				IF ( a_list_editor.operation ( a_prefix, a_EMPTY, "MODIFY" ) )
+
+					START WRITE TRANSACTION a_table
+
+					IF ( a_list_editor.operation ( a_prefix, a_EMPTY, "SAVE" ) )
+
+						COMMIT
+
+					ELSE
+
+						ROLLBACK
+
+					ENDIF
+
+					collection    = EMPTY
+					a_list_editor = EMPTY
+
+				ENDIF  { user interaction is ok }
+
+			ENDIF  { prompts read ok }
+
+		ENDIF  { interface read ok }
+
+	ELSE
+
+		retval = FALSE
+		FLASH_MESSAGE ( internal_MSG ( "LIST_EDIT_RMB", 1 ), FALSE )
+
+	ENDIF    {  table is not a view and list_editor_create_object }
+
+	RETURN ( retval )
+
+ENDROUTINE    { internal_list_editor }
+
+{******************************************************************************}
+
+ROUTINE internal_read_list_header (       a_list_editor  ,
+                                          collection     ,
+                                    VALUE a_table        ,
+                                    VALUE a_view         ,
+                                    VALUE a_interface    ,
+                                    VALUE a_delete_ok    ,
+                                    VALUE a_insert_ok    )
+
+	DECLARE a_id, a_msg, retval
+
+	retval = TRUE
+
+	a_id = SELECT INTERFACE.DISPLAY_TABLE_NAME
+               WHERE TABLE_NAME = a_table
+               AND   INTERFACE  = a_interface
+
+	IF ( a_id <> EMPTY ) 
+
+		a_msg                         = SELECT interface.header_message 
+		a_list_editor.compatability   = 2
+		a_list_editor.table           = a_table
+		a_list_editor.header          = internal_msg ( a_msg, 1  )
+		a_list_editor.pre_insert      = SELECT interface.list_pre_insert
+		a_list_editor.post_insert     = SELECT interface.list_post_insert
+		a_list_editor.delete          = SELECT interface.list_delete
+		a_list_editor.select          = a_table
+		a_list_editor.library         = SELECT interface.report_name
+		a_list_editor.deletes_enabled = a_delete_ok
+		a_list_editor.inserts_enabled = a_insert_ok
+		a_list_editor.height          = 20
+		a_list_editor.width           = 120
+		a_list_editor.row             = 2
+		a_list_editor.column          = 2
+		a_list_editor.userinfo        = collection
+		a_list_editor.select_callback = "$background_manager/list_select_callback_rmb_explorer"
+
+	ELSE
+
+		a_list_editor.compatability   = 2                { PROMPT_DETAILS_310 }
+		a_list_editor.table           = STRIP (a_table )
+		a_list_editor.header          = STRIP (a_table )
+		a_list_editor.pre_insert      = EMPTY
+		a_list_editor.post_insert     = EMPTY
+		a_list_editor.delete          = EMPTY
+		a_list_editor.select          = a_view
+		a_list_editor.library         = "$LABTABLE_DB"
+		a_list_editor.deletes_enabled = FALSE
+		a_list_editor.inserts_enabled = FALSE
+		a_list_editor.height          = 20
+		a_list_editor.width           = 120
+		a_list_editor.row             = 2
+		a_list_editor.column          = 2
+		a_list_editor.userinfo        = collection
+		a_list_editor.select_callback = "$background_manager/list_select_callback_rmb_explorer"
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE  { internal_read_list_header }
+
+{******************************************************************************}
+
+ROUTINE internal_read_list_prompts (       a_list_editor,
+                                     VALUE a_table      ,
+                                     VALUE a_interface  )
+
+	DECLARE a_id         ,
+                a_cnt        ,
+                a_cnt2       ,
+                a_field_Array,
+                a_key0_Array ,
+                a_mod_on     ,
+                a_mod_by     ,
+                a_msg
+
+	ARRAY a_list_editor.prompt_details
+
+	a_cnt = 1
+	a_id  = SELECT interface_field.type
+                WHERE table_name = a_table
+                AND   interface  = a_interface
+                ORDER ON ORDER_NUMBER
+
+	IF ( a_id <> EMPTY )
+
+		WHILE ( a_id <> EMPTY ) DO
+
+			a_msg                                     = SELECT interface_field.message
+			a_list_editor.prompt_details [ a_cnt, 1 ] = internal_msg ( a_msg, 1  )
+			a_list_editor.prompt_details [ a_cnt, 2 ] = a_id
+			a_list_editor.prompt_details [ a_cnt, 3 ] = a_table
+			a_list_editor.prompt_details [ a_cnt, 4 ] = SELECT interface_field.field_name
+			a_list_editor.prompt_details [ a_cnt, 5 ] = internal_msg ( a_msg, 1  )
+			a_list_editor.prompt_details [ a_cnt, 6 ] = SELECT interface_field.list_width
+			a_list_editor.prompt_details [ a_cnt, 7 ] = SELECT interface_field.field_name
+
+			IF ( a_id = "ROUTINE" ) 
+
+				a_list_editor.prompt_details [ a_cnt, 3 ] = SELECT interface_field.report_name
+				a_list_editor.prompt_details [ a_cnt, 4 ] = SELECT interface_field.user_routine
+
+			ENDIF   { special for routine type }
+
+
+			NEXT INTERFACE_FIELD
+
+			a_id  = SELECT interface_field.type
+			a_cnt = a_cnt + 1
+
+		ENDWHILE
+
+	ELSE
+
+		ARRAY a_key0_array
+
+		GET_TABLE_DETAILS 'a_table', "KEY0_FIELD"     , a_key0_Array
+		GET_TABLE_DETAILS 'a_table', "MODIFY_ON_FIELD", a_mod_on
+		GET_TABLE_DETAILS 'a_table', "MODIFY_BY_FIELD", a_mod_by
+
+		a_cnt = 1
+
+		WHILE ( a_key0_array[a_cnt] <> EMPTY ) DO
+
+			a_list_editor.prompt_details [ a_cnt, 1 ] = a_key0_array[a_cnt]
+			a_list_editor.prompt_details [ a_cnt, 2 ] = "DISPLAY"
+			a_list_editor.prompt_details [ a_cnt, 3 ] = a_table
+			a_list_editor.prompt_details [ a_cnt, 4 ] = a_key0_array[a_cnt]
+			a_list_editor.prompt_details [ a_cnt, 5 ] = a_key0_array[a_cnt]
+			a_list_editor.prompt_details [ a_cnt, 6 ] = 10
+			a_cnt                                     = a_cnt + 1
+
+		ENDWHILE
+			
+		ARRAY a_field_array
+
+		GET_FIELD_NAMES ( a_table, a_field_array )
+
+		a_cnt  = 1
+		a_cnt2 = 0 
+
+		WHILE ( a_field_array[a_cnt,1] <> EMPTY ) DO
+
+			IF NOT ( a_field_array[a_cnt,2] ) AND ( NOT internal_array_slice ( a_key0_array, a_field_array[a_cnt,1], a_cnt2 ) )
+
+				a_cnt2 = SIZE_OF_ARRAY ( a_list_editor.prompt_details ) + 1
+
+				a_list_editor.prompt_details [ a_cnt2, 1 ] = a_field_array[a_cnt,1]
+				a_list_editor.prompt_details [ a_cnt2, 2 ] = "FORMAT"
+				a_list_editor.prompt_details [ a_cnt2, 3 ] = a_table
+				a_list_editor.prompt_details [ a_cnt2, 4 ] = a_field_array[a_cnt,1]
+				a_list_editor.prompt_details [ a_cnt2, 5 ] = a_field_array[a_cnt,1]
+				a_list_editor.prompt_details [ a_cnt2, 6 ] = 10
+
+				IF ( a_field_array[a_cnt,1] = a_mod_on ) OR ( a_field_array[a_cnt,1] = a_mod_by )
+
+					a_list_editor.prompt_details [ a_cnt2, 2 ] = "DISPLAY"
+
+				ENDIF
+
+			ENDIF
+
+			a_cnt = a_cnt + 1
+
+		ENDWHILE
+
+	ENDIF  { no list editor prompt fields found - use all fields }
+
+	RETURN ( SIZE_OF_ARRAY ( a_list_editor.prompt_details ) > 0 ) 
+
+ENDROUTINE { internal_read_list_prompts }
+
+{******************************************************************************}
+
+ROUTINE list_select_callback_rmb_explorer (  self          ,
+                                             select_array  )
+
+	DECLARE the_id, a_cnt, a_cnt2, key0_fields, done_array, full_id
+
+	ARRAY done_array
+
+	a_cnt  = -1
+
+	GET_TABLE_DETAILS 'self.userinfo.table', "KEY0_FIELD", key0_fields
+
+	self.userinfo.set_first()
+
+	WHILE ( self.userinfo.current <> EMPTY ) DO
+
+		full_id = ""
+		a_cnt2  = 1
+		the_id  = SELECT 'self.userinfo.table'.'key0_fields[a_cnt2]' IN OBJECT self.userinfo.current
+
+		WHILE ( key0_fields[a_cnt2] <> EMPTY ) DO
+
+			full_id = full_id : the_id
+			a_cnt2  = a_cnt2 + 1
+
+			IF ( key0_fields[a_cnt2] <> EMPTY ) 
+
+				the_id = SELECT 'self.userinfo.table'.'key0_fields[a_cnt2]' IN OBJECT self.userinfo.current
+
+			ENDIF
+
+		ENDWHILE
+
+		a_cnt2  = 1
+		the_id  = SELECT 'self.userinfo.table'.'key0_fields[a_cnt2]' IN OBJECT self.userinfo.current
+
+		IF ( a_cnt = -1 ) 
+
+			done_array[1] = full_id
+
+			ARRAY select_array
+			a_cnt  = 0
+
+			ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_PUSH, EMPTY, EMPTY )
+
+			WHILE ( key0_fields[a_cnt2] <> EMPTY ) DO
+
+				ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_EQ, key0_fields[a_cnt2], the_id )
+
+				a_cnt2  = a_cnt2 + 1
+
+				IF ( key0_fields[a_cnt2] <> EMPTY ) 
+
+					ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_AND, EMPTY, EMPTY )
+
+					the_id = SELECT 'self.userinfo.table'.'key0_fields[a_cnt2]' IN OBJECT self.userinfo.current
+
+				ENDIF
+
+			ENDWHILE
+
+			ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_POP, EMPTY, EMPTY )
+
+		ELSEIF NOT internal_array_slice ( done_array, full_id, a_cnt ) 
+
+			a_cnt             = SIZE_OF_ARRAY ( done_array ) + 1
+			done_array[a_cnt] = full_id
+
+			ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_OR  , EMPTY, EMPTY )
+			ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_PUSH, EMPTY, EMPTY )
+
+			WHILE ( key0_fields[a_cnt2] <> EMPTY ) DO
+
+				ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_EQ, key0_fields[a_cnt2], the_id )
+
+				a_cnt2 = a_cnt2 + 1
+
+				IF ( key0_fields[a_cnt2] <> EMPTY ) 
+
+					ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_AND, EMPTY, EMPTY )
+
+					the_id = SELECT 'self.userinfo.table'.'key0_fields[a_cnt2]' IN OBJECT self.userinfo.current
+
+				ENDIF
+
+			ENDWHILE
+
+			ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_POP, EMPTY, EMPTY )
+
+		ENDIF
+
+		self.userinfo.set_next()
+
+	ENDWHILE
+
+	self.order_field = EMPTY
+
+ENDROUTINE  { list_select_callback_rmb_explorer }
+
+{******************************************************************************}
+
+ROUTINE internal_valid_table_view ( a_table ,
+                                    a_view  )
+
+	DECLARE a_dummy, retval
+
+	retval = TRUE
+
+	GET_TABLE_DETAILS 'a_table', "IS_VIEW", a_dummy
+
+	IF ( a_dummy )
+
+		retval = FALSE
+		FLASH_MESSAGE ( internal_MSG ( "MENU_RMB_P1", 1 ) : a_table, retval )
+
+	ELSEIF NOT ( internal_validate_key_fields ( a_table, a_view ) )
+
+		retval = FALSE
+		FLASH_MESSAGE ( internal_MSG ( "MENU_RMB_P2", 1 ) :a_view:" ":a_table, retval )
+
+	ENDIF
+
+	RETURN ( retval ) 
+
+ENDROUTINE  { internal_valid_table_view }
+
+{******************************************************************************}
+
+ROUTINE internal_validate_key_fields ( a_table ,
+                                       a_view  )
+
+	DECLARE retval, a_table_key0, a_view_fields, a_cnt, ndex
+
+	ARRAY a_table_key0
+
+	retval = TRUE
+
+	IF ( a_table <> a_view ) 
+
+		GET_TABLE_DETAILS 'a_view', "KEY0_FIELD", a_table_key0
+
+		get_field_names ( a_table, a_view_fields )
+
+		a_cnt = 1
+
+		WHILE ( a_table_key0[a_cnt] <> EMPTY ) AND ( retval ) DO
+
+			retval = internal_array_2_slice ( a_view_fields, a_table_key0[a_cnt], ndex, 1 )
+			a_cnt  = a_cnt + 1
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE  { internal_validate_key_fields }
+
+{*****************************************************************************}
+
+ROUTINE internal_array_slice (       test_array  ,
+                               VALUE nested_id   ,
+                                     index_found )
+
+	DECLARE count, retval
+
+	retval      = FALSE
+	count       = 0
+	index_found = 0
+
+	IF ( SIZE_OF_ARRAY ( test_array ) > 0 )
+
+		WHILE ( count < SIZE_OF_ARRAY ( test_array ) ) DO
+
+			count = count + 1
+
+			IF ( test_array[count] = nested_id )
+
+				retval      = TRUE
+				index_found = count
+				count       = SIZE_OF_ARRAY ( test_array )  { get outta while }
+
+			ENDIF
+
+		ENDWHILE
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE   { internal_array_slice }
+
+{*****************************************************************************}
+
+ROUTINE DDLTE_SMPSessionSelectCallback ( self, select_array )
+
+	DECLARE currentService
+
+	currentService       = SELECT smp_background.service
+	self.inserts_enabled = FALSE
+
+	ARRAY select_array
+
+	ARRAY_SELECT_ADD ( select_array, ARRAY_SELECT_EQ, "session_service", currentService )
+
+ENDROUTINE    { DDLTE_SMPSessionSelectCallback  } 
+
+{*****************************************************************************}
+
+ROUTINE DDLTE_SMPSessionsPreInsert ( self        ,
+                                     grid        ,
+                                     cell_column ,
+                                     cell_row    ,
+                                     window      ,
+                                     column      ,
+                                     row         ,
+                                     cell_width  ,
+                                     cell_height ,
+                                     new_value   )
+
+	FLASH_MESSAGE ( "BG_MANAGER_INSERTS_DISABLED", TRUE )
+
+	SET GLOBAL "LASTKEY" TO "EXIT"
+	new_value = ""
+
+	RETURN ( "" )
+
+ENDROUTINE    {  DDLTE_SMPSessionsPreInsert  }
+
+{*****************************************************************************}
+{*****************************************************************************}
+{*****************************************************************************}

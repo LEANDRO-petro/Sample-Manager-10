@@ -1,0 +1,137 @@
+{******************************************************************************
+*
+* Nome do módulo: EP_SCAN_PROC
+* Objetivo      : Desenvolvimento da janela de sots cadastradas via Web
+* Autor         : LLV
+* Data          : 28-08-2006
+*
+******************************************************************************}
+{
+          Implementação  CYBERTECNICA - PETROBRAS - LI-SM-BR/UNBC/LF
+        ==============================================================
+  			HISTÓRICO DE MODIFICAÇÕES
+
+ >>>	No	AUTOR	DATA		DESCRIÇÃO
+ 
+ 	001	PLP	13-08-04	RAM 179 - Visualização de Número de Amostras
+ 						Solicitados por Clientes na LTE de Cadastro
+ 						de Amostra de Web
+
+	002	MCB	07-10-04	RAM 179 - Modificações solicitadas após acompanhamento operacional
+	003	LFR	18-11-04	RAM 179 - Adicionar opção para modificar SOT no data tree de SOTs
+	004	MCB	12-01-05	RAM 193 - Incluir opção de Cancelar SOT
+	005	LFR	17-01-05	RAM 193/RAQ 800 - Criar tela para entrar responsável e prazo para SOT
+	006	LFR	20-01-05	RAM 193/RAQ 826 - Usuário supervisor deve poder cancelar SOTs não recebidas pelo LF (devem enxergar a tela de receber SOT Web) 
+	007	LFR	20-01-05	RAM 193/RAQ 827 - Após a SOT Web ser recebida e liberada para cadastro, o campo "data de recebimento" deve ser preenchido automaticamente
+	008	LFR	31-01-05	RAM 193/RAQ 832 - SOTs mensais devem ser facilmenmte identificadas
+	009	LFR	10-02-05	RAM 193/RAQ 811 - SOTs externas
+	010	LFR	16-02-05	RAM 193/RAQ 812 - Campo Centro de Custos nos templates web - Copiar valor para campo OT.
+	011	LFR	22-02-05	RAM 193/RAQ 803 - SOTs Offshore (especiais)
+	012	LFR	23-02-05	RAM 193/RAQ 838 - Exibir/alterar campo de andamento das SOTs
+      	013	LFR	11-05-05	RAM 212/RAQ 855/862 - Exibir campo de Poço/Informações complementares da SOT
+	014	RSS	08-11-05	RAQ 881 - O Recebedor deverá poder cadastrar amostras nas pré-sots
+	015	MVS	01-02-06	RAQ 891 - Módulo ABC: Possibilitar entrada de dias de serviço para
+					SOTs Offshore Especiais
+      016   LLV   25-11-13    Executar comando SQL em background
+}
+
+{ **** Configurações Iniciais **** }
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+SET NOTPROTECTED
+SET NAME "DISPLAY/"
+
+{ **** Inclusão de Bibliotecas Padrão **** }
+JOIN LIBRARY $PROMPT_TREE
+JOIN LIBRARY $PROMPT_SPLIT
+JOIN LIBRARY $PROMPT_LIST
+JOIN LIBRARY $TOOLBOX
+JOIN LIBRARY $LIB_UTILS
+
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_ARRAY
+
+run_wmic ( EMPTY )
+{=============================================================================
+
+ Function       : WMIC - Executa WMIC no servidor
+ Purpose        : -
+ Input Params   : - 
+ Output Params  : -
+ Function Value : -
+ Local Procs    : -
+ Global Vars    : -
+ Library Procs  : -
+
+===================================================================================}
+ROUTINE run_wmic ( VALUE menu )
+DECLARE cmd, status, timestamp, filename1, filename2, chk_ok, filename3
+
+SET DATE FORMAT "YYYZMZDZH24MISSCC"
+timestamp = NOW
+
+{texto = "WMIC /OUTPUT:C:\ProcList.txt PROCESS get Caption,Processid "   *}
+{* filename1 = LOGICAL ( filename ) : "\" : timestamp : ".txt"           *}
+filename1 = "C:\" : timestamp : ".txt"
+{filename1 = "C:\Program Files\LabSystems\SampleManager Server\desv\Textreport\output1_" : timestamp : ".txt"}
+
+{cmd = "wmic /node:"SBCLS02" /user:sabcsmp /output:" : filename : " PROCESS WHERE name like 'smp.exe' get Caption,Processid "} 
+{cmd = "wmic /output:" : filename : " PROCESS WHERE Name='smp.exe' get Caption,ProcessId,CreationDate,CSName,Handle,HandleCount,KernelModeTime,UserModeTime,Status "}
+
+{cmd = "wmic /node:" : ascii (34) : "SBCLS02 " : ascii (34) : "/user:sabcsmp /output:" : filename1       *}
+{cmd = "wmic /output:" : filename1                                                                       *}
+{cmd = cmd : " PROCESS GET Caption, "                                                                    *}
+{cmd = cmd : "ProcessId, CommandLine, CreationDate, CSName, Handle, "                                    *}   
+{cmd = cmd : "HandleCount, KernelModeTime, UserModeTime, Status /FORMAT:TABLE"                           *}
+{cmd = "wmic printjob delete"                                                                            *}
+{* >>> LLV - 07/10/11 - Begin                                                                            *}
+{* cmd = "prnjobs -x -p \\sbclps13\ap61 -j" : ascii(32) : ASCII(34) : "8572" : ASCII(34)                 *}
+{* >>> LLV - 07/10/11 - End                                                                              *}
+
+{>>> Atual --> cmd = "wmic /output:" : filename1 : " PROCESS WHERE (Caption=" : ASCII(32) : "SampleManager.exe" : ASCII(32) : ")" : " get Caption,ProcessId,CreationDate,CSName,Handle,HandleCount,KernelModeTime,PageFaults,PageFileUsage,UserModeTime,Status "}
+{cmd = "wmic /output:" : filename1 : " NTEVENT WHERE EventType=1 AND Source='Sample Manager' get GET LogFile, SourceName, EventType, Message, TimeGenerated"}
+{cmd = "wmic /output:" : filename : " PROCESS get /all "}
+{cmd = "WMIC USERACCOUNT WHERE "Name='PutUserNameHere' and Domain='PutDomainNameHere'"                   *}
+{cmd = "WMIC /OUTPUT:" : filename1 : " USERACCOUNT WHERE Domain='BC' get /all"                           *}	
+{* Executa linha de comando para a primeira consulta...                                                  *}
+{* SPAWN cmd, status INTERACTIVE                                                                         *}
+	
+{* Aguarda 5 segundos antes da execução da próxima instrução ...                                         *}
+{SLEEP FOR INTERVAL("0 00:00:05")}                                                                                       
+
+{* >>> LLV - 07/10/11 - Begin                                                                            *}
+filename2 = LOGICAL ( "smp$textreports" )
+filename3 = filename2 : "\" : timestamp : ".out"
+
+{* >>> LLV - 07/10/11 - End                                                                              *}
+
+{* Executa linha de comando para a segunda consulta.                                                     *}
+{* cmd = "wmic /output:" : filename1 : " PROCESS WHERE (Caption=" : ASCII (34) : "w3wp.exe" : ASCII (34) : ")" : " get Caption,ProcessId,CommandLine,CreationDate,CSName,Handle,HandleCount,KernelModeTime,PageFaults,PageFileUsage,UserModeTime,Status " *}
+cmd = "wmic /output:" : filename1 : " PROCESS get Caption,ProcessId,CommandLine,CreationDate,CSName,Handle,HandleCount,KernelModeTime,PageFaults,PageFileUsage,UserModeTime,Status "
+
+{* Executa linha de comando para a segunda consulta...                                                   *}
+SPAWN cmd, status QUIETLY
+{* >>> LLV - 07/10/11 - End                                                                              *}
+
+SLEEP FOR INTERVAL("0 00:00:05")                                                                                      
+
+IF ( FILE EXISTS ( filename1 )) THEN
+	FILE COPY   filename1, filename3, chk_ok
+ENDIF
+
+IF ( chk_ok = EMPTY ) THEN
+	FILE DELETE filename1, chk_ok
+ENDIF
+
+RESTORE DATE FORMAT
+
+ENDROUTINE  { * end of run_wmic }                
+
+
+
+
+

@@ -1,0 +1,379 @@
+
+{ ******************************************************************************
+* Module Name   	: LIT_AUX_DATES
+* Purpose       	: Aux Explorer Date Validation
+*
+* Modification History
+* 10.29.2013 M.Maddox	Initial version
+* 10.30.2013 C.Santiago	Add the routine for calculating the sample.DATERESREQ
+* 19.08.2015 L.Lima     Validation routine for the JUSTIFICATIVA Sample field
+* 09.11.2015 B.Paes     Validation for the date_autorised smaller than the sampled_date
+* 10.05.2016 B.Paes     Validation for the samples in the supertemplate slce/scla
+******************************************************************************* }
+
+ENABLE WINDOWS
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+SET NAME "DISPLAY/"
+
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY  STD_CLIENT
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_USER_GLOBAL
+JOIN STANDARD_LIBRARY STD_FLAGS
+
+JOIN LIBRARY $LIB_UTILS                        
+
+{ ============================================================================ }
+
+ROUTINE prompt_data_date ( info, val )
+
+	val = NOW
+
+	PROMPT OBJECT info AT 34,1 FORMAT sample.data_recebimento_laboratorio
+	info.value              = val
+	info.vgl_library        = GLOBAL ( "CURRENT_LIBRARY" )
+	info.validation_routine = "internal_validate_date"
+	info.always_validate    = TRUE
+
+ENDROUTINE   { prompt_data_date }
+
+{ ============================================================================ }
+
+ROUTINE internal_validate_date ( self )
+
+	DECLARE retval, aOdb, sam_date, recem_date, oldest_date, date_message
+	
+	oldest_date = NOW - INTERVAL ( "999 00:00:00" )
+	retval      = TRUE
+
+	aOdb = self.parentprompt.data
+	aOdb.set_first()
+	
+	WHILE ( aOdb.current <> EMPTY ) AND ( retval ) DO
+
+		sam_date   = select sample.sampled_date                 IN OBJECT aOdb.current
+		recem_date = select sample.data_recebimento_laboratorio IN OBJECT aOdb.current
+
+		{ - - - -  Base upon which action set the oldest date from all samples - - - - }
+
+		IF self.parentprompt.identity = "ACTIVATE"
+		
+			IF oldest_date < sam_date
+
+				oldest_date = sam_date
+				date_message = "amostragem "
+
+			ENDIF
+
+		ELSEIF oldest_date < recem_date
+
+			oldest_date = recem_date
+			date_message = "liberação "
+
+		ENDIF
+
+		{ - - - -  Now validate input date against oldest and NOW - - - - }
+
+		IF ( self.value > NOW )
+				
+			retval = FALSE
+			FLASH_MESSAGE ( "A data não deve ser futura ":self.value, TRUE )
+
+		ELSEIF ( self.value < oldest_date )
+		
+			retval = FALSE
+			FLASH_MESSAGE ( "A data deve ser maior que a data de ":date_message:oldest_date, TRUE )
+
+		ENDIF
+
+		aOdb.set_next()
+
+	ENDWHILE
+	
+	RETURN ( retval )
+
+ENDROUTINE   { internal_validate_date }
+
+{ ============================================================================ }
+
+ROUTINE aux_validation_routine ( p1, p2 )
+
+	DECLARE retval	
+	retval = TRUE 
+	RETURN ( retval )
+ENDROUTINE   { AUX_validation_routine }
+
+{ ============================================================================ }
+
+ROUTINE AUX_action_routine ( p1, p2 )
+
+	DECLARE retval
+	
+	retval = TRUE
+
+	IF p1.identity = "ACTIVATE"
+
+		ASSIGN sample.data_recebimento_laboratorio IN OBJECT p2 = p1.promptobjects[1].value
+
+		aux_sample_release_hold ( p1, p2 )
+
+	ELSE
+
+		ASSIGN sample.recd_date IN OBJECT p2 = p1.promptobjects[1].value
+
+	ENDIF
+	
+	RETURN ( retval )
+
+ENDROUTINE   { AUX_action_routine }
+
+{ ============================================================================ }
+
+ROUTINE AUX_post_commit_routine ( p1, p2 )
+
+	IF p1.identity = "RECEIVE"
+
+		aux_post_commit_sample_receive ( p1, p2 )
+
+	ENDIF
+
+ENDROUTINE   { AUX_post_commit_routine }
+
+{ ============================================================================ }
+
+ROUTINE aux_post_commit_sample_receive ( self, data )
+
+    DECLARE sample_id
+
+    data.set_first()
+
+    WHILE self.data.current <> EMPTY DO
+
+        sample_id = SELECT 'self.table'.id_numeric IN OBJECT data.current
+
+        CALL_ROUTINE "sample_receive_post_commit" IN LIBRARY "$AUX_RVP" USING sample_id
+
+        data.set_next()
+
+    ENDWHILE
+
+ENDROUTINE
+
+{ ============================================================================ }
+
+ROUTINE aux_sample_release_hold ( self, data )
+
+        CALL_ROUTINE "aux_rls_explorer_user_action" IN LIBRARY "$AUX_RLS" USING self, data
+
+ENDROUTINE { aux_sample_release_hold }
+
+{ ============================================================================ }
+ROUTINE aux_val_justificativa ( p1, p2 )
+
+	DECLARE val, chk_ok, phrase_text, sample_id
+
+	chk_ok = FALSE
+	val    = p1 . promptobjects[1] . value
+
+	sample_id   = SELECT 'p1.table'.id_numeric IN OBJECT p1.data.current
+	phrase_text = SELECT phrase . phrase_text
+                    WHERE phrase_type = "JUST_AMOS" AND
+                          phrase_text = val
+
+	IF ( NOT ( user_global_exists ( "JustAmosValidate", sample_id ) ) ) THEN
+		add_global_cluster ( "JustAmosValidate" )
+		add_user_global ( "JustAmosValidate", sample_id )
+	ENDIF
+
+	IF ( phrase_text <> EMPTY )
+		chk_ok = TRUE
+	ELSE   
+		FLASH_MESSAGE ( "Necessário informar uma justificativa válida.", TRUE )
+	ENDIF
+	assign_user_global ( "JustAmosValidate", sample_id, chk_ok )
+	
+	RETURN ( chk_ok )
+
+ENDROUTINE   { internal_validate_date }
+{ ============================================================================ }
+
+{ ============================================================================ }
+ROUTINE aux_val_prazo ( p1, p2 )
+
+	DECLARE chk_ok, prazo, sample_id, ret_message, text_message, sampled_date, one_sample , num_selecionados
+	declare message_box_title, var_global
+
+	chk_ok     = TRUE
+	var_global = FALSE
+		
+	num_selecionados = p1.data.size()
+	p1.data.set_first()	
+	sample_id = SELECT 'p1.table'.id_numeric IN OBJECT p1.data.current
+	sampled_date= SELECT 'p1.table'.sampled_date IN OBJECT p1.data.current	
+	prazo     = SELECT sample . dateresreq 
+                  WHERE id_numeric = sample_id
+
+	{* deleting existing global info for sample id...                       *}
+
+      IF user_global_exists ( "JustAmosValidate" , sample_id  ) THEN
+      	delete_user_global ( "JustAmosValidate" , sample_id )
+      ENDIF
+
+	IF ( num_selecionados = 1 )   
+
+		{ 004 }
+
+		chk_ok = check_SUB_AMOSTRA ( sample_id)
+
+	 	IF (( NOW < sampled_date ) AND ( chk_ok = TRUE ))
+	    		flash_message("Data de Amostragem maior que Data de Autorização!",TRUE)
+	    		chk_ok = FALSE	
+		ELSE			
+		{ 004 }
+
+	 	IF (( prazo < NOW ) AND ( chk_ok = TRUE )) THEN
+
+			chk_ok = FALSE
+
+			message_box_title = "Aviso do Sistema"
+	
+			text_message = "Prazo de atendimento excedido."
+			text_message = text_message : ASCII (10) : ASCII (13)
+			text_message = text_message : "Deseja informar justificativa e proceder autorização?"
+
+
+		   	ret_message = client_message_box ( text_message            ,
+                                    		   message_box_title ,
+                                    		       MB_ICONSTOP + MB_YESNO)
+
+			IF ( ret_message ) = 6 THEN
+
+				var_global = FALSE
+
+		      	MENUPROC 1045 USING sample_id
+
+				IF ( NOT ( user_cluster_exists ( "JustAmosValidate" ) ) ) THEN
+					add_global_cluster ( "JustAmosValidate" )
+				ENDIF
+	
+				IF ( NOT ( user_global_exists ( "JustAmosValidate" , sample_id ) ) ) THEN
+					add_user_global    ( "JustAmosValidate", sample_id )
+            	      	assign_user_global ( "JustAmosValidate",  sample_id , var_global ) 
+				ENDIF
+	
+				var_global = read_user_global ( "JustAmosValidate" , sample_id  )
+
+	    		ENDIF
+	  	ENDIF
+	   ENDIF
+	ELSE
+		chk_ok = check_SELECTED_SAMPLES (p1)	
+	ENDIF
+	
+	IF ( var_global ) THEN
+		chk_ok = TRUE
+	ENDIF
+	
+	RETURN ( chk_ok )
+
+ENDROUTINE   { internal_validate_date }
+{ ============================================================================ }
+ROUTINE aux_RESAMPLE ( p1, p2 )
+
+	DECLARE sample_id, ret_val
+	ret_val = TRUE
+			
+	sample_id = SELECT 'p1.table'.id_numeric IN OBJECT p1.data.current
+	
+      MENUPROC 137 USING sample_id, "$DO"
+
+	
+	RETURN ( ret_val )
+
+ENDROUTINE   { aux_RESAMPLE }
+{ ============================================================================ }
+
+{-------------------------------------------------------------------------------------------------------------------}
+{--VERIFICAÇÃO NAS AMOSTRAS SELECIONADAS: PRAZO DE AUTORIZAÇÃO E DATA DE AMOSTRAGEM MENOR QUE DATA DE AUTORIZAÇÃO---}
+{-------------------------------------------------------------------------------------------------------------------}
+ROUTINE check_SELECTED_SAMPLES ( p1 ) 
+	
+	DECLARE sample_id, prazo, sampled_date, check, mensagem_prazo , mensagem_data_amostragem,  count, t_prazo, t_sampled_date
+	
+	count = 0
+	check = TRUE
+	t_prazo = TRUE
+	t_sampled_date = TRUE
+	mensagem_prazo = "Aprovação deve ser realizada individualmente para a(s) seguinte(s) amostra(s): "
+ 	mensagem_data_amostragem = "Autorização deve ser posterior a data de amostragem para a(s) seguinte(s) amostra(s): "
+
+	p1.data.set_first()
+
+	WHILE p1 . data . current <> EMPTY DO
+	
+		sample_id = SELECT 'p1 . table' . ID_NUMERIC
+                    	IN OBJECT p1.data . current
+		prazo	 = SELECT sample . dateresreq 
+                  	 WHERE id_numeric = sample_id
+		sampled_date= SELECT 'p1.table'.sampled_date IN OBJECT p1.data.current
+ 
+    		
+		IF ( NOW < sampled_date ) 
+			check = FALSE
+			t_sampled_date = FALSE
+			mensagem_data_amostragem = mensagem_data_amostragem :  sample_id: " "
+		ENDIF
+
+		IF  ( prazo < NOW ) 
+			check = FALSE
+			t_prazo = FALSE
+			mensagem_prazo = mensagem_prazo:  sample_id: " "			
+		ENDIF		
+		
+		IF (check_SUB_AMOSTRA (sample_id) = FALSE)
+			check  = FALSE
+		ENDIF
+
+		p1 . data . set_next ( )
+		count = count + 1
+	ENDWHILE
+
+	IF ( (count > 1) & (check = false) )
+		IF ( t_prazo = FALSE )flash_gui ( "AMOSTRAS FORA DO PRAZO", mensagem_prazo, 1 , EMPTY ) ENDIF
+
+		IF ( t_sampled_date = FALSE ) flash_gui ( "ERRO NA AUTORIZAÇÃO", mensagem_data_amostragem , 1 , EMPTY ) ENDIF	
+
+	ENDIF
+
+	IF  ( count = 1 ) 
+		check = TRUE
+	ENDIF
+
+	RETURN (check)
+ENDROUTINE   { check_SELECTED_SAMPLES }
+
+
+ROUTINE check_SUB_AMOSTRA ( p1 ) 
+	DECLARE template_id, supertemplate,amostra_campo, status_amostra_campo, check 
+
+	check = TRUE
+
+	template_id = SELECT sample . template_id  WHERE id_numeric = p1 
+	supertemplate = SELECT phrase.phrase_text where ( phrase_type = "SUB_TEMP" and phrase_id = template_id)
+
+	IF (supertemplate <> EMPTY) 
+	   amostra_campo = SELECT sample.id_numeric where (original_sample = p1)
+	   status_amostra_campo  = SELECT sample.status where (id_numeric  = amostra_campo)
+	   IF  (status_amostra_campo <> "A") 
+            flash_message("A amostra ": amostra_campo :" com análises complementares de campo não está autorizada! Ação não realizada.",TRUE)
+		check = FALSE
+	   ENDIF 		
+      ENDIF
+
+	RETURN (check)
+ENDROUTINE   { check_SUB_AMOSTRA }
+
+
+{ ============================================================================ }

@@ -1,0 +1,521 @@
+{******************************************************************************
+*
+* Module Name   : $AUX_URP.RPF
+*
+* Purpose       : Template created using $AUXSETUP.
+*                 Reactivate authorised job.
+*
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+*
+* Specification : 
+*
+* Portability   : Not Checked
+*
+* Re-entrant    : 
+*
+*******************************************************************************
+* Modification History
+* 10.29.2013 M.Maddox	Initial version
+* 04.09.2015 L.Lima     Validation routine for the JUSTIFICATIVA Sample field
+****************************************************************************** }
+
+SET NOTPROTECTED
+
+JOIN LIBRARY $AUX_LIB
+JOIN LIBRARY $LIB_UTILS
+
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_USER_GLOBAL
+
+SET NAME "DISPLAY/"
+ENABLE WINDOWS
+
+CONSTANT CASCADE_SAMPLE_PROMPT_ID = "CASCADE_SAMPLE_PROMPT_ID"
+CONSTANT CASCADE_RESULT_PROMPT_ID = "CASCADE_RESULT_PROMPT_ID"
+
+Array prompt_text
+Array table_names
+Array change_stat ARRAY_SIZE (3) = " "
+
+Array display_details ARRAY_SIZE ( 0 , 6 )
+Array prompt_details ARRAY_SIZE ( 0 , 6 )
+
+{***********************************************************************}
+{                   USER INPUT BEGINS HERE                              }
+{***********************************************************************}
+
+{SECTION A - SCREEN SETUP}
+{specify the header text for the command window}
+{ie header_txt =  "Change Sample Status"}
+
+    header_txt = GET_USER_MESSAGE("AUX_URP_HEADER_TXT" ,1)
+
+{specify footer text for the command window }
+
+    footer_txt = GET_USER_MESSAGE("AUX_URP_FOOTER_TXT" ,1)
+
+{specify the text string to be displayed upon        }
+{successful completion of the command                }
+{ie success_txt = "Sample Status Changed"            }
+
+  success_txt        = GET_USER_MESSAGE("AUX_URP_SUCCESS_TXT" ,1)
+
+{specify the text string to be displayed upon        }
+{abortion from the command                           }
+{ie abort_txt =   "Change Sample Status Aborted"     }
+
+  abort_txt          = GET_USER_MESSAGE("AUX_URP_ABORT_TXT" ,1)
+
+{specify the sample statuses allowable within the    }
+{browse list for this command if sample identity     }
+{is prompted for.                                    }
+
+  samp_stat_allowed       =  "ARX"
+  job_stat_allowed        =  "AVCX"
+  test_stat_allowed        =  " "
+
+
+{SECTION B - INITIAL PROMPTS }
+
+
+{Specify the tables that the initial prompts browse  }
+{upon .                                              }
+
+   table_names [ 1 ]    = "SAMPLE"
+
+
+{  table_names [ 2 ]    = "TEST"}
+
+
+{Specify the initial prompt fields and the associated}
+{prompt text strings                                 }
+
+  prompt_text [ 1 ]    = GET_USER_MESSAGE("AUX_URP_PROMPT_TXT" ,1)
+ {prompt_text [ 2 ]    = "Enter Test Name"}
+
+
+{SECTION C - DISPLAY INFORMATION}
+
+{The user may require a header for the display area }
+{Any descriptive text may be used here              }
+
+    mess_area_one = ""
+
+
+{Specify the fields which require displaying with the}
+{appropriate descriptive text string                 }
+
+{Display fields from prompt_table[1] : }
+
+  display_details [ 1, MESSAGE_POSITION    ]   = GET_USER_MESSAGE("AUX_URP_DISPLAY_TXT" ,1)
+  display_details [ 1, TYPE_POSITION       ]   = "DISPLAY"
+  display_details [ 1, TABLE_NAME_POSITION ]   = "SAMPLE"
+  display_details [ 1, FIELD_NAME_POSITION ]   = "ID_TEXT"
+
+{  display_details [ 2, MESSAGE_POSITION    ]   = ""
+  display_details [ 2, TYPE_POSITION       ]   = ""
+  display_details [ 2, TABLE_NAME_POSITION ]   = ""
+  display_details [ 2, FIELD_NAME_POSITION ]   = ""
+
+ display_details [ 3, MESSAGE_POSITION    ]   = ""
+  display_details [ 3, TYPE_POSITION       ]   = ""
+  display_details [ 3, TABLE_NAME_POSITION ]   = ""
+  display_details [ 3, FIELD_NAME_POSITION ]   = ""}
+
+
+{Display fields from prompt_table[2] : }
+
+ {display_details [ 1, MESSAGE_POSITION    ]   = ""
+  display_details [ 1, TYPE_POSITION       ]   = ""
+  display_details [ 1, TABLE_NAME_POSITION ]   = ""
+  display_details [ 1, FIELD_NAME_POSITION ]   = ""
+
+  display_details [ 2, MESSAGE_POSITION    ]   = ""
+  display_details [ 2, TYPE_POSITION       ]   = ""
+  display_details [ 2, TABLE_NAME_POSITION ]   = ""
+  display_details [ 2, FIELD_NAME_POSITION ]   = ""
+
+  display_details [ 3, MESSAGE_POSITION    ]   = ""
+  display_details [ 3, TYPE_POSITION       ]   = ""
+  display_details [ 3, TABLE_NAME_POSITION ]   = ""
+  display_details [ 3, FIELD_NAME_POSITION ]   = ""}
+
+
+  {SECTION D - FIELD ASSIGNMENT                }
+
+{  This section is divided into three areas; }
+{                                            }
+{         (1) Interactive Update             }
+{         (2) Non-interactive Update         }
+{         (3) Status Change Update           }
+
+{----------------------------------------------------}
+{  1.   I N T E R A C T I V E   U P D A T E          }
+{----------------------------------------------------}
+
+{Specify the fields which require Updating and also  }
+{require a user input.Define the text string         }
+{associated with the input along with the browse type}
+
+
+  {Update fields associated with prompt_table[1]}
+  {Interactive_browse may be filled with either }
+  {the browse table_name.field or a number to   }
+  {define the size of the prompted field ie "10"}
+  {or if no browse required " ".                }
+
+{The user may require a header for the prompt area. }
+{ Any descriptive text may be used here.            }
+
+mess_area_two = ""
+
+  prompt_details [ 1 , MESSAGE_POSITION    ]  = "Justificativa"
+  prompt_details [ 1 , TYPE_POSITION       ]  = "FORMAT"
+  prompt_details [ 1 , TABLE_NAME_POSITION ]  = "SAMPLE"
+  prompt_details [ 1 , FIELD_NAME_POSITION ]  = "JUSTIFICATIVA"
+
+  prompt_details [ 2 , MESSAGE_POSITION    ]  = "Comentários"
+  prompt_details [ 2 , TYPE_POSITION       ]  = "FORMAT"
+  prompt_details [ 2 , TABLE_NAME_POSITION ]  = "SAMPLE"
+  prompt_details [ 2 , FIELD_NAME_POSITION ]  = "COMENTARIOS"
+
+{ prompt_details [ 1 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 1 , TYPE_POSITION       ]  = ""
+  prompt_details [ 1 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 1 , FIELD_NAME_POSITION ]  = ""
+
+  prompt_details [ 2 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 2 , TYPE_POSITION       ]  = ""
+  prompt_details [ 2 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 2 , FIELD_NAME_POSITION ]  = ""
+
+ }
+  {Update fields associated with prompt_table[2]}
+{
+  prompt_details [ 1 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 1 , TYPE_POSITION       ]  = ""
+  prompt_details [ 1 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 1 , FIELD_NAME_POSITION ]  = ""
+
+  prompt_details [ 2 , MESSAGE_POSITION    ]  = ""
+  prompt_details [ 2 , TYPE_POSITION       ]  = ""
+  prompt_details [ 2 , TABLE_NAME_POSITION ]  = ""
+  prompt_details [ 2 , FIELD_NAME_POSITION ]  = ""
+ }
+
+{-----------------------------------------------------}
+{   2.   S T A T U S    C H A N G E   U P D A T E     }
+{-----------------------------------------------------}
+
+
+{  Non interactive update of the status field        }
+{  is defined within the array change_stat[n]        }
+{  where n = the array element that defines the      }
+{  table associated with the status in the array     }
+{  prompt_table[n].                                  }
+{  To update sample.status to "V" the user would     }
+{  define change_stat[1] = "V" where prompt_table[1] }
+{   = "SAMPLE"                                       }
+{  If the status change should be back to the old    }
+{  status change_stat[n] = "OLD_STATUS".             }
+
+IF GLOBAL ( "REACTIVATE_TO_ORIGINAL" ) THEN
+	change_stat[1] = "OLD_STATUS"
+ELSE
+	change_stat[1] = "C"
+ENDIF
+
+{*************************************************}
+{             END  OF  USER  INPUT                }
+{*************************************************}
+
+aux_generator ( header_txt                   ,
+		footer_txt                   ,
+	       	mess_area_one                ,
+		mess_area_two                ,
+                samp_stat_allowed            ,
+                job_stat_allowed             ,
+                test_stat_allowed            ,
+		prompt_text                  ,
+		table_names                  ,
+                change_stat                  ,
+                global ( "current_library" ) ,
+                Success_txt                  ,
+		Abort_txt                    ,
+		TRUE                         ,
+		display_details              ,
+		prompt_details               ,
+		"Read Transaction"           ,
+		"Write Transaction"          )
+
+{**************************************************************************}
+{                            Action Routine                                }
+{**************************************************************************}
+
+ROUTINE action ( VALUE first_id  ,
+                 VALUE second_id )
+
+
+	aux_urp_locally_set_orig = FALSE
+	aux_urp_locally_set_res = FALSE
+
+	IF NOT GLOBAL ( "REACTIVATE_TO_ORIGINAL" ) THEN
+		IF confirm_with_text ( 
+			GET_USER_MESSAGE ( "AUX_LIB_CONFIRM_REACTIVATE", 1 )  ) THEN
+			change_stat[1] = "OLD_STATUS"
+			aux_urp_locally_set_orig = TRUE
+			SET GLOBAL "REACTIVATE_TO_ORIGINAL" TO TRUE
+		ENDIF
+	ENDIF
+	
+	IF ( aux_urp_locally_set_orig            ) OR 
+	   ( GLOBAL ( "REACTIVATE_TO_ORIGINAL" ) ) THEN
+		IF NOT GLOBAL ( "REACTIVATE_TO_RESULT" ) THEN
+			IF confirm_with_text ( 
+				GET_USER_MESSAGE ( "AUX_LIB_CONFIRM_REACTIVATE", 2 )  ) THEN
+				aux_urp_locally_set_res = TRUE
+				SET GLOBAL "REACTIVATE_TO_RESULT" TO TRUE
+			ENDIF
+		ENDIF
+	ENDIF
+	
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{**************************************************************************}
+{                           Post Action Routine                            }
+{**************************************************************************}
+
+ROUTINE post_action ( VALUE ok )
+
+	IF aux_urp_locally_set_orig THEN
+		SET GLOBAL "REACTIVATE_TO_ORIGINAL" TO FALSE
+	ENDIF
+	
+	IF aux_urp_locally_set_res THEN
+			SET GLOBAL "REACTIVATE_TO_RESULT" TO FALSE
+	ENDIF
+
+ENDROUTINE
+
+{**************************************************************************}
+{                            Select Routine                                }
+{**************************************************************************}
+
+ROUTINE select_key ( VALUE line     , display_id      ,
+                     VALUE first_id , VALUE second_id )
+
+	{menuprocs ...etc}
+
+ENDROUTINE
+
+{**************************************************************************}
+{                           Validation Routine                             }
+{**************************************************************************}
+
+ROUTINE validation ( self )
+	
+	DECLARE justif, chk_ok, phrase_text, samp_id
+
+	chk_ok  = FALSE
+	justif  = SELECT sample . justificativa
+	samp_id = SELECT sample . id_numeric
+
+	phrase_text = SELECT phrase . phrase_text
+                    WHERE phrase_type = "JUST_AMOS" AND
+                          phrase_text = justif
+
+	IF ( NOT ( user_global_exists ( "JustAmosValidate", samp_id ) ) ) THEN
+		add_global_cluster ( "JustAmosValidate" )
+		add_user_global ( "JustAmosValidate", samp_id )
+	ENDIF
+
+	IF ( phrase_text <> EMPTY )
+		chk_ok = TRUE
+	ELSE   
+		FLASH_MESSAGE ( "Necessário informar uma justificativa válida.", TRUE )
+	ENDIF
+	assign_user_global ( "JustAmosValidate", samp_id, chk_ok )
+	
+	RETURN ( chk_ok )
+
+ENDROUTINE
+
+ROUTINE aux_validation ( p1 , p2 )
+	DECLARE chk_ok, sample_id, ret_message, text_message
+	declare message_box_title, var_global
+
+	chk_ok     = FALSE
+	var_global = FALSE
+			
+	sample_id = SELECT 'p1.table'.id_numeric IN OBJECT p1.data.current
+
+	{* deleting existing global info for sample id...                   *}
+      IF user_global_exists ( "JustAmosValidate" , sample_id  ) THEN
+      	delete_user_global ( "JustAmosValidate" , sample_id )
+      ENDIF
+
+	message_box_title = "Amostra: " : sample_id
+
+	text_message = "Obrigatório informar uma justificativa antes de proceder a reativação."
+	text_message = text_message : ASCII (10) : ASCII (13)
+	text_message = text_message : "Deseja continuar?"
+
+	ret_message = client_message_box ( text_message            ,
+                                    		   message_box_title ,
+                                    		       MB_ICONSTOP + MB_YESNO)
+	IF ( ret_message ) = 6 THEN
+		var_global = FALSE
+
+	      MENUPROC 1045 USING sample_id
+
+		IF ( NOT ( user_cluster_exists ( "JustAmosValidate" ) ) ) THEN
+			add_global_cluster ( "JustAmosValidate" )
+		ENDIF
+	
+		IF ( NOT ( user_global_exists ( "JustAmosValidate" , sample_id ) ) ) THEN
+			add_user_global    ( "JustAmosValidate", sample_id )
+                 	assign_user_global ( "JustAmosValidate",  sample_id , var_global ) 
+		ENDIF
+		var_global = read_user_global ( "JustAmosValidate" , sample_id  )
+    	ENDIF
+	
+	IF ( var_global ) THEN
+		chk_ok = TRUE
+	ENDIF
+	
+	RETURN ( chk_ok )
+
+ENDROUTINE
+
+{**************************************************************************}
+{ Aux Report Field Prompt Routines                                         }
+{**************************************************************************}
+
+ROUTINE aux_field_sample_cascade ( prompt_object ,
+				   prompt_value  )
+
+	PROMPT OBJECT prompt_object 
+		BROWSE ON BOOLEAN
+	    WITH ( false_word = "Não" ,
+                   true_word  = "Sim" )
+
+	prompt_object . prompt_id = CASCADE_SAMPLE_PROMPT_ID
+	prompt_value  = GLOBAL ( "REACTIVATE_TO_ORIGINAL" )
+	
+ENDROUTINE
+
+{**************************************************************************}
+{ Aux Report Field Prompt Routines                                         }
+{**************************************************************************}
+
+ROUTINE aux_field_result_cascade ( prompt_object ,
+				   prompt_value  )
+
+	PROMPT OBJECT prompt_object 
+		BROWSE ON BOOLEAN
+	    WITH ( false_word = "Não" ,
+                   true_word  = "Sim" )
+
+	prompt_object . prompt_id = CASCADE_RESULT_PROMPT_ID
+	prompt_value  = GLOBAL ( "REACTIVATE_TO_RESULT" )
+
+ENDROUTINE
+
+{**************************************************************************}
+{ Explorer Aux Report Field Action Routine -                               }
+{**************************************************************************}
+
+ROUTINE aux_urp_explorer_user_action ( self , data )
+
+DECLARE cascade_sample, cascade_result, old_value_sample, old_value_result,
+        status_change
+        
+        
+	status_change = "C"
+	old_value_sample = ( GLOBAL ( "REACTIVATE_TO_ORIGINAL" ) = "TRUE" )
+	old_value_result = ( GLOBAL ( "REACTIVATE_TO_RESULT" ) = "TRUE" )
+
+	cascade_sample = self . get_prompt_value ( CASCADE_SAMPLE_PROMPT_ID )
+	cascade_result = self . get_prompt_value ( CASCADE_RESULT_PROMPT_ID )
+
+	IF cascade_sample = EMPTY THEN
+		cascade_sample = old_value_sample
+	ENDIF
+	
+	IF cascade_result = EMPTY THEN
+		cascade_result = old_value_result
+	ENDIF	
+
+	IF ( cascade_sample <> old_value_sample ) THEN
+
+		SET GLOBAL "REACTIVATE_TO_ORIGINAL" TO cascade_sample
+
+	ENDIF
+
+	IF ( cascade_result <> old_value_result) THEN
+
+		SET GLOBAL "REACTIVATE_TO_RESULT" TO cascade_result
+
+	ENDIF
+
+	IF GLOBAL ( "REACTIVATE_TO_ORIGINAL" ) THEN
+	
+		status_change = "!"	
+	ENDIF
+	
+	self . change_status ( self . data . current , 
+			       status_change         )
+
+	
+	IF ( cascade_sample <> old_value_sample ) THEN
+
+		SET GLOBAL "REACTIVATE_TO_ORIGINAL" TO old_value_sample
+
+	ENDIF
+
+	IF ( cascade_result <> old_value_result ) THEN
+
+		SET GLOBAL "REACTIVATE_TO_RESULT" TO old_value_result
+	
+	ENDIF
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+ROUTINE aux_post_commit_sample_reactivate ( self, data )
+
+    DECLARE REACTIVATE_id, sample_id
+
+    data . set_first ( )
+
+    WHILE self . data . current <> EMPTY DO
+
+	IF (self . table = "SAMPLE") THEN
+		sample_id = SELECT sample.id_numeric
+                    IN OBJECT data . current
+		reactivate_id = select sample.reativacao for update where id_numeric = sample_id
+		ASSIGN SAMPLE.REATIVACAO = REACTIVATE_ID + 1 
+		if transaction_is_write() = false then
+			START WRITE TRANSACTION "REATIVAR AMOSTRAS"	
+		endif
+		UPDATE SAMPLE
+		COMMIT
+	ENDIF
+
+      data . set_next ( )
+
+    ENDWHILE
+
+ENDROUTINE
+
+{**************************************************************************}
+{**************************************************************************}
+{**************************************************************************}
+

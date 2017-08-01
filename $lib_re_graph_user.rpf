@@ -1,0 +1,261 @@
+{*****************************************************************************
+*
+* Module Name   : $LIB_RE_GRAPH_USER
+*
+* Purpose       : User routines to override default graph behaviour
+*
+* Portability   : All platforms
+*
+* Document Ref. : SCR111462
+*
+* Re-entrant    : No
+*
+* Specification :
+*
+*****************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO / PETRO ***}
+{ 
+#	When	Who	What
+001   01/06/2016	LLV	Referência ao código da instalação na composição do P.A.
+}
+
+
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+ENABLE WINDOWS
+SET NAME "DEFER/"
+
+{*******************************************************************************}
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_GENERAL
+
+{*******************************************************************************}
+
+CONSTANT MAX_RESULTS = 10             { Number of Historical Results to Display }
+CONSTANT DATE_FIELD = "sampled_date"  { The field from SAMP_TEST_RESULT for the result ordering }
+
+{*******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_re_graph_data_user ( graph_context  ,
+                                 result_object  ,
+                                 result_context )
+
+{
+*
+*	User exit to define the data to be displayed.
+*    
+*	Build a select array on SAMP_TEST_RESULT
+*    
+*********************************************************************************}
+
+	DECLARE retVal, 
+	        dynamic_sql
+
+	retVal = FALSE
+
+	IF (( graph_context.result_type = "N" ) OR ( graph_context.result_type = "K" )) THEN
+
+		{ Minimum criteria of component and analysis match, no cancelled results }
+
+		CREATE OBJECT "STD_DYNAMIC_SQL" , dynamic_sql
+
+		dynamic_sql . add_to_sql_statement ( "select * from (" ) 
+		dynamic_sql . add_to_sql_statement ( "select result_text, result_value, row_number() " )
+		dynamic_sql . add_to_sql_statement ( "over (order by " )
+		dynamic_sql . add_to_sql_statement ( DATE_FIELD )
+		dynamic_sql . add_to_sql_statement ( " desc) rn " )
+		dynamic_sql . add_to_sql_statement ( "from samp_test_result " )
+
+		dynamic_sql . add_to_sql_statement ( "where component_name = " )
+		dynamic_sql . add_where_field  ( "RESULT"                      ,
+						 "NAME"                        ,
+						 graph_context.component_name  ) 
+
+		dynamic_sql . add_to_sql_statement ( " and analysis = " )
+		dynamic_sql . add_where_field  ( "TEST"                 ,
+						 "ANALYSIS"             ,
+						 graph_context.analysis ) 
+
+		dynamic_sql . add_to_sql_statement ( " and result_status <> 'U' ")
+		dynamic_sql . add_to_sql_statement ( " and result_status <> 'X' ")
+		dynamic_sql . add_to_sql_statement ( " and result_status <> 'R' ")
+
+		IF ( NOT BLANK ( graph_context.product )) THEN
+
+			dynamic_sql . add_to_sql_statement ( " and product = " )
+			dynamic_sql . add_where_field  ( "SAMPLE"              ,
+			                                 "PRODUCT"             ,
+			                                 graph_context.product )
+
+		ENDIF
+
+		IF ( NOT BLANK ( graph_context.sampling_point )) THEN
+
+			dynamic_sql . add_to_sql_statement ( " and sampling_point = " )
+			dynamic_sql . add_where_field  ( "SAMPLE"                     ,
+			                                 "SAMPLING_POINT"             ,
+			                                 graph_context.sampling_point )
+
+		ENDIF
+
+{\/ 001 LLV Begin }
+		IF ( NOT BLANK ( graph_context.sampling_point )) THEN
+
+			dynamic_sql . add_to_sql_statement ( " and instalacao_id = " )
+			dynamic_sql . add_where_field  ( "SAMPLE"                     ,
+			                                 "INSTALACAO_ID"              ,
+			                                 graph_context.point_location )
+
+		ENDIF
+{\/ 001 LLV End   }
+
+		dynamic_sql . add_to_sql_statement ( " ) allrows where rn < " )
+		dynamic_sql . add_to_sql_statement ( STRIP ( MAX_RESULTS + 1 ))
+		dynamic_sql . add_to_sql_statement ( " order by rn desc" )
+
+		dynamic_sql . add_select_field   ( "RESULT" ,
+					           "TEXT"   ) 
+		dynamic_sql . add_select_field   ( "RESULT" ,
+					           "VALUE"  ) 
+		dynamic_sql . add_select_integer ( )
+
+		lib_re_graph_select_data ( dynamic_sql, graph_context )
+
+		retVal = TRUE
+
+	ENDIF
+
+	RETURN ( retVal )
+
+ENDROUTINE
+
+{*******************************************************************************}
+
+GLOBAL
+
+ROUTINE lib_re_graph_control_user ( graph_context  ,
+                                    result_object  ,
+                                    result_context )
+
+{
+*	User exit to define the control lines.
+*
+*	This set the lines based on the MLP spec as read by result entry.
+*	This supports the mlps_user triggers to selective limits.
+*
+*********************************************************************************}
+
+	DECLARE limits ,
+	        retVal ,
+	        cnt    ,
+	        nlim   ,
+	        lim
+
+	ARRAY graph_context . control_lines ARRAYSIZE ( 0, 3 )
+
+	retVal = TRUE
+
+	{ See if this result has a spec }
+
+	IF ( (result_object.mlp_initialised) AND (variable_is_assigned(result_object.mlp_object)) ) THEN
+
+		limits = result_object . mlp_object . mlp_operation . limits
+
+		nlim = SIZE_OF_ARRAY(limits)
+		cnt = 1
+
+		{ Add a line for each level }
+
+		WHILE ( cnt <= nlim ) DO
+
+			{ Set the line to the name of the level }
+
+			IF ( limits [ cnt ] <> EMPTY ) THEN
+
+				graph_context . control_lines [ cnt, 1 ] = 
+				        STRIP ( SUBSTRING ( limits [ cnt ] . object_name, 11, 10 ))
+
+				lim = SUBSTITUTE(limits[cnt].minlimit,"<>=","")
+
+				IF ( NUMTEXT ( lim )) THEN
+					graph_context . control_lines [ cnt, 2 ] = NUMERIC ( lim )
+				ELSE
+					graph_context . control_lines [ cnt, 2 ] = 0
+				ENDIF
+
+				lim = SUBSTITUTE(limits[cnt].maxlimit,"<>=","")
+
+				IF ( NUMTEXT(lim) ) THEN
+					graph_context . control_lines [ cnt, 3 ] = NUMERIC ( lim )
+				ELSE
+					graph_context . control_lines [ cnt, 3 ] = 0
+				ENDIF
+
+			ENDIF
+
+			cnt = cnt + 1
+
+		ENDWHILE
+
+		retVal = TRUE
+
+	ENDIF
+
+	RETURN ( retval )
+
+ENDROUTINE
+
+{*******************************************************************************}
+
+ROUTINE lib_re_graph_select_data ( dynamic_sql   ,
+                                   graph_context )
+
+{
+*	Execute the select and build the point arrays
+*
+*********************************************************************************}
+
+	DECLARE samp_test_result_push ,
+	        res_text              ,
+	        count
+
+	ARRAY graph_context . data_array_x ARRAYSIZE (0)
+	ARRAY graph_context . data_array_y ARRAYSIZE (0)
+
+	PUSH_FILE_DESCRIPTOR ( "SAMP_TEST_RESULT", samp_test_result_push )
+
+	dynamic_sql . execute ( )
+
+	res_text = dynamic_sql . select ( 1 )
+	count    = 0
+
+	WHILE res_text <> EMPTY DO
+
+		IF ( NUMTEXT ( res_text )) THEN
+
+			count = count + 1
+
+			graph_context . data_array_x [ count ] = count
+			graph_context . data_array_y [ count ] = NUMERIC ( res_text )
+
+		ENDIF
+
+		dynamic_sql . next ()
+
+		res_text = dynamic_sql . select ( 1 )
+
+	ENDWHILE
+
+	POP_FILE_DESCRIPTOR ( samp_test_result_push )
+
+ENDROUTINE
+
+{*******************************************************************************}
+{*******************************************************************************}
+{*******************************************************************************}
+

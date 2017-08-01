@@ -1,0 +1,127 @@
+{******************************************************************************
+*
+* Module Name   : EP_FILE_SEND
+*
+* Purpose       : Send a file to smp$resultfiles
+*
+* Author        : MVS/LLV
+*
+* Date          : 07-08-2014
+*
+*
+******************************************************************************}
+{
+        CYBERTECNICA - PETROBRAS - LIMS-SM-BR/EPBC/GLAF Implementation
+        ==============================================================
+
+ >>> Number     WHO     WHEN        MODIFICATION HISTORY
+
+ >>> 001		MVS	28-03-02	RAM 110 - Migração para SM2000
+
+}
+
+{ Initial Configuration }
+SET NOTPROTECTED
+SET NAME "DISPLAY/"
+ENABLE WINDOWS
+
+SET FORMAT "9999999999"
+SET COMPILE_OPTION DECLARE
+
+JOIN STANDARD_LIBRARY std_utils
+JOIN STANDARD_LIBRARY STD_BROWSE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_TRANSFER
+JOIN LIBRARY $lib_utils
+
+{* Main **********************************************************************}
+
+    {***************}
+    {* definitions *}
+    {***************}
+    DECLARE form
+
+    {* Call Progrma Startup                                                   *}
+    initialise_screen (form)
+    {* Exit Program                                                           *}
+    EXIT { main program }
+
+{******************************************************************************}
+ROUTINE initialise_screen (form)
+{
+*  Routine to set up windows
+*******************************************************************************}
+
+    {***************}
+    {* definitions *}
+    {***************}
+    DECLARE arquivo, indice, arquivo_destino 
+    DECLARE prompt_job_name
+    DECLARE prompt_len , prompt_col, arquivo_nome
+
+    { Get the max length of all the prompts }
+    prompt_len = 15
+
+    prompt_job_name = PAD ( "Arquivo " , " " , prompt_len ) 
+    prompt_col = prompt_len + 3
+
+    { * Interface Definition * }
+    PROMPT OBJECT form CLASS PROMPT_CLASS_FORM
+        WITH  ( column       = 15,
+                row          =  9,
+                height       = 1,
+                width        = 40,
+                border       = TRUE,
+                proportional = TRUE,
+{ >>> 001	MVS	28-03-02	Begin }
+{                header       = "Envio de Arquivo Local p/ o VMS") }
+                header       = "Envio de Arquivo Local p/ o Servidor")
+{ >>> 001	MVS	28-03-02	End }
+
+    { * Displays * }
+    form . add_display ( prompt_job_name  , 2 , 1 ,
+                          PROMPT_RENDITION_BOLD + PROMPT_RENDITION_RAISED )
+
+    { * Prompts Definition * }
+    
+    PROMPT OBJECT arquivo
+           ON LINE 1 FROM prompt_col TO prompt_col + 40
+           BROWSE ON file
+	     WITH ( file_directory  = "C:\Meus Documentos"  ,
+			{* file_extension  = "pdf" ,              *}
+			file_extension = "txt" ,
+		      client_file     = TRUE )		  
+           
+    form . add_prompt ( arquivo )
+
+    form . start_prompt ()
+	REPEAT
+    		form . wait_prompt ()                       
+       
+		IF ( form . get_lastkey () = "DO" ) THEN    {* Ok Button Pressed      *}
+ 			{ get the filename and its path }
+    			arquivo_nome = STRIP(arquivo.text)
+			arquivo_destino = arquivo_nome
+			indice = INDEX(arquivo_nome,"\")
+			WHILE (indice <> 0 ) DO
+				arquivo_destino = RIGHTSTRING(arquivo_destino,LENGTH(arquivo_destino)-indice)
+				indice = INDEX(arquivo_destino,"\")
+			ENDWHILE
+			{* arquivo_destino = "smp$resultfiles:":arquivo_destino           *}
+			arquivo_destino = "smp$userfiles:":arquivo_destino
+
+    			TRANSFER_BINARY_TO_SERVER(arquivo_nome,arquivo_destino)
+			flash_message("Arquivo ":arquivo_nome:" enviado com sucesso",true)
+			return
+       	ENDIF
+
+	UNTIL (form.get_lastkey() = "EXIT")
+
+    form . end_prompt ( )
+
+ENDROUTINE { initialise_screen }
+
+
+
+
+

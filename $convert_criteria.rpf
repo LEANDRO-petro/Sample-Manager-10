@@ -1,0 +1,467 @@
+{******************************************************************************
+*
+* Report Name   : $CONVERT_CRITERIA.RPF
+*
+* Purpose       : Report to convert crt files to database entries
+*
+* Poratability  :
+*
+*******************************************************************************}
+{*** IMPLEMENTAÇÃO THERMO ***}
+{ 
+No.	Data	Quem	O que
+08/01/2013	Mudanças para correção de BUG - todas
+}
+
+ENABLE WINDOWS
+SET NAME "DEFER/"
+SET COMPILE_OPTION DECLARE
+SET NOT_PROTECTED
+
+{* Libraries *****************************************************************}
+
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_MESSAGE
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_SQUIRL
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $CRITERIA_SAVED
+
+{* Variables *****************************************************************}
+
+{* Constants *****************************************************************}
+
+CONSTANT CRT_DIRECTORY      = "SMP$CRITERIA:"
+CONSTANT CRT_EXTENSION      = ".CRT"
+
+{* Main ***********************************************************************}
+
+convert_criteria_files ( )
+validate_criteria_conditions ( )
+
+{******************************************************************************}
+
+GLOBAL ROUTINE convert_criteria_files
+
+{
+*
+* Main loop to convert crt files
+*
+*******************************************************************************}
+
+	DECLARE crt_files ,
+		no_files , 
+		counter , 
+		status ,
+		select_array ,
+		tablenam ,
+		id
+
+	counter = 0
+
+	FILE FIND CRT_DIRECTORY : "*" : CRT_EXTENSION , crt_files , status
+
+	no_files = size_of_array ( crt_files )
+
+	WHILE ( counter < no_files ) DO
+
+		ARRAY select_array
+
+		counter = counter + 1
+
+		status = load_crt_file ( crt_files [ counter ], select_array )
+
+		IF status = EMPTY THEN
+
+			IF select_array = EMPTY THEN
+
+				status = "Criteria file does not contain a valid criteria"
+
+			ELSEIF file_name_to_header_fields ( crt_files[ counter ],
+			                                tablenam            ,
+			                                id                  )
+
+				IF NOT BLANK ( tablenam ) THEN
+
+					status = criteria_saved_save_squirrel ( tablenam     ,
+					                                        id           ,
+					                                        select_array )
+
+					IF status = EMPTY THEN
+						rename_crt_file ( crt_files [ counter ], TRUE )
+					ENDIF
+
+				ELSE
+
+					status = "No table name specified for criteria"
+
+				ENDIF
+
+			ELSE
+
+				status = "Can not determine table name for criteria"
+
+			ENDIF
+
+		ENDIF
+
+		IF status <> EMPTY THEN
+
+			IF GLOBAL ( "MODE" ) <> "INTERACTIVE" THEN
+
+				LOGMESSAGE "LOGFILE", "Failed to load criteria file : " :
+				                       crt_files [ counter ]
+				LOGMESSAGE "LOGFILE", status
+
+			ELSE
+
+				FLASH_MESSAGE ( "Failed to load criteria file : " :
+				                 crt_files [ counter ], TRUE )
+				FLASH_MESSAGE ( status, TRUE )
+
+			ENDIF
+
+			rename_crt_file ( crt_files [ counter ], FALSE )
+
+		ENDIF
+
+	ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE load_crt_file ( VALUE file_name , select_array )
+
+{
+*
+* Reads the select array from the file to convert.
+*
+*******************************************************************************}
+
+	DECLARE squirrel , message , text_to_flash , status
+
+	status = squirrel_open ( file_name , squirrel )
+
+	IF ( status = EMPTY ) THEN
+		status = squirrel_read ( select_array , squirrel )
+	ENDIF
+
+	IF ( status = EMPTY ) THEN
+		status = squirrel_release ( squirrel )
+	ENDIF
+
+	IF status <> EMPTY THEN
+
+		message_fetch ( "$CRITERIA_SAVED_LOAD_FAIL" , message )
+		message_add_parameter ( message , status )
+		text_to_flash = message_get_text ( message , 1 )
+
+		flash_message ( text_to_flash , TRUE )
+
+	ENDIF
+
+	return ( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE rename_crt_file ( VALUE file_name ,
+                          VALUE worked    )
+
+{
+*
+* Renames the crt file so its not used again
+*
+*******************************************************************************}
+
+	DECLARE rename_file_name ,
+	        status
+	
+	IF worked THEN
+		rename_file_name = file_name : ".obsolete"
+	ELSE
+		rename_file_name = file_name : ".failed"
+	ENDIF
+
+	FILE SEND file_name, rename_file_name, status
+
+	IF ( status = EMPTY ) THEN
+		FILE DELETE file_name, status
+	ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE file_name_to_header_fields ( VALUE file_name ,
+                                           tablenam  ,
+                                           id        )
+
+{
+*
+* Converts the crt file name into the table name and Id for a saved criteria
+*
+*******************************************************************************}
+
+	DECLARE dir_pos ,
+	        extn_pos ,
+	        last_char ,
+	        table_name_size
+
+	file_name = TOUPPER ( STRIP ( file_name ))
+
+	{ Remove Extension }
+	extn_pos = index ( file_name, ".CRT" )
+
+	IF extn_pos > 0 THEN
+		file_name = LEFTSTRING ( file_name, extn_pos - 1 )
+	ENDIF
+
+	{ Remove Directory }
+	dir_pos = index ( file_name, "\" )
+
+	WHILE ( dir_pos > 0 ) DO
+		file_name = RIGHTSTRING ( file_name, LENGTH ( file_name ) - dir_pos )
+		dir_pos = index ( file_name, "\" )
+	ENDWHILE
+	
+	{ Get number from end of name }
+	{ Start from second last char as there must be room for the number }
+	last_char = LENGTH ( file_name ) - 1
+	
+	WHILE ( last_char > 0 ) AND ( SUBSTRING ( file_name, last_char, 1 ) <> "_" ) DO
+		last_char = last_char - 1
+	ENDWHILE
+	
+	{ If we cant find the "_" we cant process the file }
+	IF last_char <= 0 THEN
+		RETURN ( FALSE )
+	ENDIF
+	
+	table_name_size = NUMERIC ( SUBSTRING ( file_name, last_char + 1, LENGTH ( file_name ) - last_char ))
+	
+	{ Extract the table name }
+	tablenam = SUBSTRING ( file_name, 1, table_name_size )
+	id = SUBSTRING ( file_name, table_name_size + 2, last_char - table_name_size  - 2 )
+	
+	criteria_saved_table_from_explorer_folder ( tablenam, id )
+
+	RETURN ( TRUE )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE validate_criteria_conditions
+
+{
+*
+* Loop over the criteria fields and make sure they're valid
+*
+*******************************************************************************}
+
+	DECLARE bad_criteria ,
+	        crit_condition ,
+	        tab_name ,
+	        real_name ,
+	        ok
+
+	ARRAY bad_criteria ARRAYSIZE ( 0, 5 )
+
+	crit_condition = SELECT criteria_condition . criteria_field
+	                 WHERE  table_name <> ""
+	                 ORDER ON table_name, criteria_saved, criteria_order
+
+	WHILE crit_condition <> EMPTY DO
+
+		IF ( crit_condition <> "(" )   AND
+		   ( crit_condition <> ")" )   AND
+		   ( crit_condition <> "OR" )  AND
+		   ( crit_condition <> "AND" ) THEN
+
+			tab_name = SELECT criteria_condition . table_name
+			real_name = ""
+
+			ok = VALID_FIELD ( tab_name, crit_condition )
+
+			IF ok THEN
+				ok = GET_REAL_FIELD_NAME ( tab_name, crit_condition, real_name )
+			ENDIF
+			
+			IF ok THEN
+				ok = ( crit_condition = real_name )			
+			ENDIF
+
+			IF NOT ok THEN
+				IF confirm_with_message ( 
+				                "Field name " : STRIP ( crit_condition ) :
+				                " cannot be found on table " : STRIP ( tab_name ) :
+				                " used in criteria " :
+				                STRIP ( SELECT criteria_condition . criteria_saved ) :
+				                ".  Would you like to change this field?" )
+
+					fix_bad_criteria_prompt_field ( bad_criteria ,
+					                                SELECT criteria_condition . criteria_saved,
+					                                SELECT criteria_condition . criteria_order,
+					                                crit_condition ,
+					                                tab_name ,
+					                                real_name )
+
+				ENDIF
+			ENDIF
+
+		ENDIF
+
+		NEXT criteria_condition
+		crit_condition = SELECT criteria_condition . criteria_field
+
+	ENDWHILE
+		   
+	fix_bad_criteria_update_field ( bad_criteria )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE fix_bad_criteria_prompt_field (       bad_criteria ,
+                                        VALUE crit_name    ,
+                                        VALUE order_num    ,
+                                        VALUE field_name   ,
+                                        VALUE tab_name     ,
+                                        VALUE real_name    )
+
+{
+*
+* Prompt for a replacement field value
+*
+*******************************************************************************}
+
+	DECLARE form ,
+	        promptfield ,
+	        alias_name ,
+	        done ,
+	        new_pos
+
+	PROMPT OBJECT form CLASS "STD_FORM"
+	form . header           = "Correct criteria field"
+	form . row              = 10
+	form . column           = 10
+	form . height           = 1
+	form . width            = 70
+	form . vgl_library      = global ( "current_library" )
+	
+	PROMPT OBJECT promptfield CLASS "STD_PROMPT_TEXT"
+	promptfield . ROW                = 1
+	promptfield . COLUMN             = 20
+	promptfield . HEIGHT             = 1
+	promptfield . WIDTH              = 45
+	
+	IF NOT BLANK ( real_name ) THEN
+		promptfield . VALUE = real_name
+	ELSE
+		promptfield . VALUE = field_name
+	ENDIF
+
+	form . add_display ( "Change " : STRIP ( field_name ) : " to", 1, 1, PROMPT_RENDITION_NORMAL ) 
+	form . add_prompt ( promptfield ) 
+
+	form.start_prompt()
+
+	done = FALSE
+
+	REPEAT
+
+		form.wait_prompt()
+
+		real_name = promptfield . value
+		
+		IF ( form . get_lastkey () = "EXIT" ) THEN
+
+			done = TRUE
+
+		ELSEIF NOT VALID_FIELD ( tab_name, promptfield . value ) THEN
+
+			done = confirm_with_message ( "This is not a valid field, would you like to use this value anyway?" )
+
+		ELSE
+
+			done = TRUE
+
+			GET_REAL_FIELD_NAME ( tab_name, promptfield . value, alias_name )
+			
+			IF ( promptfield . value <> alias_name ) THEN
+
+				flash_message ( STRIP ( promptfield . value ) : 
+				                " is an alias, using the real field name of " : 
+				                STRIP ( alias_name ), TRUE )
+				real_name = alias_name
+
+			ENDIF
+
+		ENDIF
+
+	UNTIL ( done )
+
+	IF ( done ) AND ( form . get_lastkey () <> "EXIT" ) THEN
+
+		new_pos = size_of_array ( bad_criteria ) + 1
+		
+		bad_criteria [ new_pos, 1 ] = tab_name
+		bad_criteria [ new_pos, 2 ] = crit_name
+		bad_criteria [ new_pos, 3 ] = order_num
+		bad_criteria [ new_pos, 4 ] = field_name
+		bad_criteria [ new_pos, 5 ] = real_name
+
+	ENDIF
+
+	form.end_prompt()
+	
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE fix_bad_criteria_update_field ( bad_criteria )
+
+{
+*
+* Update fields
+*
+*******************************************************************************}
+
+	DECLARE field_num ,
+	        crit_condition
+
+	START WRITE TRANSACTION "Updating invalid criteria"
+
+	field_num = 1
+
+	WHILE field_num <= size_of_array ( bad_criteria ) DO
+
+		crit_condition = SELECT criteria_condition . criteria_field FOR UPDATE
+		                 WHERE  table_name     = bad_criteria [ field_num, 1 ] AND
+		                        criteria_saved = bad_criteria [ field_num, 2 ] AND
+		                        criteria_order = bad_criteria [ field_num, 3 ]
+
+		IF crit_condition <> EMPTY THEN
+
+			ASSIGN criteria_condition . criteria_field = bad_criteria [ field_num, 5 ]
+
+			UPDATE criteria_condition
+
+		ENDIF
+
+		field_num = field_num + 1
+
+	ENDWHILE
+
+	COMMIT
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}

@@ -1,0 +1,1779 @@
+{******************************************************************************
+*
+* Module Name  : $RSLT_PIPE
+*
+* Description  : Data Pipe
+*
+*******************************************************************************}
+
+SET NOTPROTECTED
+SET NAME "DISPLAY/"
+
+SET COMPILE_OPTION DECLARE
+
+ENABLE WINDOWS
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_DATABASE
+JOIN STANDARD_LIBRARY STD_GENERAL
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_STRUCTURE
+JOIN STANDARD_LIBRARY STD_VGL
+JOIN STANDARD_LIBRARY STD_XML
+
+JOIN LIBRARY $BSMP_LIB
+JOIN LIBRARY $EXPLORER_UTILS
+JOIN LIBRARY $LIB_DB
+JOIN LIBRARY $LIB_PROPERTY_SHEET
+JOIN LIBRARY $LIB_TEXT
+JOIN LIBRARY $LIB_UTILS
+JOIN LIBRARY $LIB_STATUS_WINDOW
+JOIN LIBRARY $PROMPT_LIST
+
+CONSTANT COMMAND_SUSPEND         = 1
+CONSTANT COMMAND_RESUME          = 2
+CONSTANT COMMAND_TERMINATE       = 3
+CONSTANT COMMAND_INQUIRE         = 4
+
+CONSTANT PIPE_STATUS_RUNNING     = 1
+CONSTANT PIPE_STATUS_SUSPENDED   = 2
+
+CONSTANT DISPATCHER_COMMAND_PIPE = "DISPATCHER_COMMAND_PIPE"
+CONSTANT DISPATCHER_MESSAGE_PIPE = "DISPATCHER_MESSAGE_PIPE"
+
+CONSTANT ENTRY_STATUS_CLEAR      = 1
+CONSTANT ENTRY_STATUS_ERROR      = 2
+CONSTANT ENTRY_STATUS_FATALERROR = 3
+CONSTANT ENTRY_STATUS_RESUBMIT   = 4
+
+DECLARE processed_status, status_window, batch_mode, batch_resubmit_entry
+DECLARE error_text
+
+data_pipe_dispatcher_start_option( EMPTY )
+
+
+{******************************************************************************}
+{**************************** Menu Entry Routines *****************************}
+{******************************************************************************}
+
+{******************************************************************************}
+
+ROUTINE data_pipe_dispatcher_start_option( VALUE option )
+
+{
+* Description : Menu Interface to the Start Dispatcher process. The dispatcher
+*               will start either interactively or in the background depending
+*               upon SampleManager's mode
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE continue, command, errors, suspended, status, ok
+
+      ok = TRUE
+
+      suspended = FALSE
+      continue = TRUE
+
+      PIPE OPEN DISPATCHER_COMMAND_PIPE, errors
+
+      IF errors = EMPTY THEN
+
+            flash_message( GET_USER_MESSAGE( "DP_DISP_ALREADY", 1 ), TRUE)
+
+            ok = FALSE
+      ENDIF
+
+      IF ok THEN
+
+            IF GLOBAL( "MODE" ) = "INTERACTIVE" THEN
+                  ok = confirm_with_text( GET_USER_MESSAGE( "DP_DISP_INTERACTIVE", 1 ) )
+            ENDIF
+
+      ENDIF
+
+      IF ok THEN
+
+           PIPE CREATE LOCAL DISPATCHER_COMMAND_PIPE, errors
+
+           ok = ( errors = EMPTY )
+
+      ENDIF
+
+      IF ok THEN
+
+            log_initialise( )
+
+            log_add_message( GET_USER_MESSAGE( "DP_DISP_START", 1 ) ,
+                             STATUS_WINDOW_MSG_LOW                  )
+
+            ON MESSAGE FROM PIPE DISPATCHER_COMMAND_PIPE
+
+                  PIPE READ DISPATCHER_COMMAND_PIPE, command, errors
+
+                  IF ( errors = EMPTY ) THEN
+
+                        IF command = COMMAND_TERMINATE THEN
+
+                              log_add_message( GET_USER_MESSAGE( "DP_DISP_TERM", 1 ) ,
+                                               STATUS_WINDOW_MSG_LOW                 )
+
+                              continue = FALSE
+
+                        ELSEIF command = COMMAND_SUSPEND THEN
+
+                              log_add_message( GET_USER_MESSAGE( "DP_DISP_SUSP", 1 ) ,
+                                               STATUS_WINDOW_MSG_LOW                 )
+
+                              suspended = TRUE
+
+                        ELSEIF command = COMMAND_RESUME THEN
+
+                              log_add_message( GET_USER_MESSAGE( "DP_DISP_RES", 1 ) ,
+                                               STATUS_WINDOW_MSG_LOW                )
+
+                              suspended = FALSE
+
+                        ELSEIF command = COMMAND_INQUIRE THEN
+
+                              IF suspended THEN
+                                    status = PIPE_STATUS_SUSPENDED
+                              ELSE
+                                    status = PIPE_STATUS_RUNNING
+                              ENDIF
+
+                              write_to_pipe( DISPATCHER_MESSAGE_PIPE, status )
+
+                        ENDIF
+
+
+                  ENDIF
+
+            ENDON
+
+            REPEAT
+
+                  IF NOT suspended THEN
+
+                        continue = continue AND process_data_trail( )
+
+                  ENDIF
+
+                  SLEEP FOR GLOBAL ( "DP_DORMANT_INTERVAL" )
+
+            UNTIL ( GLOBAL( "SHUTDOWN" ) OR ( NOT continue ) )
+
+            log_deinitialise( )
+
+      ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_pipe_monitor_option( VALUE option )
+
+{
+* Description : Menu Interface to the monitor data trail functionality. The
+*               current list of data trail entries are displayed in a list
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE select_array
+
+      ARRAY select_array
+
+      monitor_data_trail( select_array )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_pipe_dispatcher_suspend_option( VALUE option )
+
+{
+* Description : Menu Interface to the suspend dispatcher functionality.
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE errors
+
+      errors = write_to_pipe( DISPATCHER_COMMAND_PIPE, COMMAND_SUSPEND )
+
+      IF errors = EMPTY THEN
+
+            flash_message( GET_USER_MESSAGE( "DP_DISP_COMMAND_SUCCESS", 1 ), TRUE )
+
+      ELSEIF lib_text_contains_message( errors, "SMP_PIPE_NOOPENLOCAL", 1 ) THEN
+                               
+            flash_message( GET_USER_MESSAGE( "DP_DISP_COMMAND_FAIL_NO_PIPE", 1 ), TRUE )
+                               
+      ELSE
+
+            flash_message( errors, TRUE )
+
+      ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_pipe_dispatcher_resume_option( VALUE option )
+
+{
+* Description : Menu Interface to the resume dispatcher functionality
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE errors
+
+      errors = write_to_pipe( DISPATCHER_COMMAND_PIPE, COMMAND_RESUME )
+
+      IF errors = EMPTY THEN
+
+            flash_message( GET_USER_MESSAGE( "DP_DISP_COMMAND_SUCCESS", 1 ), TRUE )
+
+      ELSEIF lib_text_contains_message( errors, "SMP_PIPE_NOOPENLOCAL", 1 ) THEN
+                               
+            flash_message( GET_USER_MESSAGE( "DP_DISP_COMMAND_FAIL_NO_PIPE", 1 ), TRUE )
+
+      ELSE
+
+            flash_message( errors, TRUE )
+
+      ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_pipe_dispatcher_terminate_option( VALUE option )
+
+{
+* Description : Menu Interface to the terminate dispatcher functionality
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE errors
+
+      errors = write_to_pipe( DISPATCHER_COMMAND_PIPE, COMMAND_TERMINATE )
+
+      IF errors = EMPTY THEN
+
+            flash_message( GET_USER_MESSAGE( "DP_DISP_COMMAND_SUCCESS", 1 ), TRUE )
+
+      ELSEIF lib_text_contains_message( errors, "SMP_PIPE_NOOPENLOCAL", 1 ) THEN
+                               
+            flash_message( GET_USER_MESSAGE( "DP_DISP_COMMAND_FAIL_NO_PIPE", 1 ), TRUE )
+
+      ELSE
+
+            flash_message( errors, TRUE )
+
+      ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_pipe_dispatcher_inquire_option( VALUE option )
+
+{
+* Description : Menu Interface to the inquire dispatcher functionality. Sends a
+*               message to the dispatcher to inquire about its status
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE errors, status
+
+      PIPE CREATE LOCAL DISPATCHER_MESSAGE_PIPE, errors
+
+      IF errors = EMPTY THEN
+
+            status = EMPTY
+
+            ON MESSAGE FROM PIPE DISPATCHER_MESSAGE_PIPE
+
+                  PIPE READ DISPATCHER_MESSAGE_PIPE, status, errors
+
+            ENDON
+
+            IF write_to_pipe( DISPATCHER_COMMAND_PIPE, COMMAND_INQUIRE ) = EMPTY THEN
+
+                  {*** sleep to give time for status message to arrive ***}
+                  SLEEP FOR INTERVAL( "0 00:02:00.00" )
+
+                  IF errors = EMPTY THEN
+
+                        IF status = PIPE_STATUS_RUNNING THEN
+
+                              flash_message( GET_USER_MESSAGE( "DP_DISP_STATRUN", 1 ), TRUE )
+
+                        ELSEIF status = PIPE_STATUS_SUSPENDED THEN
+
+                              flash_message( GET_USER_MESSAGE( "DP_DISP_STATSUS", 1 ), TRUE )
+
+                        ELSEIF status = EMPTY THEN
+
+                              {*** didn't receive a status therefore data ***}
+                              {*** pipe process is running but busy       ***}
+                        
+                              flash_message( GET_USER_MESSAGE( "DP_DISP_STATNON", 1 ), TRUE )
+
+                        ENDIF
+
+                  ENDIF
+
+            ELSE
+
+                  {*** command pipe does not exist therefore ***}
+                  {*** data pipe is not running              ***}
+                  
+                  flash_message( GET_USER_MESSAGE( "DP_DISP_STATNOT", 1 ), TRUE )
+                  
+            ENDIF
+            
+      ENDIF
+
+ENDROUTINE
+
+
+{*****************************************************************************}
+
+ROUTINE data_pipe_data_display_option( VALUE option )
+
+{
+* Description : Menu Interface to the display data trail entry functionality.
+*               Prompts the user for a data trail entry number and displays its
+*               details including the data record contained within it.
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     :
+*
+******************************************************************************}
+
+      DECLARE entry_number, property_sheet, table, select_array
+
+      property_sheet_define_class( )
+
+      ARRAY select_array
+
+      entry_number = get_entry_number( GET_USER_MESSAGE( "DP_TRAIL_DISPLAY_HEAD", 1 ),
+                                       GET_USER_MESSAGE( "DP_TRAIL_ENTRY_PROMPT", 1 ),
+                                       select_array                                  )
+
+      IF entry_number <> EMPTY THEN
+
+            table = SELECT data_trail_entry . table_name
+                        WHERE entry_number = entry_number
+
+            IF trail_get_row( entry_number ) THEN
+
+                  CREATE OBJECT PROPERTY_SHEET_CLASS, property_sheet
+
+                  property_sheet . add_table = TRUE
+                  property_sheet . auto_general ( table )
+                  property_sheet . go ( )
+
+
+            ENDIF
+
+      ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE data_pipe_failures_display_option( VALUE option )
+
+{
+* Description : Menu Interface to the display failures functionality. A list
+*               of the current data trail entry failres is displayed.
+*               A data trail failure is either a full error or an error that
+*               has been flagged for auto resubmission
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+******************************************************************************}
+
+      DECLARE select_array
+
+      ARRAY select_array
+
+      ARRAY_SELECT_ADD( select_array, ARRAY_SELECT_EQ, "REJECTED", TRUE )
+      ARRAY_SELECT_ADD( select_array, ARRAY_SELECT_OR, EMPTY, EMPTY )
+      ARRAY_SELECT_ADD( select_array, ARRAY_SELECT_NE, "LAST_RETRY_DATE", NULL )
+
+      monitor_data_trail( select_array )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE data_pipe_failure_clear_option( VALUE option )
+
+{
+* Description : Menu Interface to the Clear data trail entry functionality.
+*               The user is prompted for a data trail entry which will be
+*               removed from the data trail
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+******************************************************************************}
+
+      DECLARE entry_number, select_array, errors, check, confirm_text
+      DECLARE rejected, last_retry_date
+
+      ARRAY select_array
+
+      entry_number = get_entry_number( GET_USER_MESSAGE( "DP_TRAIL_CLEAR_FAIL_HEAD", 1 ),
+                                       GET_USER_MESSAGE( "DP_TRAIL_FAILURE_PROMPT", 1 ) ,
+                                       select_array                                     )
+
+      IF entry_number <> EMPTY THEN
+
+            rejected = SELECT data_trail_entry . rejected
+                        WHERE entry_number = entry_number
+                        
+            last_retry_date = SELECT data_trail_entry . last_retry_date
+
+            IF NOT rejected AND ( last_retry_date = NULL ) THEN
+                  {*** virgin entry ***}
+            
+                  confirm_text = GET_USER_MESSAGE( "DP_TRAIL_CONFIRM_CLEAR_VIRGIN", 1 )
+                  
+            ELSE
+            
+                  confirm_text = GET_USER_MESSAGE( "DP_TRAIL_CONFIRM_CLEAR", 1 )
+                  
+            ENDIF
+                           
+            confirm_text = confirm_text : " (" : STRIP( entry_number ) : ")"
+
+            IF confirm_with_text( confirm_text ) THEN
+
+                  check = SELECT data_trail_entry . entry_number
+                              FOR UPDATE
+                              WHERE entry_number = entry_number
+
+                  IF check = entry_number THEN
+
+                        errors = clear_current_data_trail_entry( GET_USER_MESSAGE( "DP_TRAIL_TRANS_CLEAR", 1 ) )
+
+                        IF errors = EMPTY THEN
+
+                              flash_message( GET_USER_MESSAGE( "DP_TRAIL_SUCCESS", 1 ), TRUE )
+
+                        ELSE
+
+                              flash_message( errors, TRUE )
+
+                        ENDIF
+
+                  ENDIF
+
+            ENDIF
+
+      ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE data_pipe_failure_resubmit_option( VALUE option )
+
+{
+* Description : Menu Interface to the data trail resubmit functionality. The
+*               user is prompted for a failed data trail entry number which
+*               will be reactivated for a second attempt at tarnsmission.
+*
+* Parameters  : option : the calling menu option's procedure number
+*
+* Returns     : None
+*
+******************************************************************************}
+
+      DECLARE entry_number, select_array, check
+
+      ARRAY select_array
+
+      ARRAY_SELECT_ADD( select_array, ARRAY_SELECT_EQ, "REJECTED", TRUE )
+      ARRAY_SELECT_ADD( select_array, ARRAY_SELECT_OR, EMPTY, EMPTY )
+      ARRAY_SELECT_ADD( select_array, ARRAY_SELECT_NE, "LAST_RETRY_DATE", NULL )
+
+      entry_number = get_entry_number( GET_USER_MESSAGE( "DP_TRAIL_RESUBMIT_FAIL_HEAD", 1 ),
+                                       GET_USER_MESSAGE( "DP_TRAIL_FAILURE_PROMPT", 1 )    ,
+                                       select_array                                        )
+
+      IF entry_number <> EMPTY THEN
+
+            check = SELECT data_trail_entry . entry_number
+                        FOR UPDATE
+                        WHERE entry_number = entry_number
+
+            IF check = entry_number THEN
+
+                  ASSIGN data_trail_entry . last_retry_date = NULL
+                  ASSIGN data_trail_entry . rejected        = FALSE
+
+                  START WRITE TRANSACTION GET_USER_MESSAGE( "DP_TRAIL_TRANS_RESUBMIT", 1 )
+
+                  UPDATE data_trail_entry
+
+                  COMMIT
+
+                  flash_message( GET_USER_MESSAGE( "DP_TRAIL_SUCCESS", 1 ), TRUE )
+
+            ENDIF
+
+      ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+{******************************************************************************}
+{******************************************************************************}
+
+{*****************************************************************************}
+
+ROUTINE get_entry_number( VALUE header_message ,
+                          VALUE prompt_message ,
+                                criteria_array )
+
+{
+* Description : Prompts the user for an entry number using the passed header
+*               and prompt message. The valid values are restricted by the
+*               criteria_array
+*
+* Parameters  : header_message : the message shown at the top of the form
+                prompt_message : the message shown by the prompt
+                criteria_array : the select array to limit the available values
+*
+* Returns     : the chosen entry number or EMPTY
+*
+******************************************************************************}
+
+      DECLARE form, data_trail_entry_prompt, entry_number
+      DECLARE prompt_text_length, prompt_length
+
+      prompt_text_length = LENGTH( prompt_message )
+
+      GET_FIELD_DETAILS data_trail_entry . entry_number, "FIELD_SIZE", prompt_length
+
+      CREATE OBJECT "STD_FORM", form
+
+      form . row    = 2
+      form . column = 2
+      form . height = 1
+      form . width  = prompt_text_length + 3 + prompt_length + 5
+      form . header = header_message
+
+      form . add_frame( "", 1, 1, form . height, form . width - 1 )
+
+      form . add_display( PAD( prompt_message, " ", prompt_text_length ) ,
+                          2                              ,
+                          1                              ,
+                          PROMPT_RENDITION_RAISED        )
+
+      PROMPT OBJECT data_trail_entry_prompt
+            BROWSE ON data_trail_entry . entry_number
+            ON LINE 1
+            FROM 1 + prompt_text_length + 3
+            TO   1 + prompt_text_length + 3 + prompt_length
+            WITH ( mandatory_array = criteria_array )
+
+      form . add_prompt( data_trail_entry_prompt )
+
+      form . start_prompt( )
+      form . wait_prompt( )
+      form . end_prompt( )
+
+      IF form . get_lastkey( ) = "DO" THEN
+
+            entry_number = data_trail_entry_prompt . value
+
+      ELSE
+
+            entry_number = EMPTY
+
+      ENDIF
+
+      RETURN( entry_number )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE log_initialise
+
+{
+* Description : Initialises the logging mechanism
+*
+* Parameters  : None
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      status_window_define_class ( )
+
+      CREATE OBJECT STATUS_WINDOW_CLASS , status_window
+
+      status_window . status_form . header = GET_USER_MESSAGE( "DP_DISP_HEAD", 1 )
+      status_window . status_add_time = TRUE
+      status_window . status_logging  = GLOBAL ("MODE") = "INTERACTIVE"
+      status_window . status_filename = "smp$logfiles:data_trail_dispatcher.log"
+      status_window . status_extend   = FALSE
+
+      status_window . status_length ( 25 )
+
+      status_window . status_start ( )
+
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE log_add_message( VALUE message, VALUE severity )
+{
+* Description : Adds a message to the log of the passed severity
+*
+* Parameters  : message  : the text
+*               severity : the severity
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      status_window . status_message ( message, severity )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE log_deinitialise
+{
+* Description : Deinitialises the logging mechanism
+*
+* Parameters  : None
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      status_window . status_end ( )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE write_to_pipe( VALUE pipe_name, VALUE message )
+
+{
+* Description : Sends the passed message to the passed pipe.
+*
+* Parameters  : pipe_name : the pipe to write to
+*               message   : the message to write to the pipe
+*
+* Returns     : error text or EMPTY if no errors
+*
+*******************************************************************************}
+
+      DECLARE errors, ok
+
+      PIPE OPEN LOCAL pipe_name, errors
+
+      ok = ( errors = EMPTY )
+
+      IF ok THEN
+            PIPE WRITE pipe_name, message, errors
+            ok = ( errors = EMPTY )
+      ENDIF
+
+      IF ok THEN
+            PIPE CLOSE pipe_name, errors
+            ok = ( errors = EMPTY )
+      ENDIF
+
+      RETURN( errors )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE process_data_trail
+
+{
+* Description : Look at each data trail entry in turn that hasn't been rejected
+*               due to error. If an entry has never been processed or it has
+*               been resubmitted and the resubmit-interval is up then process
+*               it. Locked records are ignored
+*
+* Parameters  : None
+*
+* Returns     : Boolean to indicate if furthur data trail processing should
+*               occur
+*
+*******************************************************************************}
+
+      DECLARE entry_number, last_retry_date, status, continue, errors
+
+      continue = TRUE
+
+      entry_number = SELECT data_trail_entry . entry_number
+                              FOR UPDATE
+                              WHERE rejected = FALSE
+                              ORDER ON entry_number
+
+      WHILE ( entry_number <> EMPTY ) AND continue DO
+
+            IF entry_number <> LOCKED THEN
+
+                  last_retry_date = SELECT data_trail_entry . last_retry_date
+
+                  IF ( last_retry_date = NULL                                     ) OR
+                     ( last_retry_date + GLOBAL ( "DP_RESUBMIT_INTERVAL" ) <= NOW ) THEN
+
+                        IF trail_get_row( entry_number ) THEN
+
+                              lock_retain( "data_trail_entry" )
+
+                              IF SELECT data_trail_entry . table_name = "RESULT" THEN
+
+                                    {*** use comp_equiv to determine validity + destination ***}
+
+                                    status = process_result_table_entry()
+
+                              ELSE
+
+                                    {*** use another generic method that ***}
+                                    {*** is yet to be implemented yet    ***}
+
+                                    status = ENTRY_STATUS_CLEAR
+
+                              ENDIF
+
+                              errors = EMPTY
+
+                              IF status = ENTRY_STATUS_CLEAR THEN
+                              
+                                    errors = clear_current_data_trail_entry( GET_USER_MESSAGE( "DP_TRAIL_TRANS_S", 1 ) )
+                                    
+                              ELSEIF ( status = ENTRY_STATUS_ERROR ) OR ( status = ENTRY_STATUS_FATALERROR ) THEN
+                              
+                                    ASSIGN data_trail_entry . rejected = TRUE
+
+                                    START WRITE TRANSACTION GET_USER_MESSAGE( "DP_TRAIL_TRANS_E", 1 )
+
+                                    UPDATE data_trail_entry
+
+                                    COMMIT
+                                    
+                                    IF status = ENTRY_STATUS_FATALERROR THEN
+                                          continue = FALSE
+                                    ENDIF
+
+                              ELSEIF status = ENTRY_STATUS_RESUBMIT THEN
+                                    ASSIGN data_trail_entry . last_retry_date = NOW
+
+                                    START WRITE TRANSACTION GET_USER_MESSAGE( "DP_TRAIL_TRANS_A", 1 )
+
+                                    UPDATE data_trail_entry
+
+                                    COMMIT
+                              ENDIF
+                              
+                              IF errors <> EMPTY THEN
+
+                                    log_add_message( errors, STATUS_WINDOW_MSG_HIGH )
+
+                              ENDIF
+
+                        ENDIF
+
+                  ENDIF
+
+            ENDIF
+
+            entry_number = SELECT data_trail_entry . entry_number
+                              FOR UPDATE
+                              WHERE rejected = FALSE
+                              AND entry_number > entry_number
+                              ORDER ON entry_number
+
+      ENDWHILE
+
+      ROLLBACK
+
+      RETURN( continue )
+
+ENDROUTINE
+
+
+{******************************************************************************}
+
+ROUTINE process_result_table_entry
+
+{
+* Description : Processes the current data trail entry in a special way for
+*               result records
+*
+* Parameters  : None
+*
+* Returns     : status of either ENTRY_STATUS_CLEAR
+*                                ENTRY_STATUS_ERROR
+*                                ENTRY_STATUS_FATALERROR
+*                                ENTRY_STATUS_RESUBMIT
+*
+*******************************************************************************}
+
+      DECLARE destination, ok_to_send, sample_rp_flag
+      DECLARE status, test_number, sample_id, analysis_id
+      DECLARE component_name, destination_status
+
+      status = ENTRY_STATUS_CLEAR
+
+      {*** select result's associated records ***}
+
+      test_number = SELECT result . test_number
+
+      sample_id = SELECT test . sample_id
+                        WHERE test_number = test_number
+
+      ok_to_send = ( sample_id <> EMPTY )
+
+      IF ok_to_send THEN
+
+            sample_id = SELECT sample . id_numeric
+                              WHERE id_numeric = sample_id
+
+            ok_to_send = ( sample_id <> EMPTY )
+
+      ENDIF
+
+      IF ( VALID_FIELD( "sample", "rp_send_flag" ) ) THEN
+
+            {this next line removes compile errors when field doesn't exist}
+            sample_rp_flag = "rp_send_flag"
+
+            ok_to_send = ( SELECT sample . 'sample_rp_flag' = TRUE )
+
+      ENDIF
+
+
+      IF ok_to_send THEN
+
+            analysis_id    = SELECT test   . analysis_id
+            component_name = SELECT result . component_name
+
+            destination = SELECT component_equivalence . destination
+                                WHERE ( analysis_id = analysis_id ) OR ( analysis_id LIKE " %" )
+                                AND   component_name = component_name
+                                AND   removeflag     = FALSE
+                                ORDER ON destination
+
+            WHILE ( destination <> EMPTY ) AND ( status <> ENTRY_STATUS_FATALERROR ) DO
+
+                  destination_status = process_destination_current_result( destination )
+
+                  IF ( status = ENTRY_STATUS_CLEAR ) THEN
+                     
+                        IF ( destination_status = "E" ) THEN
+                              status = ENTRY_STATUS_ERROR
+                              
+                        ELSEIF ( destination_status = "F" ) THEN
+                              status = ENTRY_STATUS_FATALERROR
+                              
+                        ELSEIF ( destination_status = "A" ) THEN
+                              status = ENTRY_STATUS_RESUBMIT
+                        
+                        ENDIF
+                     
+                  ELSEIF ( status = ENTRY_STATUS_ERROR ) THEN
+                  
+                        IF destination_status = "A" THEN
+                              status = ENTRY_STATUS_RESUBMIT
+                              
+                        ENDIF
+                        
+                  ENDIF
+
+                  destination = SELECT component_equivalence . destination
+                                      WHERE ( analysis_id = analysis_id ) OR ( analysis_id LIKE " %" )
+                                      AND   component_name = component_name
+                                      AND   removeflag     = FALSE
+                                      AND   destination > destination
+                                      ORDER ON destination
+
+            ENDWHILE
+
+
+      ENDIF
+
+      RETURN( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE process_destination_current_result( VALUE destination )
+
+{
+* Description : Sends the result to its destination
+*
+* Parameters  : destination : the destination record identity
+*
+* Returns     : The status value returned by the destination routine
+*
+*******************************************************************************}
+
+      DECLARE valid_s, valid_t, valid_r, s_stat, t_stat, r_stat
+      DECLARE status, error_message, entry_number
+      DECLARE dest_report, dest_routine, transmit
+
+      status = "S"
+
+      entry_number = SELECT data_trail_entry . entry_number
+
+      destination = SELECT destination . destination
+                        WHERE destination = destination
+                        AND   removeflag = FALSE
+
+      transmit = ( destination <> EMPTY )
+
+      IF transmit THEN
+
+            valid_s = SELECT destination . sample_status
+            valid_t = SELECT destination . test_status
+            valid_r = SELECT destination . result_status
+
+            IF NOT BLANK( valid_s ) THEN
+
+                  s_stat = SELECT sample . status
+
+                  transmit = ( INDEX( valid_s, s_stat ) <> 0 )
+
+            ENDIF
+
+            IF NOT BLANK( valid_t ) THEN
+
+                  t_stat = SELECT test . status
+
+                  transmit = ( INDEX( valid_t, t_stat ) <> 0 )
+
+            ENDIF
+
+            IF NOT BLANK( valid_r ) THEN
+
+                  r_stat = SELECT result . status
+
+                  transmit = ( INDEX( valid_r, r_stat ) <> 0 )
+
+            ENDIF
+
+      ENDIF
+      
+      IF transmit THEN
+
+            dest_report  = SELECT component_equivalence . report
+            dest_routine = SELECT component_equivalence . routine
+
+            IF BLANK( dest_report ) OR BLANK( dest_routine ) THEN
+
+                  dest_report  = SELECT destination . report
+                  dest_routine = SELECT destination . routine
+
+            ENDIF
+
+            transmit = NOT BLANK( dest_report ) AND NOT BLANK( dest_routine )
+      
+      ENDIF
+
+      IF transmit THEN
+
+            transmit = vgl_validate_routine( dest_report, dest_routine )
+
+      ENDIF
+      
+      IF transmit THEN
+            
+            IF ( SELECT data_trail_entry . last_retry_date <> NULL ) THEN
+
+                  IF ( SELECT destination_failure . entry_number
+                        WHERE entry_number = entry_number ) <> EMPTY THEN
+
+                        transmit = ( ( SELECT destination_failure . entry_number
+                                          WHERE entry_number = entry_number
+                                          AND   destination = destination ) <> EMPTY )
+
+                  ENDIF
+
+            ENDIF
+            
+      ENDIF
+      
+      IF transmit THEN
+      
+            batch_mode = FALSE
+            error_text = ""
+
+            CALL_ROUTINE dest_routine
+                  IN LIBRARY dest_report
+
+            status        = processed_status
+            error_message = error_text
+
+            IF ( status = "E" ) OR
+               ( status = "F" ) OR
+               ( status = "A" ) THEN
+
+                  write_to_destination_failure( entry_number  , 
+                                                destination   ,
+                                                error_message )
+
+            ENDIF
+
+      ENDIF
+
+
+      RETURN( status )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE clear_current_data_trail_entry( VALUE transaction_name )
+
+{
+* Description : Deletes the currently selected data_trail_entry record.
+*
+* Parameters  : transaction_name : the name of the transaction to be used
+*
+* Returns     : error text or EMPTY
+*
+*******************************************************************************}
+
+      DECLARE errors, ok, entry_number, check, destination
+
+      entry_number = SELECT data_trail_entry . entry_number
+      
+      START WRITE TRANSACTION transaction_name
+
+      DELETE data_trail_entry, errors
+
+      ok = ( errors = EMPTY )
+      
+      check = SELECT destination_failure . entry_number
+                  FOR UPDATE
+                  WHERE entry_number = entry_number
+                  ORDER ON destination
+
+      WHILE ( check = entry_number ) AND ok DO
+      
+            destination = SELECT destination_failure . destination
+      
+            DELETE destination_failure, errors
+            
+            ok = ok AND ( errors = EMPTY )
+            
+            check = SELECT destination_failure . entry_number
+                        FOR UPDATE
+                        WHERE entry_number = entry_number
+                        AND destination > destination
+                        ORDER ON destination
+            
+      ENDWHILE
+
+      IF ok THEN
+            COMMIT
+      ELSE
+            ROLLBACK
+      ENDIF
+
+      RETURN( errors )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE set_current_data_trail_entry_date
+
+{
+* Description : Assigns the last_retry_date on the currently selected
+*               data_trail_entry record
+*
+* Parameters  : None
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+
+      ASSIGN data_trail_entry . last_retry_date = NOW
+
+      START WRITE TRANSACTION GET_USER_MESSAGE( "DP_TRAIL_TRANS_A", 1 )
+
+      UPDATE data_trail_entry
+
+      COMMIT
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE trail_get_row( VALUE entry_number )
+
+{
+* Description : Gets the XML data from the data trail entry specified by
+*               entry_number and converts it into a vgl row
+*
+* Parameters  : entry_number : the entry number of the data trail entry
+*
+* Returns     : Boolean indicating success or failure
+*
+******************************************************************************}
+
+      DECLARE xml_text, success, context, field_number, field_name
+
+      success = FALSE
+
+      push_file_descriptor( "data_trail_entry", context )
+
+      entry_number = SELECT data_trail_entry . entry_number
+                        WHERE entry_number = entry_number
+
+      IF entry_number <> EMPTY THEN
+
+            xml_text = ""
+
+            field_number = 1
+            field_name = "xml_record_" : STRIP( field_number )
+
+            WHILE VALID_FIELD( "data_trail_entry", field_name ) DO
+
+                  xml_text = xml_text : SELECT data_trail_entry . 'field_name'
+
+                  field_number = field_number + 1
+                  field_name = "xml_record_" : STRIP( field_number )
+
+            ENDWHILE
+
+            success = XML_RECORD_TO_ROW( xml_text )
+
+      ENDIF
+
+      pop_file_descriptor( context )
+
+      RETURN( success )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE monitor_data_trail( select_array )
+
+{
+* Description : Monitor the Data Trail. Display all entries that are waiting to
+*               be processed and failures that have been resubmitted.
+*
+* Parameters  : select_array : a select array to define which data_trail_entry
+*                              records may be chosen
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE form, list
+
+      set_up_std_prompt_list_class( )
+
+      DEFINE CLASS "DATA_TRAIL_ENTRY_LIST"
+
+            INHERIT PROMPT_LIST_CLASS
+
+            PROPERTIES
+
+                  "select_array"
+
+            ACTIONS
+
+                  "populate"
+
+      END CLASS
+
+      CREATE OBJECT "STD_FORM", form
+
+      form . row    = 2
+      form . column = 6
+      form . width  = 78
+      form . height = 17
+      form . button_style = FORM_BUTTON_NONE
+      form . header = GET_USER_MESSAGE( "DP_TRAIL_MONITOR_HEAD", 1 )
+
+      CREATE OBJECT "DATA_TRAIL_ENTRY_LIST", list
+
+      list . select_array = select_array
+
+      list . fullscreen   = TRUE
+      list . right_mouse_routine = "data_trail_entry_list_right_mouse_cb"
+
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_ENTRY"  , 1 ), 5  )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_REJECT" , 1 ), 5  )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_DATE_R" , 1 ), 15 )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_COMP"   , 1 ), 15 )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_RESULT" , 1 ), 10 )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_STATUS" , 1 ), 5  )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_TEST"   , 1 ), 5  )
+      list . add_column( GET_USER_MESSAGE( "DP_TRAIL_FIELD_DATE"   , 1 ), 15 )
+
+      list . populate( )
+
+      form . add_prompt( list )
+
+      form . start_prompt( )
+      form . wait_prompt( )
+      form . end_prompt( )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_trail_entry_list_action_populate( self )
+
+{
+* Description : Populates the list
+*
+* Parameters  : self: list object
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      DECLARE table, entry_number
+
+      ARRAY_SELECT( "DATA_TRAIL_ENTRY", FALSE, self . select_array )
+
+      entry_number = SELECT data_trail_entry . entry_number
+
+      WHILE ( entry_number <> EMPTY ) DO
+
+            table = SELECT data_trail_entry . table_name
+
+            {*** Copies the row stored in the xml of the current            ***}
+            {*** data_trail_entry to the VGL row so it may be selected from ***}
+
+            IF trail_get_row( entry_number ) THEN
+
+                  self . insert_item( entry_number, -1 )
+
+                  self . set_item( 2, SELECT data_trail_entry . rejected         )
+                  self . set_item( 3, SELECT data_trail_entry . last_retry_date  )
+
+                  IF table = "RESULT" THEN
+
+                        self . set_item( 4, STRIP( SELECT result . component_name ) )
+                        self . set_item( 5, STRIP( SELECT result . text           ) )
+                        self . set_item( 6, STRIP( SELECT result . status         ) )
+                        self . set_item( 7,        SELECT result . test_number      )
+                        self . set_item( 8,        SELECT result . entered_on       )
+
+                  ENDIF
+
+
+            ENDIF
+
+            NEXT data_trail_entry
+
+            entry_number = SELECT data_trail_entry . entry_number
+
+      ENDWHILE
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE data_trail_entry_list_right_mouse_cb( self )
+
+{
+* Description : The monitor list's right mouse button callback code
+*
+* Parameters  : self: the list
+*
+* Returns     : None
+*
+*******************************************************************************}
+
+      self . remove_all_items( )
+      self . populate( )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE rp_logmessage( VALUE identity ,
+                       VALUE facility ,
+                       VALUE severity ,
+                       VALUE add_txt  ,
+                       VALUE line_no  )
+
+{
+* Description : Return message to the Result Pipe Dispatcher
+*
+* Parameters  : identity  The reference user message string. See
+*                         SMP$MESSAGES:SMP_USER_MESSAGES.PRN . No default.
+*
+*               facility  When called this should be set to current_report.
+*                         Default is " " which sets facility to "RP"
+*
+*               severity  This parameter is used to select what logging devices
+*                         will be invoked. Options are:
+*                         "S"  success - sent to RP Monitor
+*                         "I"  information - sent to RP Monitor
+*                         "E"  error - sent to RP Monitor
+*                                      logged to an error file
+*                                      logged by LOGMESSAGE to logfile
+*                         "F"  fatal - sent to RP Monitor
+*                                      logged to an error file
+*                                      logged by LOGMESSAGE to logfile
+*                                      logged by LOGMESSAGE to opcom
+*                         "W"  warning text for audit event
+*                         If the default " " is used get_user_severity will be
+*                         called. Note that if the severity of a message is not
+*                         specified in this file then severity "S" is returned
+*                         Do not use the default with the following option.
+*
+*                         "A"  automatic - the equivalent of an error "E" but
+*                              in addition the result trail entry state will
+*                              be set to "A"/"Z" for normal/batch mode for
+*                              automatic resubmission.
+*
+*               add_txt  Additional text which will be appended to the user
+*                        message. Default is " ", ie none.
+*
+*               line_no  The line of text to be used from the user message.
+*                        Default is 1.
+*
+* Returns     : severity of error or ERROR
+*
+* NOTES       : All error handling in any Result Pipe report, including user
+*               defined interface routines should be done through this function
+*
+*******************************************************************************}
+
+      DECLARE text, message, full_identity
+
+      batch_resubmit_entry = FALSE
+      processed_status = "S"
+
+      full_identity = "RP_" : identity
+
+      IF BLANK( facility ) THEN
+            facility = "RP"
+      ELSE
+            facility = STRIP( facility )
+      ENDIF
+
+      IF BLANK( severity ) THEN
+            severity = LEFTSTRING( ( GET_USER_SEVERITY( full_identity ) ), 1 )
+      ENDIF
+
+      IF INDEX( "IWEAFS", severity ) = 0 THEN
+            severity = ERROR
+      ENDIF
+
+      message = GET_USER_MESSAGE( full_identity, line_no)
+
+      IF message = ERROR THEN
+
+            message = "<" : identity : ">"
+
+      ENDIF
+
+      text = "%" : facility : "-" : severity : "-" : full_identity : "," : message : add_txt
+
+      IF batch_mode THEN
+
+            IF severity = "F" THEN
+
+                  AUDIT_EVENT( text )
+
+            ELSEIF severity = "A" THEN
+
+                  batch_resubmit_entry = TRUE
+
+            ENDIF
+
+            LOGMESSAGE "LOGFILE", text
+
+      ELSE
+
+            IF INDEX( GLOBAL ( "DP_LOG_STATUS" ), severity ) <> 0 THEN
+
+                  log_add_message( text, get_log_severity( severity ) )
+
+            ENDIF
+
+            IF severity = "W" THEN
+                  {*** Warning ***}
+
+                  lock_retain ( "DATA_TRAIL_ENTRY" )
+
+                  AUDIT_EVENT( text )
+
+            ENDIF
+
+            processed_status = severity
+            error_text = text
+
+
+      ENDIF
+
+      RETURN( severity )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE write_to_destination_failure( VALUE entry_number  , 
+                                      VALUE destination   ,
+                                      VALUE error_message )
+
+{
+* Description :
+*
+* Parameters  :
+*
+* Returns     :
+*
+******************************************************************************}
+
+      DECLARE fail_key, fail_id, errors, ok
+
+      ok = TRUE
+
+      ARRAY fail_key ARRAYSIZE ( 2 )
+      fail_key[1] = entry_number
+      fail_key[2] = destination
+
+      IF NOT lib_db_select ( "destination_failure", fail_key, TRUE ) THEN
+
+            fail_id = lib_db_array_to_padded ( "destination_failure" ,
+                                               fail_key              )
+
+            RESERVE ENTRY destination_failure, fail_id, errors
+
+            ok = ( errors = EMPTY )
+
+      ENDIF
+
+      ASSIGN destination_failure . errors = error_message
+
+      START WRITE TRANSACTION "Destination Failure"
+
+      UPDATE destination_failure
+      
+      IF ok THEN
+      
+            COMMIT
+      
+      ELSE
+      
+            ROLLBACK
+      
+      ENDIF
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE delete_destination_failure( VALUE entry_number , 
+                                    VALUE destination  )
+
+{
+* Description :
+*
+* Parameters  :
+*
+* Returns     :
+*
+******************************************************************************}
+
+      DECLARE errors, check
+
+      check = SELECT destination_failure . entry_number
+                  FOR UPDATE
+                  WHERE entry_number = entry_number
+                  AND   destination = destination
+
+      IF check = entry_number THEN
+
+            START WRITE TRANSACTION "Clear Destination Failure"
+
+            DELETE destination_failure, errors
+
+            IF errors = EMPTY THEN
+
+                  COMMIT
+
+            ELSE
+
+                  ROLLBACK
+
+            ENDIF
+            
+      ENDIF
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE get_log_severity( VALUE severity )
+
+{
+* Description :
+*
+* Parameters  :
+*
+* Returns     :
+*
+*******************************************************************************}
+
+      DECLARE log_severity
+
+      IF severity = "S" THEN
+
+            log_severity = STATUS_WINDOW_MSG_LOW
+
+      ELSEIF severity = "I" THEN
+
+            log_severity = STATUS_WINDOW_MSG_LOW
+
+      ELSEIF severity = "W" THEN
+
+            log_severity = STATUS_WINDOW_MSG_MED
+
+      ELSEIF severity = "E" THEN
+
+            log_severity = STATUS_WINDOW_MSG_HIGH
+
+      ELSEIF severity = "A" THEN
+
+            log_severity = STATUS_WINDOW_MSG_HIGH
+
+      ELSEIF severity = "F" THEN
+
+            log_severity = STATUS_WINDOW_MSG_HIGH
+
+      ENDIF
+
+      RETURN( log_severity )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE explorer_icon_callback ( list_viewer, row )
+
+{
+* Description :
+*
+* Parameters  :
+*
+* Returns     :
+*
+*******************************************************************************}
+
+      DECLARE icon, rejected, last_retry_date
+
+      rejected = SELECT data_trail_entry . rejected IN OBJECT row
+
+      IF rejected THEN
+            {*** unprocessable entry ***}
+            icon = explorer_utils_get_icon ( "INT_DELETE_ITEM" )
+
+      ELSE
+
+            last_retry_date = SELECT data_trail_entry . last_retry_date
+                                    IN OBJECT row
+
+            IF last_retry_date = NULL THEN
+                  {*** virgin entry ***}
+                  icon = explorer_utils_get_icon ( "INT_NEW_ITEM" )
+
+            ELSE
+                  {*** auto resubmitted entry ***}
+                  icon = explorer_utils_get_icon ( "INT_UNDO" )
+
+            ENDIF
+
+      ENDIF
+
+
+      RETURN( icon )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+ROUTINE explorer_row_destination_failure( explorer_rmb, record )
+{
+* Description : explorer callback routine to determine if the current data
+*               selection comprises solely of failed data trail entry rows
+*
+* Parameters  : explorer rmb object
+*               record: the explorer_rmb row object
+*
+* Returns     : True if the selection contains only failed data_trail_entrys
+*
+*******************************************************************************}
+
+      DECLARE selected_collection, rejected, last_retry_date, all
+
+      all = TRUE
+
+      selected_collection = explorer_rmb . data
+
+      selected_collection . set_first( )
+
+      WHILE ( selected_collection . current <> EMPTY )
+
+            rejected        = SELECT data_trail_entry . rejected
+                                    IN OBJECT selected_collection . current
+
+            last_retry_date = SELECT data_trail_entry . last_retry_date
+                                    IN OBJECT selected_collection . current
+
+            all = all AND ( rejected OR ( last_retry_date <> NULL ) )
+
+            selected_collection . set_next( )
+
+      ENDWHILE
+
+      RETURN( all AND ( selected_collection . size( ) > 0 ) )
+
+ENDROUTINE
+
+{******************************************************************************}
+
+GLOBAL
+
+ROUTINE rslt_pipe_submit_background_report( VALUE vgl_report  ,
+                                            VALUE vgl_routine ,
+                                            VALUE parameter   ,
+                                            VALUE run_time    )
+
+{
+* Description : Create an entry in the timer queue.
+*
+* Parameters  : vgl_report  : Report for result dispatcher to call
+*               vgl_routine : Routine for result dispatcher to call
+*               parameter   : parameter to pass to routine
+*               run_time    : The time to run the report
+*
+*
+* Returns     : TRUE if successful, FALSE if not
+*
+*******************************************************************************}
+
+      DECLARE success
+
+      IF bsmp_lib_reserve_timer ( ) THEN
+
+            ASSIGN timerqueue . report_name  = "$RSLT_PIPE"
+            ASSIGN timerqueue . routine_name = "BACKGROUND_HANDLER"
+            ASSIGN timerqueue . param_string = vgl_report  : " " :
+                                               vgl_routine : " " :
+                                               parameter
+
+            ASSIGN timerqueue . run_time     = run_time
+
+            START WRITE TRANSACTION "Submitting report to background"
+            UPDATE timerqueue
+            COMMIT
+
+            wake_background( )
+
+            success = TRUE
+      ELSE
+
+            success = FALSE
+
+      ENDIF
+
+      RETURN( success )
+
+ENDROUTINE
+
+{*****************************************************************************}
+
+ROUTINE background_handler( VALUE parameter )
+
+{
+* Description : The routine called by the watch dog timer which will call
+*               the submitted batch routine
+*
+* Parameters  : parameter : the input from the watch dog timer
+*
+* Returns     : None
+*
+******************************************************************************}
+
+      DECLARE their_routine, their_report, their_parameter
+
+      batch_mode = TRUE
+
+      IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+            PROMPT FOR their_report
+            PROMPT FOR their_routine
+            PROMPT FOR their_parameter
+
+      ENDIF
+
+      CALL_ROUTINE their_routine
+            USING their_parameter
+            IN LIBRARY their_report
+
+      IF batch_resubmit_entry THEN
+
+            rslt_pipe_submit_background_report( their_report                            ,
+                                                their_routine                           ,
+                                                their_parameter                         ,
+                                                NOW + GLOBAL ( "DP_RESUBMIT_INTERVAL" ) )
+
+
+      ENDIF
+
+
+ENDROUTINE

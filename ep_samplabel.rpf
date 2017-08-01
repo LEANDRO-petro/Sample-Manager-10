@@ -1,0 +1,449 @@
+{******************************************************************************
+* Module Name   : EP_SAMP_LABEL.RPF
+* Purpose       : Print sample label with barcode
+* Document Ref. : SE/T/TVGL-WORK-REPORTS/1/3
+* Specification :
+* Portability   : Not Checked
+* Re-entrant    :
+* --------------- The report has been written such that it ------------  
+* --------------- may be called from sample login, off the ------------  
+* --------------- menu or run directly by $GRL.            ------------  
+*
+* Notes on paramaters passed in.
+* =============================
+* Check to see if any parameters have been passed to the routine.
+*
+* Parameter 1 - Sample id, either numeric or text.
+* Parameter 2 - Printer id, since when called from sample login there will
+*	        always be two parameters.
+*
+* If there is one parameter the assumption made is that the reports output is 
+* to be directed to the default label printer.
+*
+* No parameters and the destination box is called.
+*******************************************************************************}
+
+{
+  PETROBRAS - LIMS-SM-BR/UO-BC/LF Implementation
+  ==============================================================
+ 
+  >>> Number	WHO	WHEN        MODIFICATION HISTORY
+  >>> 001   	LLV	07-01-11    Etiqueta de amostras com códigos de barra para impressora intermec PD41
+  >>> 002         LLV   02-07-14    Adequação para a implementação LF-SM-10
+
+}
+
+JOIN STANDARD_LIBRARY std_utils
+JOIN STANDARD_LIBRARY STD_WINDOW   { window set status          }
+JOIN LIBRARY $LIB_UTILS            { lib_utils_spawn_with_log   }
+
+ENABLE WINDOWS
+
+SET FORMAT "9999999999"
+SET PRINTERCODES TRUE
+SET COMPILE_OPTION DECLARE
+
+{***************************** Main Program Body *****************************}
+
+DECLARE passed_wks_name , wks_name , printer_id
+
+{ See if a sample parameter has been passed in }
+
+	IF GLOBAL ( "PARAM_ACTIVE" ) THEN
+
+  		PROMPT FOR passed_wks_name
+  		wks_name = passed_wks_name
+
+  		IF NUMTEXT ( wks_name ) THEN
+
+    			wks_name = RIGHTSTRING ( PAD ( " " , " " , 10 ) : 
+						STRIP ( wks_name ) , 10 )
+
+    			wks_name = SELECT sample . id_numeric
+               				WHERE id_numeric = wks_name
+		ELSE
+
+    			wks_name = SELECT sample . id_numeric
+               				WHERE id_text = wks_name
+  		ENDIF
+
+		{ See if a printer parameter has been passed in }
+
+  		IF GLOBAL ("PARAM_ACTIVE") THEN
+
+    			PROMPT FOR printer_id
+
+    			IF printer_id = " " THEN
+      			SET NAME "DEFAULT_LABEL/"
+				printer_id = GLOBAL ( "LABEL_ID" )
+    			ELSE
+      			SET NAME "PRINTER/" : STRIP ( printer_id )
+    			ENDIF
+
+		ELSE
+
+    			IF ( wks_name = EMPTY ) THEN
+      			wks_name = " "
+    			ENDIF
+
+      		SET NAME "DEFAULT_LABEL/"
+			printer_id = GLOBAL ( "LABEL_ID" )
+
+  		ENDIF
+
+	ELSE
+		wks_name        = ""
+		printer_id      = ""
+		passed_wks_name = ""
+
+	ENDIF
+
+	{ If the printer is blank then after all that stuff, just prompt for it }
+
+	IF ( printer_id = "" ) THEN
+		SET NAME "DEFER/"
+		printer_id = STRIP ( GLOBAL ( "LABEL_ID" ))
+	ENDIF
+
+	sample_label ( passed_wks_name , wks_name , printer_id )
+                   
+	EXIT { main program }
+
+{******************************************************************************}
+
+ROUTINE sample_label ( VALUE passed_wks_name	,
+		       VALUE wks_name		,
+		       VALUE printer_id 	)
+
+	{ Analyse the sample name given.  If none provided then prompt the user.
+  	  If it could not be found tell the user and teminate, otherwise print
+  	  the label as requested }
+
+{******************************************************************************}
+	
+DECLARE job_info , form
+
+	ARRAY job_info ARRAYSIZE ( 6 )
+
+	initialise_screen ( form , wks_name , printer_id )
+	
+	IF ( wks_name = " " ) THEN
+  		IF get_sample_id ( wks_name , form ) THEN
+    			IF get_job_info ( wks_name , job_info ) THEN
+      				print_label ( wks_name , job_info )
+    			ENDIF
+  		ENDIF
+	ELSEIF ( wks_name <> EMPTY ) THEN
+  		IF get_job_info ( wks_name , job_info ) THEN
+    			print_label ( wks_name , job_info )
+		ENDIF
+	ELSE
+		flash_message ( GET_USER_MESSAGE ( "SAMPLABEL_DISPLAY_1" , 1 ) :
+				STRIP ( passed_wks_name ) :
+          		   	GET_USER_MESSAGE ( "SAMPLABEL_DISPLAY_2" , 1 ) ,
+				TRUE )
+	ENDIF
+
+	form . end_prompt ()
+
+ENDROUTINE { sample_label }
+
+{******************************************************************************}
+
+ROUTINE initialise_screen ( form		,
+			    VALUE wks_name	,
+			    VALUE printer_id 	)
+
+	{ Routine to set up windows }
+{******************************************************************************}
+
+DECLARE id_prompt , prompt_col , prompt_1 , prompt_2 , prompt_3 , separator , 
+	prompt_len , form_height
+
+	IF ( printer_id = "" ) THEN
+		form_height = 3
+	ELSE
+		form_height = 4
+	ENDIF
+
+	PROMPT OBJECT form
+		CLASS PROMPT_CLASS_FORM
+		WITH  ( column       = 21,
+			row          = 10,
+			height       = form_height,
+			width        = 42 ,
+			border       = TRUE,
+			proportional = TRUE,
+                	help_context = "$SAMPLABEL_SCREEN",
+			header 	     = GET_USER_MESSAGE ("SAMPLABEL_DISPLAY_3"
+							 ,1 ) )
+
+	form . add_frame ( "" , 1 , 1 , form_height , 42 )
+
+	prompt_1 = GET_USER_MESSAGE ( "SAMPLABEL_DISPLAY_4" , 1 )
+	prompt_2 = GET_USER_MESSAGE ( "SAMPLABEL_DISPLAY_5" , 1 )
+	prompt_3 = GET_USER_MESSAGE ( "SAMPLABEL_DISPLAY_6" , 1 )
+
+	{ Get the max length of all the prompts }
+
+	prompt_len = find_max_number ( LENGTH ( prompt_1 ) ,
+				       find_max_number( LENGTH ( prompt_2 ),
+							LENGTH ( prompt_3 ) ) )
+	separator = ""
+
+	{ Put colon separators on the character cell to make the prompts
+	  look nice. }
+
+	IF ( GLOBAL ( "TERMTYPE" ) <> "GUI" ) THEN
+		separator = " :"
+	ENDIF
+
+	prompt_1 = PAD ( prompt_1 , " " , prompt_len ) : separator
+	prompt_2 = PAD ( prompt_2 , " " , prompt_len ) : separator
+	prompt_3 = PAD ( prompt_3 , " " , prompt_len ) : separator
+
+	prompt_col = prompt_len + STRINGLENGTH ( separator ) + 2
+
+	form . add_display ( prompt_1 ,
+			     2 , 1 ,
+			     PROMPT_RENDITION_RAISED + PROMPT_RENDITION_BOLD )
+
+	form . add_display ( prompt_2 ,
+			     2 , 2 ,
+			     PROMPT_RENDITION_RAISED + PROMPT_RENDITION_BOLD )
+                                    
+	IF ( wks_name = " " ) THEN
+
+		PROMPT OBJECT id_prompt
+ 			ON LINE 1 FROM prompt_col TO prompt_col + 30
+			BROWSE ON sample
+
+		form . add_prompt ( id_prompt )
+
+	ELSE
+		form . add_display ( PAD( wks_name , " " , 30 ) ,
+			     	     prompt_col , 1 ,
+			     	     PROMPT_RENDITION_LOWERED )
+	ENDIF
+
+	form . add_display ( PAD ( GLOBAL ( "CURRENT_LIBRARY" ) , " " , 20 ) ,
+			     prompt_col , 2 ,
+			     PROMPT_RENDITION_LOWERED )
+
+	{ If a printer has been specified then display it on the form }
+
+	IF ( printer_id <> "" ) THEN
+
+		form . add_display ( PAD( printer_id , " " , 10 ) ,
+			     	     prompt_col , 3 ,
+			     	     PROMPT_RENDITION_LOWERED )
+
+		form . add_display ( prompt_3 ,
+				     2 , 3 ,
+				     PROMPT_RENDITION_RAISED +
+							PROMPT_RENDITION_BOLD )
+	ENDIF
+
+	form . start_prompt ()
+
+ENDROUTINE { initialise_screen }
+
+{******************************************************************************}
+
+ROUTINE get_sample_id ( wks_name , form )
+
+	{ Get the sample to print a label for }
+
+	REPEAT
+		form . wait_prompt ()
+		wks_name = form . prompt_objects [ 1 ] . value
+	UNTIL ( ( wks_name <> " " ) OR
+		( form . get_lastkey () = "EXIT" ) )
+	RETURN ( form . get_lastkey () <> "EXIT" )
+
+ENDROUTINE  { get_sample_id }
+
+
+{******************************************************************************}
+
+ROUTINE get_job_info ( VALUE wks_name 	,
+		     	   job_info 	)
+
+	{ Get the job info for the current sample }
+	DECLARE job_id, amostra, natureza, local, ponto_amost
+	DECLARE amostrador, data_amos, data_recb, prazo, id_text
+	
+	ARRAY job_info ARRAYSIZE ( 10 )
+
+	SET DATE FORMAT "DZ/MZ/YYYZ H24:MI"
+
+	job_id      = STRIP ( SELECT vw_samp_label . sot  WHERE amostra = wks_name )
+
+	amostra     = STRIP ( SELECT vw_samp_label . amostra )
+	natureza    = STRIP ( SELECT vw_samp_label . natureza )
+	local	      = STRIP ( SELECT vw_samp_label . local )
+	ponto_amost = STRIP ( SELECT vw_samp_label . ponto_amostragem )
+	amostrador	= STRIP ( SELECT vw_samp_label . amostrador )
+	data_amos 	= STRIP ( SELECT vw_samp_label . data_hora_coleta )
+	data_recb	= STRIP ( SELECT vw_samp_label . data_hora_receb )
+	prazo		= STRIP ( SELECT vw_samp_label . prazo )
+	id_text	= STRIP ( SELECT vw_samp_label . id_text )
+
+	job_info [ 1  ] = job_id
+      job_info [ 2  ] = amostra
+	job_info [ 3  ] = natureza
+      job_info [ 4  ] = local
+	job_info [ 5  ] = ponto_amost
+      job_info [ 6  ] = amostrador
+	job_info [ 7  ] = data_amos
+      job_info [ 8  ] = data_recb
+	job_info [ 9  ] = prazo
+      job_info [ 10 ] = id_text
+      
+	RETURN ( job_info [1] <> EMPTY )
+
+	RESTORE DATE FORMAT
+  
+ENDROUTINE { get_job_info }
+
+
+{******************************************************************************}
+
+ROUTINE print_label ( VALUE wks_name , job_info )
+
+DECLARE file_name, no_line, out_line, session_id, check_ok
+DECLARE line_array, proc_id, pos, file_path, output
+
+SET DATE FORMAT "DZ/MZ/YYYZ H24:MI"
+ 
+ARRAY line_array ARRAYSIZE ( 0 )
+
+{* define os valores para as variáveis de substituição...                                *}
+CONSTANT C_SOT        = "10sot"         {* o número da sot..                             *}
+CONSTANT C_ID_TEXT    = "09id_textual"  {* o id textual da amostra..                     *}
+CONSTANT C_ID_NUM     = "01amostra"     {* o id_numeric da amostra..                     *}
+CONSTANT C_LOCAL      = "03local"       {* a origem ou localização da amostra..          *}
+CONSTANT C_DATA_RECB  = "07data_receb"  {* a data e hora do recebimento da amostra..     *}
+CONSTANT C_NATUREZA   = "02natureza"    {* a natureza da amostra..                       *}
+CONSTANT C_DATA_AMOS  = "06data_amost"  {* a data e hora da coleta da amostra..          *}
+CONSTANT C_PRAZO      = "08prazo_atend" {* o prazo para a conclusão da SOT..             *}
+CONSTANT C_PONTO      = "04ponto_amost" {* o ponto de amostragem...                      *}
+CONSTANT C_AMOSTRADOR = "05amostrador"  {* o nome do amsotrador...                       *}
+
+{* popula o array com o conteúdo do arquivo de origem..                                  *}
+{* manutenção no arquivo devido alterações na etiqueta                                   *}
+file_name = "smp$userfiles:sample_label_SM10.txt"
+{>>> file_name = "smp$userfiles:sample_label.txt"                                  >>}
+{>>> file_name = "smp$userfiles:sample_lbl_pd41.txt"                               >>}
+ 
+FILE OPEN file_name, check_ok
+FILE TOP  file_name, check_ok
+FILE READ file_name, out_line, check_ok
+
+no_line = 1 
+WHILE ( check_ok = EMPTY ) 
+
+	line_array [ no_line ] = out_line
+	no_line = no_line + 1
+
+	FILE READ file_name, out_line, check_ok
+
+ENDWHILE
+FILE CLOSE file_name
+
+{* define os identificadores para o nome do arquivo de saída...                     *}
+proc_id    = STRIP ( GLOBAL ( "PROCESS_ID" ))
+session_id = STRIP ( GLOBAL ( "SESSION_ID" ))
+file_path  = "smp$textreports"
+file_name  = "label_":proc_id:"_":session_id:".txt"
+output     = file_path : ":" : file_name
+
+FILE CREATE output, check_ok
+
+no_line  = 1
+out_line = line_array [ no_line ]
+
+WHILE ( out_line <> EMPTY )
+
+	{* efetua as substituições dos campos por valor das variáveis...              *}
+
+	pos = INDEX ( out_line, C_SOT )
+	IF ( pos <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 1 ]) : ASCII ( 34 )
+	ENDIF
+	pos = INDEX ( out_line, C_ID_TEXT )
+	IF ( pos <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 10 ]) : ASCII ( 34 )
+	ENDIF
+	pos = INDEX ( out_line, C_ID_NUM )
+	IF ( pos <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 2 ]) : ASCII ( 34 )
+	ENDIF
+	pos = INDEX ( out_line, C_LOCAL  )
+	IF ( pos <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 4 ]) : ASCII ( 34 )
+	ENDIF
+	pos = INDEX ( out_line, C_DATA_RECB )
+	IF ( pos <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 8 ]) : ASCII ( 34 )
+	ENDIF
+	pos = INDEX ( out_line, C_NATUREZA )
+	IF ( pos <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : TOUPPER ( STRIP ( job_info [ 3 ])) : ASCII ( 34 )
+	ENDIF
+	pos = INDEX ( out_line, C_DATA_AMOS  )
+	IF ( pos  <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 7 ]) : ASCII ( 34 )
+	ENDIF
+
+	pos = INDEX ( out_line, C_PRAZO  )
+	IF ( pos  <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 9 ]) : ASCII ( 34 )
+	ENDIF
+
+	pos = INDEX ( out_line, C_PONTO  )
+	IF ( pos  <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 5 ]) : ASCII ( 34 )
+	ENDIF
+
+	pos = INDEX ( out_line, C_AMOSTRADOR  )
+	IF ( pos  <> 0 ) THEN
+		out_line = SUBSTRING (out_line, 1, pos - 1 ) : STRIP ( job_info [ 6 ]) : ASCII ( 34 )
+	ENDIF
+
+	FILE EXTEND output, check_ok
+	FILE WRITE  output, out_line, check_ok
+	
+	no_line  = no_line + 1
+	out_line = line_array [ no_line ] 
+
+ENDWHILE 
+
+RESTORE DATE FORMAT
+
+FILE CLOSE output, check_ok
+
+IF ( check_ok = EMPTY ) THEN
+
+	DECLARE status_line, dest
+
+	output = LOGICAL(file_path):"\":filename
+
+	{ * proceder impressão exibindo informações de status na tela do usuário..                                  *}
+	status_line = "SOT: ":job_info [2]:" | ":"AMOSTRA: ":STRIP(wks_name):" | ":"STATUS: IMPRIMINDO ETIQUETA..."
+	window_set_status ( status_line )
+
+	SLEEP FOR INTERVAL("0 00:00:02")
+
+	dest = "PRINTER/": printer_id
+
+	FILE SEND output, dest, check_ok
+
+	IF ( check_ok = EMPTY ) THEN
+      	FILE DELETE output, check_ok
+	ENDIF
+ENDIF
+ 
+ENDROUTINE  { print_label }
+
+

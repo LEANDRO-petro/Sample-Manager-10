@@ -1,0 +1,153 @@
+
+{***************************************************************************************}
+{ Filename: ORPHANS.RPF                                                                 }
+{ Version : 1.0                                                                         }
+{ Status  : Developed and tested only for SM9.2.1 as at August 2010                     }   
+{ Author  : Brett Williams, Thermo Fisher Scientific August 2010                        }
+{ Purpose : This program is designed to be run from the WDT and to terminate orphaned   }
+{           processes should they occur.  Orphaned processes no longer have active      }
+{           network connections to both the Lock and Increment Services indicated by    }
+{           START > run > cmd > netstat -aon                                            }
+{ Configuration Items :                                                                 }
+{           REMOVE_ORPHANS boolean - Orphaned processes are only terminated if YES      }
+{                                                                                       }
+{***************************************************************************************}
+
+SET NAME "DEFER/"
+ENABLE WINDOWS
+SET NOTPROTECTED
+SET COMPILE_OPTION DECLARE
+
+{***************************************************************************************}
+
+JOIN STANDARD_LIBRARY STD_ARRAY_SELECT
+JOIN STANDARD_LIBRARY STD_CLIENT
+JOIN STANDARD_LIBRARY STD_PROMPT
+JOIN STANDARD_LIBRARY STD_ARRAY
+JOIN STANDARD_LIBRARY STD_LEX
+
+JOIN LIBRARY $PROMPT_LIST
+JOIN LIBRARY $LIB_UTILS
+
+{***************************************************************************************}
+
+DECLARE cmd, pid_file, pid_value, line_count, check_ok, check2_ok
+DECLARE netstat_file, netstat_value, orphan_log, orphan_count
+
+{ Set path to output file containing process ids for SampleManager server processes }
+pid_file     = LOGICAL ( "SMP$TEXTREPORTS" ) : "\process_id.out"
+netstat_file = LOGICAL ( "SMP$TEXTREPORTS" ) : "\netstat.out"
+orphan_log   = LOGICAL ( "SMP$TEXTREPORTS" ) : "\orphans.log"
+
+{ If the pid_file already exists, then delete it }
+IF FILE EXISTS ( pid_file ) THEN
+	FILE DELETE pid_file
+ENDIF
+
+{ Filter PID from Tasklist for SampleManagerServerHost.exe and append to pid_file }
+cmd = "FOR /F " : ASCII(34) : "skip=3 tokens=2" : ASCII(34) :
+      " %G IN ('tasklist /FI " : ASCII(34) : "IMAGENAME eq SampleManagerServerHost.exe" : ASCII(34) : "') DO @echo %G >> " : 
+      ASCII(34) : pid_file : ASCII(34)
+
+SPAWN cmd QUIETLY
+
+{ Loop through each PID in the file }
+orphan_count = 0
+
+FILE OPEN pid_file, check_ok
+ 
+IF (check_ok = EMPTY) THEN
+ 
+	WHILE (check_ok = EMPTY) DO
+ 
+		FILE READ pid_file, pid_value, check_ok
+
+          IF pid_value <> EMPTY THEN
+       
+              { Determine if the PID has active network connections }
+              { Column 5 of the netstat output is the PID }
+
+              IF FILE EXISTS ( netstat_file ) THEN
+                  FILE DELETE netstat_file
+              ENDIF
+
+              { uncomment the following line to simulate an orphaned process }
+              { pid_value = "99999" }
+
+              cmd = "FOR /F " : ASCII(34) : "tokens=5" : ASCII(34) : 
+                    " %G IN ('netstat -aon') DO @echo %G_ | findstr /b " : STRIP ( pid_value ) : "_ >> " :
+                    ASCII(34) : netstat_file : ASCII(34)
+
+              SPAWN cmd QUIETLY
+              
+              { If there are not active network connections then assume the process has been orphaned. Terminate the process. }
+              line_count = 0
+
+              FILE OPEN netstat_file, check2_ok
+              
+              WHILE (check2_ok = EMPTY) DO
+
+                  FILE READ netstat_file, netstat_value, check2_ok
+
+                  IF netstat_value <> EMPTY THEN
+
+                      line_count = line_count + 1
+
+                  ENDIF
+
+              ENDWHILE
+
+              FILE CLOSE netstat_file
+
+              { flash_message ( line_count : " line(s) found in nestat -aon for pid=" : pid_value, true ) }
+
+              IF line_count <= 1 THEN
+
+                  orphan_count = orphan_count + 1
+
+                  { Write to log }
+
+                  IF NOT FILE EXISTS ( orphan_log ) THEN
+
+                      FILE CREATE orphan_log, check2_ok
+
+                  ENDIF
+
+                  FILE EXTEND orphan_log, check2_ok
+
+                  FILE WRITE orphan_log, NOW : " netstat -aon shows insufficient connections for the process with PID " : pid_value, check2_ok
+
+                  FILE CLOSE orphan_log, check2_ok
+
+                  { Terminate the process and append the output to the log }
+
+                  cmd = "taskkill /f /pid " : pid_value : " >> " : ASCII(34) : orphan_log : ASCII(34) : " 2>&1"
+
+                  IF GLOBAL ( "REMOVE_ORPHANS" ) = TRUE THEN
+
+                      SPAWN cmd QUIETLY
+
+                  ENDIF
+
+              ENDIF
+
+          ENDIF
+
+	ENDWHILE
+
+     IF NOT FILE EXISTS ( orphan_log ) THEN
+
+        FILE CREATE orphan_log, check2_ok
+
+     ENDIF
+
+     FILE EXTEND orphan_log, check2_ok
+
+     FILE WRITE orphan_log, NOW : " Scan found " : STRIP ( orphan_count ) : " orphaned processes and attempted to terminate " : 
+                                  STRIP ( orphan_count ) : " processes.", check2_ok
+
+     FILE CLOSE orphan_log, check2_ok
+ 
+ENDIF
+
+FILE CLOSE pid_file
